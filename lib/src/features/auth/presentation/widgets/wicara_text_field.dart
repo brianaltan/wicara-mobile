@@ -45,7 +45,7 @@ class WicaraTextField extends StatelessWidget {
         ).textTheme.bodySmall?.copyWith(color: Colors.transparent, height: 1.1),
         errorStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: const Color(0xFFE57373),
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w400,
           height: 1.1,
         ),
         filled: true,
@@ -70,7 +70,7 @@ class WicaraTextField extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(
-            color: WicaraColors.periwinkle,
+            color: WicaraColors.secondary,
             width: 1.7,
           ),
         ),

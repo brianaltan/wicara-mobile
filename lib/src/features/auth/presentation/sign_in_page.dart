@@ -149,115 +149,131 @@ class _SignInPageState extends State<SignInPage> {
                             ],
                           ),
                           const SizedBox(height: 48),
-                          Text(
-                            'Welcome back',
-                            style: Theme.of(context).textTheme.headlineMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Sign in to continue your learning',
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: WicaraColors.muted,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          const SizedBox(height: 28),
-                          RolePill(role: _role),
-                          const SizedBox(height: 30),
-                          Form(
-                            key: _formKey,
+                          Expanded(
                             child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const _FieldLabel('Email or phone'),
-                                const SizedBox(height: 10),
-                                WicaraTextField(
-                                  controller: _emailController,
-                                  hintText: 'Enter your email or phone',
-                                  icon: Icons.mail_outline_rounded,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textInputAction: TextInputAction.next,
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Enter your email or phone';
-                                    }
-                                    return null;
-                                  },
+                                Text(
+                                  'Welcome back',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.headlineMedium,
                                 ),
-                                const SizedBox(height: 22),
-                                const _FieldLabel('Password'),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Sign in to continue your learning',
+                                  style: Theme.of(context).textTheme.bodyLarge
+                                      ?.copyWith(
+                                        color: WicaraColors.muted,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                ),
+                                const SizedBox(height: 28),
+                                RolePill(role: _role),
+                                const SizedBox(height: 30),
+                                Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const _FieldLabel('Email or phone'),
+                                      const SizedBox(height: 10),
+                                      WicaraTextField(
+                                        controller: _emailController,
+                                        hintText: 'Enter your email or phone',
+                                        icon: Icons.mail_outline_rounded,
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                        textInputAction: TextInputAction.next,
+                                        validator: (value) {
+                                          if (value == null ||
+                                              value.trim().isEmpty) {
+                                            return 'Enter your email or phone';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                      const SizedBox(height: 22),
+                                      const _FieldLabel('Password'),
+                                      const SizedBox(height: 10),
+                                      WicaraTextField(
+                                        controller: _passwordController,
+                                        hintText: 'Enter your password',
+                                        icon: Icons.lock_outline_rounded,
+                                        obscureText: _isPasswordHidden,
+                                        textInputAction: TextInputAction.done,
+                                        validator: (value) {
+                                          if (value == null || value.isEmpty) {
+                                            return 'Enter your password';
+                                          }
+                                          return null;
+                                        },
+                                        suffix: IconButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _isPasswordHidden =
+                                                  !_isPasswordHidden;
+                                            });
+                                          },
+                                          icon: Icon(
+                                            _isPasswordHidden
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                            color: WicaraColors.softMuted,
+                                            size: 21,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 const SizedBox(height: 10),
-                                WicaraTextField(
-                                  controller: _passwordController,
-                                  hintText: 'Enter your password',
-                                  icon: Icons.lock_outline_rounded,
-                                  obscureText: _isPasswordHidden,
-                                  textInputAction: TextInputAction.done,
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Enter your password';
-                                    }
-                                    return null;
-                                  },
-                                  suffix: IconButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _isPasswordHidden = !_isPasswordHidden;
-                                      });
-                                    },
-                                    icon: Icon(
-                                      _isPasswordHidden
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      color: WicaraColors.softMuted,
-                                      size: 21,
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: () => _showMessage(
+                                      'Password reset is mocked for now.',
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: WicaraColors.secondary,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 38),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      'Forgot password?',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            color: WicaraColors.secondary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 32),
+                                GradientButton(
+                                  label: 'Sign in',
+                                  onPressed: _submit,
+                                  isLoading: _isSubmitting,
+                                ),
+                                const SizedBox(height: 30),
+                                const _DividerText(),
+                                const SizedBox(height: 18),
+                                _GoogleButton(
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _continueWithGoogle,
+                                ),
+                                const SizedBox(height: 40),
+                                const SecurityNote(),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () => _showMessage(
-                                'Password reset is mocked for now.',
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: WicaraColors.periwinkle,
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 38),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                'Forgot password?',
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      color: WicaraColors.periwinkle,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                          GradientButton(
-                            label: 'Sign in',
-                            onPressed: _submit,
-                            isLoading: _isSubmitting,
-                          ),
-                          const SizedBox(height: 30),
-                          const _DividerText(),
-                          const SizedBox(height: 18),
-                          _GoogleButton(
-                            onPressed: _isSubmitting
-                                ? null
-                                : _continueWithGoogle,
-                          ),
-                          const Spacer(),
-                          const SizedBox(height: 52),
-                          const SecurityNote(),
                         ],
                       ),
                     ),
@@ -283,7 +299,7 @@ class _FieldLabel extends StatelessWidget {
       label,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
         color: WicaraColors.text,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
@@ -303,7 +319,7 @@ class _DividerText extends StatelessWidget {
             'or continue with',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -341,8 +357,8 @@ class _GoogleButton extends StatelessWidget {
             Text(
               'Google',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w900,
+                color: WicaraColors.ink,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -362,7 +378,7 @@ class _GoogleGlyph extends StatelessWidget {
       style: TextStyle(
         color: Color(0xFF4285F4),
         fontSize: 18,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w600,
         height: 1,
       ),
     );

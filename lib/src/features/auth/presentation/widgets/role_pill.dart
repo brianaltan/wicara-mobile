@@ -11,7 +11,7 @@ class RolePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       child: Container(
         height: 42,
         width: 204,
@@ -32,7 +32,7 @@ class RolePill extends StatelessWidget {
           role.label,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: WicaraColors.text,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
