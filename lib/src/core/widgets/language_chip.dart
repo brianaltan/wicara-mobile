@@ -33,7 +33,7 @@ class LanguageChip extends StatelessWidget {
             languageCode,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.ink,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

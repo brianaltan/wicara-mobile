@@ -20,13 +20,12 @@ class GradientButton extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: isEnabled ? WicaraColors.primaryGradient : null,
-        color: isEnabled ? null : WicaraColors.line,
+        color: isEnabled ? WicaraColors.secondary : WicaraColors.line,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           if (isEnabled)
             BoxShadow(
-              color: WicaraColors.periwinkle.withValues(alpha: 0.28),
+              color: WicaraColors.secondary.withValues(alpha: 0.24),
               blurRadius: 22,
               offset: const Offset(0, 12),
             ),
@@ -69,7 +68,7 @@ class GradientButton extends StatelessWidget {
                               style: Theme.of(context).textTheme.labelLarge
                                   ?.copyWith(
                                     color: Colors.white,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w600,
                                   ),
                             ),
                           ),

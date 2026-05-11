@@ -68,13 +68,13 @@ class _WicaraMarkPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..strokeWidth = size.height * 0.34
-      ..color = WicaraColors.periwinkle.withValues(alpha: 0.38);
+      ..color = WicaraColors.secondary.withValues(alpha: 0.42);
     final violet = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..strokeWidth = size.height * 0.34
-      ..color = WicaraColors.lavender.withValues(alpha: 0.58);
+      ..color = WicaraColors.secondaryLight.withValues(alpha: 0.7);
 
     final first = Path()
       ..moveTo(size.width * 0.14, size.height * 0.28)

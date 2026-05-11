@@ -17,12 +17,12 @@ class SecurityNote extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFFF6F7FF),
+              color: WicaraColors.glowMint,
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(
               Icons.verified_user_outlined,
-              color: WicaraColors.softMuted,
+              color: WicaraColors.accentMint,
               size: 18,
             ),
           ),
@@ -33,15 +33,15 @@ class SecurityNote extends StatelessWidget {
               TextSpan(
                 text: 'Your data is private and secure.\n',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.softMuted,
-                  fontWeight: FontWeight.w800,
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w400,
                 ),
                 children: [
                   TextSpan(
                     text: 'Learn how we protect you.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: WicaraColors.periwinkle,
-                      fontWeight: FontWeight.w900,
+                      color: WicaraColors.primaryDeep,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],

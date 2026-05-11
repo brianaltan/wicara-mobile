@@ -13,6 +13,7 @@ class WicaraTheme {
           brightness: Brightness.light,
         ).copyWith(
           primary: WicaraColors.periwinkle,
+          secondary: WicaraColors.secondary,
           surface: WicaraColors.pageBackground,
           onSurface: WicaraColors.ink,
         );
@@ -33,31 +34,31 @@ class WicaraTheme {
       titleMedium: TextStyle(
         color: WicaraColors.text,
         fontSize: 15,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w600,
         height: 1.25,
       ),
       bodyLarge: TextStyle(
         color: WicaraColors.text,
         fontSize: 16,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         height: 1.35,
       ),
       bodyMedium: TextStyle(
         color: WicaraColors.muted,
         fontSize: 14,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w400,
         height: 1.35,
       ),
       bodySmall: TextStyle(
         color: WicaraColors.muted,
         fontSize: 12,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w400,
         height: 1.3,
       ),
       labelLarge: TextStyle(
         color: WicaraColors.text,
         fontSize: 14,
-        fontWeight: FontWeight.w800,
+        fontWeight: FontWeight.w600,
         height: 1.2,
       ),
     );
@@ -73,7 +74,7 @@ class WicaraTheme {
         hintStyle: TextStyle(
           color: WicaraColors.softMuted,
           fontSize: 15,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w400,
         ),
       ),
     );
