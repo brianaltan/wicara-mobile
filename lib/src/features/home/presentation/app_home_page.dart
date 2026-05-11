@@ -2,11 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
-import '../../../core/widgets/language_chip.dart';
 
 enum _HomeTab { home, queue, progress, profile }
+
+enum _QueueTab { recommended, tracks }
 
 class AppHomePage extends StatefulWidget {
   const AppHomePage({super.key});
@@ -17,6 +19,18 @@ class AppHomePage extends StatefulWidget {
 
 class _AppHomePageState extends State<AppHomePage> {
   _HomeTab _selectedTab = _HomeTab.home;
+  _QueueTab _queueTab = _QueueTab.recommended;
+
+  void _openQueue([_QueueTab tab = _QueueTab.recommended]) {
+    setState(() {
+      _queueTab = tab;
+      _selectedTab = _HomeTab.queue;
+    });
+  }
+
+  void _openHome() {
+    setState(() => _selectedTab = _HomeTab.home);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,31 +69,37 @@ class _AppHomePageState extends State<AppHomePage> {
     return switch (_selectedTab) {
       _HomeTab.home => _HomeDashboard(
         constraints: constraints,
-        onOpenQueue: () => setState(() => _selectedTab = _HomeTab.queue),
+        onOpenQueue: () => _openQueue(),
+        onOpenTracks: () => _openQueue(_QueueTab.tracks),
       ),
       _HomeTab.queue => _LearningQueue(
         constraints: constraints,
-        onBack: () => setState(() => _selectedTab = _HomeTab.home),
+        selectedTab: _queueTab,
+        onTabChanged: (tab) => setState(() => _queueTab = tab),
+        onBack: _openHome,
       ),
-      _HomeTab.progress => const _EmptyTab(
-        title: 'Progress',
-        subtitle: 'Progress mockup page',
-        icon: Icons.bar_chart_rounded,
+      _HomeTab.progress => _ProgressHub(
+        constraints: constraints,
+        onBack: _openHome,
       ),
-      _HomeTab.profile => const _EmptyTab(
-        title: 'Profile',
-        subtitle: 'Profile mockup page',
-        icon: Icons.person_outline_rounded,
+      _HomeTab.profile => _ProfilePage(
+        constraints: constraints,
+        onBack: _openHome,
       ),
     };
   }
 }
 
 class _HomeDashboard extends StatelessWidget {
-  const _HomeDashboard({required this.constraints, required this.onOpenQueue});
+  const _HomeDashboard({
+    required this.constraints,
+    required this.onOpenQueue,
+    required this.onOpenTracks,
+  });
 
   final BoxConstraints constraints;
   final VoidCallback onOpenQueue;
+  final VoidCallback onOpenTracks;
 
   @override
   Widget build(BuildContext context) {
@@ -90,10 +110,7 @@ class _HomeDashboard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [_MiniWordmark(), LanguageChip()],
-            ),
+            const _MiniWordmark(),
             const SizedBox(height: 38),
             Text(
               'Welcome back, Aisha 👋',
@@ -106,10 +123,12 @@ class _HomeDashboard extends StatelessWidget {
               'Your path adapts. You grow.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 35),
+            _ExploreTracksCard(onOpenTracks: onOpenTracks),
+            const SizedBox(height: 20),
             _TodayQueueCard(onViewAll: onOpenQueue),
             const SizedBox(height: 25),
             const _StreakCard(),
@@ -125,9 +144,16 @@ class _HomeDashboard extends StatelessWidget {
 }
 
 class _LearningQueue extends StatelessWidget {
-  const _LearningQueue({required this.constraints, required this.onBack});
+  const _LearningQueue({
+    required this.constraints,
+    required this.selectedTab,
+    required this.onTabChanged,
+    required this.onBack,
+  });
 
   final BoxConstraints constraints;
+  final _QueueTab selectedTab;
+  final ValueChanged<_QueueTab> onTabChanged;
   final VoidCallback onBack;
 
   @override
@@ -140,92 +166,29 @@ class _LearningQueue extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _QueueHeader(onBack: onBack),
-            const SizedBox(height: 50),
+            const SizedBox(height: 42),
             Text(
-              'Your learning queue',
+              'Calculus I',
               style: Theme.of(
                 context,
               ).textTheme.headlineMedium?.copyWith(fontSize: 24, height: 1.12),
             ),
             const SizedBox(height: 9),
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    "Personalized by WICARA's path engine",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: WicaraColors.muted,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Icon(
-                  Icons.info_outline_rounded,
-                  color: WicaraColors.softMuted,
-                  size: 16,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            const _QueueTabs(),
-            const SizedBox(height: 28),
-            const _PriorityCallout(),
-            const SizedBox(height: 22),
-            const _QueueLessonCard(
-              index: '1',
-              badge: 'Next up',
-              title: 'Repair exponents',
-              subject: 'Algebra',
-              reason:
-                  'Why now? Strengthens your foundation for\npolynomial expressions.',
-              meta: '18 min   •   Medium',
-              action: 'Continue',
-              iconText: 'xⁿ',
-              isPrimary: true,
-            ),
-            const SizedBox(height: 20),
-            const _QueueLessonCard(
-              index: '2',
-              title: 'Continue derivatives',
-              subject: 'Calculus',
-              reason:
-                  "Why now? You're 60% there—finishing this\nunlocks optimization.",
-              meta: '24 min   •   Hard',
-              action: 'Continue',
-              iconText: 'd\ndx',
-            ),
-            const SizedBox(height: 20),
-            const _QueueLessonCard(
-              index: '3',
-              title: 'Review due',
-              subject: 'Functions',
-              reason: 'Why now? Spaced review boosts long-term\nretention.',
-              meta: '12 min   •   Easy',
-              action: 'Review',
-              iconData: Icons.event_note_outlined,
-            ),
-            const SizedBox(height: 18),
             Text(
-              'Up next',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+              "Your current big topic. WICARA recommends the next steps inside this track.",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 11),
-            const _QueueLessonCard(
-              index: '',
-              title: 'Intro to logarithms',
-              subject: 'Logs',
-              reason: '',
-              meta: '20 min   •   Medium',
-              action: '',
-              iconText: 'logₐ',
-              compact: true,
-            ),
+            const SizedBox(height: 28),
+            _QueueTabs(selectedTab: selectedTab, onChanged: onTabChanged),
+            const SizedBox(height: 28),
+            if (selectedTab == _QueueTab.recommended)
+              const _RecommendedQueueContent()
+            else
+              const _TracksQueueContent(),
           ],
         ),
       ),
@@ -251,7 +214,6 @@ class _QueueHeader extends StatelessWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 38, height: 38),
         ),
-        const LanguageChip(),
       ],
     );
   }
@@ -276,7 +238,7 @@ class _TodayQueueCard extends StatelessWidget {
                   "Today's learning queue",
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -290,8 +252,8 @@ class _TodayQueueCard extends StatelessWidget {
                 child: Text(
                   'View all',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: WicaraColors.periwinkle,
-                    fontWeight: FontWeight.w900,
+                    color: WicaraColors.secondary,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -308,7 +270,7 @@ class _TodayQueueCard extends StatelessWidget {
                     const _SoftBadge('Next up'),
                     const SizedBox(height: 11),
                     Text(
-                      'Repair exponents',
+                      'Limits from graphs',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontSize: 18,
                         height: 1.15,
@@ -316,10 +278,10 @@ class _TodayQueueCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Algebra',
+                      'Calculus I',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: WicaraColors.muted,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -327,17 +289,84 @@ class _TodayQueueCard extends StatelessWidget {
                       'Estimated 18 min   •   Medium',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: WicaraColors.softMuted,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-              const _LessonGlyph(text: 'xⁿ', size: 73),
+              const _LessonGlyph(text: 'lim', size: 73),
             ],
           ),
           const SizedBox(height: 24),
           GradientButton(label: 'Continue session', onPressed: () {}),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExploreTracksCard extends StatelessWidget {
+  const _ExploreTracksCard({required this.onOpenTracks});
+
+  final VoidCallback onOpenTracks;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: WicaraColors.secondarySoft,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(
+              Icons.explore_outlined,
+              color: WicaraColors.secondary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Want to learn something new?',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Explore tracks you have created or start another one.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(
+            onPressed: onOpenTracks,
+            style: TextButton.styleFrom(
+              foregroundColor: WicaraColors.secondary,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 34),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Explore'),
+          ),
         ],
       ),
     );
@@ -363,7 +392,7 @@ class _StreakCard extends StatelessWidget {
                   'Current streak',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.text,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -371,21 +400,28 @@ class _StreakCard extends StatelessWidget {
                   '7 days',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 146, child: _WeekDots()),
+          const SizedBox(width: 166, child: _WeekDots()),
         ],
       ),
     );
   }
 }
 
-class _DailyEvaluationCard extends StatelessWidget {
+class _DailyEvaluationCard extends StatefulWidget {
   const _DailyEvaluationCard();
+
+  @override
+  State<_DailyEvaluationCard> createState() => _DailyEvaluationCardState();
+}
+
+class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
+  int? _score = 3;
 
   @override
   Widget build(BuildContext context) {
@@ -398,15 +434,16 @@ class _DailyEvaluationCard extends StatelessWidget {
             'Daily evaluation',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 11),
           Text(
-            "How confident do you feel about today's topics?",
+            "Today's topic: Calculus I. Pick a confidence score if you want, then take your daily check.",
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
+              height: 1.32,
             ),
           ),
           const SizedBox(height: 21),
@@ -414,24 +451,29 @@ class _DailyEvaluationCard extends StatelessWidget {
             children: [
               for (var score = 1; score <= 5; score++) ...[
                 Expanded(
-                  child: Container(
-                    height: 39,
-                    decoration: BoxDecoration(
-                      gradient: score == 3
-                          ? WicaraColors.primaryGradient
-                          : null,
-                      color: score == 3 ? null : const Color(0xFFF4F5FA),
-                      borderRadius: BorderRadius.circular(10),
-                      border: score == 3
-                          ? null
-                          : Border.all(color: WicaraColors.line),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$score',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: score == 3 ? Colors.white : WicaraColors.text,
-                        fontWeight: FontWeight.w900,
+                  child: InkWell(
+                    onTap: () => setState(() => _score = score),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      height: 39,
+                      decoration: BoxDecoration(
+                        color: score == _score
+                            ? WicaraColors.secondary
+                            : WicaraColors.speechBlue,
+                        borderRadius: BorderRadius.circular(10),
+                        border: score == _score
+                            ? null
+                            : Border.all(color: WicaraColors.line),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$score',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: score == _score
+                              ? Colors.white
+                              : WicaraColors.text,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -451,7 +493,7 @@ class _DailyEvaluationCard extends StatelessWidget {
                     'Not confident',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -461,13 +503,15 @@ class _DailyEvaluationCard extends StatelessWidget {
                     'Very confident',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          GradientButton(label: 'Take Daily Evaluation', onPressed: () {}),
         ],
       ),
     );
@@ -490,15 +534,15 @@ class _MasteryOverviewCard extends StatelessWidget {
                   'Mastery overview',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               Text(
                 'View details',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: WicaraColors.periwinkle,
-                  fontWeight: FontWeight.w900,
+                  color: WicaraColors.secondary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -531,55 +575,171 @@ class _MasteryOverviewCard extends StatelessWidget {
 }
 
 class _QueueTabs extends StatelessWidget {
-  const _QueueTabs();
+  const _QueueTabs({required this.selectedTab, required this.onChanged});
+
+  final _QueueTab selectedTab;
+  final ValueChanged<_QueueTab> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 44,
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F6FB),
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Container(
-              margin: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: WicaraColors.shadowBlue.withValues(alpha: 0.12),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                'Next steps',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: WicaraColors.text,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+            child: _QueueTabButton(
+              label: 'Recommended',
+              isSelected: selectedTab == _QueueTab.recommended,
+              onTap: () => onChanged(_QueueTab.recommended),
             ),
           ),
           Expanded(
-            child: Center(
-              child: Text(
-                'Recommended',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: WicaraColors.muted,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+            child: _QueueTabButton(
+              label: 'Tracks',
+              isSelected: selectedTab == _QueueTab.tracks,
+              onTap: () => onChanged(_QueueTab.tracks),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _QueueTabButton extends StatelessWidget {
+  const _QueueTabButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isSelected ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              if (isSelected)
+                BoxShadow(
+                  color: WicaraColors.shadowBlue.withValues(alpha: 0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: isSelected ? WicaraColors.text : WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecommendedQueueContent extends StatelessWidget {
+  const _RecommendedQueueContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _PriorityCallout(),
+        SizedBox(height: 22),
+        _QueueLessonCard(
+          index: '1',
+          badge: 'Next up',
+          title: 'Limits from graphs',
+          subject: 'Calculus I',
+          reason:
+              'Why now? This unlocks continuity and\nfirst derivative intuition.',
+          meta: '18 min   •   Medium',
+          action: 'Continue',
+          iconText: 'lim',
+          isPrimary: true,
+        ),
+        SizedBox(height: 20),
+        _QueueLessonCard(
+          index: '2',
+          title: 'Derivative rules',
+          subject: 'Calculus',
+          reason:
+              "Why now? You're ready after limits and\nslope interpretation.",
+          meta: '24 min   •   Hard',
+          action: 'Continue',
+          iconText: 'd\ndx',
+        ),
+        SizedBox(height: 20),
+        _QueueLessonCard(
+          index: '3',
+          title: 'Function composition review',
+          subject: 'Prerequisite',
+          reason:
+              'Why now? Needed before chain rule and\nimplicit differentiation.',
+          meta: '12 min   •   Easy',
+          action: 'Review',
+          iconData: Icons.event_note_outlined,
+        ),
+      ],
+    );
+  }
+}
+
+class _TracksQueueContent extends StatelessWidget {
+  const _TracksQueueContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _NewTrackCard(),
+        SizedBox(height: 22),
+        _TrackCard(
+          title: 'Continue Calculus I',
+          subtitle: 'Limits, derivatives, applications',
+          meta: 'Current track   •   58% complete',
+          icon: Icons.show_chart_rounded,
+          color: WicaraColors.secondary,
+        ),
+        SizedBox(height: 12),
+        _TrackCard(
+          title: 'Linear Algebra',
+          subtitle: 'Vectors, matrices, transformations',
+          meta: 'Created track   •   12% complete',
+          icon: Icons.grid_4x4_rounded,
+          color: WicaraColors.primary,
+        ),
+        SizedBox(height: 12),
+        _TrackCard(
+          title: 'Discrete Math',
+          subtitle: 'Logic, sets, graphs, counting',
+          meta: 'Created track   •   ready to continue',
+          icon: Icons.hub_outlined,
+          color: WicaraColors.accentCoral,
+        ),
+      ],
     );
   }
 }
@@ -592,10 +752,10 @@ class _PriorityCallout extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(19, 18, 19, 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F2FF),
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(13),
         border: Border.all(
-          color: WicaraColors.periwinkle.withValues(alpha: 0.22),
+          color: WicaraColors.secondary.withValues(alpha: 0.22),
         ),
       ),
       child: Row(
@@ -603,16 +763,16 @@ class _PriorityCallout extends StatelessWidget {
         children: [
           const Icon(
             Icons.wb_sunny_outlined,
-            color: WicaraColors.periwinkle,
+            color: WicaraColors.secondary,
             size: 21,
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              "We're prioritizing topics that will unlock the\nmost progress for you right now.",
+              "Recommended for Calculus I based on\nyour current gaps and readiness.",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.text,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
                 height: 1.32,
               ),
             ),
@@ -635,7 +795,6 @@ class _QueueLessonCard extends StatelessWidget {
     this.iconText,
     this.iconData,
     this.isPrimary = false,
-    this.compact = false,
   });
 
   final String index;
@@ -648,17 +807,11 @@ class _QueueLessonCard extends StatelessWidget {
   final String? iconText;
   final IconData? iconData;
   final bool isPrimary;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        compact ? 15 : 18,
-        20,
-        compact ? 15 : 18,
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -680,17 +833,16 @@ class _QueueLessonCard extends StatelessWidget {
                   const SizedBox(height: 11),
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontSize: compact ? 14 : 18,
-                    height: 1.15,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontSize: 18, height: 1.15),
                 ),
                 const SizedBox(height: 7),
                 Text(
                   subject,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.text,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 if (reason.isNotEmpty) ...[
@@ -699,7 +851,7 @@ class _QueueLessonCard extends StatelessWidget {
                     reason,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       height: 1.3,
                     ),
                   ),
@@ -712,7 +864,7 @@ class _QueueLessonCard extends StatelessWidget {
                         meta,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: WicaraColors.muted,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -724,7 +876,7 @@ class _QueueLessonCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 13),
-          _LessonGlyph(text: iconText, icon: iconData, size: compact ? 54 : 64),
+          _LessonGlyph(text: iconText, icon: iconData, size: 64),
         ],
       ),
     );
@@ -743,13 +895,12 @@ class _SmallActionButton extends StatelessWidget {
       height: 35,
       width: 112,
       decoration: BoxDecoration(
-        gradient: filled ? WicaraColors.primaryGradient : null,
-        color: filled ? null : Colors.white,
+        color: filled ? WicaraColors.secondary : Colors.white,
         borderRadius: BorderRadius.circular(9),
         border: filled
             ? null
             : Border.all(
-                color: WicaraColors.periwinkle.withValues(alpha: 0.45),
+                color: WicaraColors.secondary.withValues(alpha: 0.34),
                 width: 1.4,
               ),
       ),
@@ -757,8 +908,222 @@ class _SmallActionButton extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: filled ? Colors.white : WicaraColors.periwinkle,
-          fontWeight: FontWeight.w900,
+          color: filled ? Colors.white : WicaraColors.secondary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackCard extends StatelessWidget {
+  const _TrackCard({
+    required this.title,
+    required this.subtitle,
+    required this.meta,
+    required this.icon,
+    required this.color,
+  });
+
+  final String title;
+  final String subtitle;
+  final String meta;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Icon(icon, color: color, size: 27),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.text,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _TrackActionButton(filled: title == 'Continue Calculus I'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackActionButton extends StatelessWidget {
+  const _TrackActionButton({required this.filled});
+
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 39,
+      constraints: const BoxConstraints(minWidth: 154),
+      padding: const EdgeInsets.symmetric(horizontal: 17),
+      decoration: BoxDecoration(
+        color: filled ? WicaraColors.secondary : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: filled
+            ? null
+            : Border.all(
+                color: WicaraColors.secondary.withValues(alpha: 0.34),
+                width: 1.4,
+              ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'Continue Learning',
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: filled ? Colors.white : WicaraColors.secondary,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _NewTrackCard extends StatelessWidget {
+  const _NewTrackCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: WicaraColors.glowPeach,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(
+                  Icons.add_rounded,
+                  color: WicaraColors.accentCoral,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Learn something new',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      'Create a new track outside your current list.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: _NewTrackActionButton(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NewTrackActionButton extends StatelessWidget {
+  const _NewTrackActionButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 39,
+      constraints: const BoxConstraints(minWidth: 118),
+      padding: const EdgeInsets.symmetric(horizontal: 17),
+      decoration: BoxDecoration(
+        color: WicaraColors.secondary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'New track',
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -842,7 +1207,7 @@ class _ShortcutItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = tab == selectedTab;
-    final color = isSelected ? WicaraColors.periwinkle : WicaraColors.muted;
+    final color = isSelected ? WicaraColors.secondary : WicaraColors.muted;
 
     return Expanded(
       child: InkWell(
@@ -860,7 +1225,7 @@ class _ShortcutItem extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: color,
                 fontSize: 10,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -870,47 +1235,750 @@ class _ShortcutItem extends StatelessWidget {
   }
 }
 
-class _EmptyTab extends StatelessWidget {
-  const _EmptyTab({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
+class _ProfilePage extends StatelessWidget {
+  const _ProfilePage({required this.constraints, required this.onBack});
 
-  final String title;
-  final String subtitle;
-  final IconData icon;
+  final BoxConstraints constraints;
+  final VoidCallback onBack;
+
+  void _logout(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.landing, (route) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight - 136),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _QueueHeader(onBack: onBack),
+            const SizedBox(height: 38),
+            Text(
+              'Profile',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 24, height: 1.12),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Manage your learning preferences and account.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 28),
+            const _ProfileHeaderCard(),
+            const SizedBox(height: 22),
+            const _ProfileSection(
+              title: 'Learning setup',
+              children: [
+                _ProfileSettingTile(
+                  icon: Icons.person_outline_rounded,
+                  label: 'Full name',
+                  value: 'Aisyah Putri',
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.public_rounded,
+                  label: 'Country',
+                  value: 'Indonesia',
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.school_outlined,
+                  label: 'Grade level',
+                  value: 'Grade 11 (SMA Kelas 2)',
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.language_rounded,
+                  label: 'Language',
+                  value: 'Bahasa Indonesia',
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const _ProfileSection(
+              title: 'Preferences',
+              children: [
+                _ProfileSettingTile(
+                  icon: Icons.menu_book_outlined,
+                  label: 'Subjects',
+                  value: 'Math, Physics, Chemistry, Biology',
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.track_changes_rounded,
+                  label: 'Study goal',
+                  value: 'Improve understanding',
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.schedule_rounded,
+                  label: 'Daily study time',
+                  value: '30-60 minutes',
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            OutlinedButton.icon(
+              onPressed: () => _logout(context),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: WicaraColors.line, width: 1.4),
+                foregroundColor: const Color(0xFFE57373),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: const Icon(Icons.logout_rounded, size: 20),
+              label: const Text('Log out'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileHeaderCard extends StatelessWidget {
+  const _ProfileHeaderCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      child: Row(
         children: [
-          const Align(alignment: Alignment.centerRight, child: LanguageChip()),
-          const Spacer(),
-          Icon(icon, color: WicaraColors.periwinkle, size: 52),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: WicaraColors.muted,
-              fontWeight: FontWeight.w800,
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: WicaraColors.secondarySoft,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              'AP',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: WicaraColors.secondaryDeep,
+                fontSize: 20,
+              ),
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Aisyah Putri',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Learner',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _ProfileSection extends StatelessWidget {
+  const _ProfileSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(17, 16, 17, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSettingTile extends StatelessWidget {
+  const _ProfileSettingTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: WicaraColors.speechBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: WicaraColors.secondary, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: WicaraColors.softMuted,
+            size: 24,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressHub extends StatelessWidget {
+  const _ProgressHub({required this.constraints, required this.onBack});
+
+  final BoxConstraints constraints;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight - 136),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _QueueHeader(onBack: onBack),
+            const SizedBox(height: 38),
+            Text(
+              'Progress',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 24, height: 1.12),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Start with your learning report, then explore the knowledge map.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 28),
+            const _LearningReportOption(),
+            const SizedBox(height: 22),
+            const _KnowledgeMapOption(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearningReportOption extends StatelessWidget {
+  const _LearningReportOption();
+
+  @override
+  Widget build(BuildContext context) {
+    return _ProgressOptionPanel(
+      icon: Icons.analytics_outlined,
+      iconColor: WicaraColors.secondary,
+      iconBackground: WicaraColors.secondarySoft,
+      title: 'Learning Report',
+      subtitle: 'Weekly performance, fixed gaps, unlocked concepts.',
+      action: 'View report',
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                'May 12 - May 18, 2025',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              _SoftBadge('+4 fixed'),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 112,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: const [
+                _ReportBarGroup(label: 'Overall', before: 0.72, after: 0.88),
+                SizedBox(width: 18),
+                _ReportBarGroup(
+                  label: 'Application',
+                  before: 0.65,
+                  after: 0.85,
+                ),
+                SizedBox(width: 18),
+                _ReportBarGroup(label: 'Analysis', before: 0.58, after: 0.82),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: const [
+              Expanded(
+                child: _ReportMetric(
+                  label: 'Fixed gaps',
+                  value: '12',
+                  delta: '+4 this week',
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: _ReportMetric(
+                  label: 'Remaining gaps',
+                  value: '5',
+                  delta: '-2 this week',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KnowledgeMapOption extends StatelessWidget {
+  const _KnowledgeMapOption();
+
+  @override
+  Widget build(BuildContext context) {
+    return _ProgressOptionPanel(
+      icon: Icons.account_tree_outlined,
+      iconColor: WicaraColors.primaryDeep,
+      iconBackground: WicaraColors.primarySoft,
+      title: 'Knowledge Map',
+      subtitle: 'Visualize prerequisites, gaps, and next concepts.',
+      action: 'Open map',
+      child: SizedBox(
+        height: 230,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(painter: _KnowledgeMapPainter()),
+            ),
+            const Align(
+              alignment: Alignment.topCenter,
+              child: _ConceptNode(
+                label: 'Number\nSystem',
+                status: 'MASTERED',
+                color: WicaraColors.biology,
+              ),
+            ),
+            const Positioned(
+              left: 0,
+              top: 78,
+              child: _ConceptNode(
+                label: 'Integers',
+                status: 'MASTERED',
+                color: WicaraColors.biology,
+              ),
+            ),
+            const Positioned(
+              right: 0,
+              top: 78,
+              child: _ConceptNode(
+                label: 'Decimals',
+                status: 'MASTERED',
+                color: WicaraColors.biology,
+              ),
+            ),
+            const Align(
+              alignment: Alignment.center,
+              child: _ConceptNode(
+                label: 'Fractions',
+                status: 'IN PROGRESS',
+                color: WicaraColors.secondary,
+                isActive: true,
+              ),
+            ),
+            const Positioned(
+              left: 32,
+              bottom: 4,
+              child: _ConceptNode(
+                label: 'Ratios',
+                status: 'REVIEW',
+                color: WicaraColors.accentAmber,
+              ),
+            ),
+            const Positioned(
+              right: 32,
+              bottom: 4,
+              child: _ConceptNode(
+                label: 'Functions',
+                status: 'READY',
+                color: WicaraColors.accentLilac,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressOptionPanel extends StatelessWidget {
+  const _ProgressOptionPanel({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBackground,
+    required this.title,
+    required this.subtitle,
+    required this.action,
+    required this.child,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBackground;
+  final String title;
+  final String subtitle;
+  final String action;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(19, 18, 19, 19),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: iconColor, size: 23),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: WicaraColors.softMuted,
+                size: 25,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          child,
+          const SizedBox(height: 18),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              action,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: WicaraColors.secondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportBarGroup extends StatelessWidget {
+  const _ReportBarGroup({
+    required this.label,
+    required this.before,
+    required this.after,
+  });
+
+  final String label;
+  final double before;
+  final double after;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _ReportBar(value: before, color: WicaraColors.primaryLight),
+                  const SizedBox(width: 6),
+                  _ReportBar(value: after, color: WicaraColors.secondary),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportBar extends StatelessWidget {
+  const _ReportBar({required this.value, required this.color});
+
+  final double value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: value,
+      child: Container(
+        width: 18,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportMetric extends StatelessWidget {
+  const _ReportMetric({
+    required this.label,
+    required this.value,
+    required this.delta,
+  });
+
+  final String label;
+  final String value;
+  final String delta;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      decoration: BoxDecoration(
+        color: WicaraColors.pageBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontSize: 23, height: 1),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            delta,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.accentMint,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConceptNode extends StatelessWidget {
+  const _ConceptNode({
+    required this.label,
+    required this.status,
+    required this.color,
+    this.isActive = false,
+  });
+
+  final String label;
+  final String status;
+  final Color color;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: isActive ? 112 : 96,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isActive ? 0.16 : 0.1),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: color.withValues(alpha: isActive ? 0.72 : 0.34),
+          width: isActive ? 1.7 : 1.2,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w600,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            status,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KnowledgeMapPainter extends CustomPainter {
+  const _KnowledgeMapPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = WicaraColors.secondaryLight.withValues(alpha: 0.9)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    final top = Offset(size.width / 2, 46);
+    final center = Offset(size.width / 2, size.height / 2 + 8);
+    final left = Offset(size.width * 0.19, 104);
+    final right = Offset(size.width * 0.81, 104);
+    final lowerLeft = Offset(size.width * 0.31, size.height - 38);
+    final lowerRight = Offset(size.width * 0.69, size.height - 38);
+
+    canvas.drawLine(top, center, line);
+    canvas.drawLine(left, center, line);
+    canvas.drawLine(right, center, line);
+    canvas.drawLine(center, lowerLeft, line);
+    canvas.drawLine(center, lowerRight, line);
+
+    final dotPaint = Paint()..color = WicaraColors.secondary;
+    for (final point in [top, left, right, center, lowerLeft, lowerRight]) {
+      canvas.drawCircle(point, 4, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _Panel extends StatelessWidget {
@@ -987,19 +2055,19 @@ class _MiniMarkPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = size.height * 0.45
-        ..color = WicaraColors.periwinkle.withValues(alpha: 0.32),
+        ..color = WicaraColors.secondary.withValues(alpha: 0.34),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = size.height * 0.45
-        ..color = WicaraColors.lavender.withValues(alpha: 0.58),
+        ..color = WicaraColors.secondaryLight.withValues(alpha: 0.62),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = size.height * 0.45
-        ..color = WicaraColors.periwinkle.withValues(alpha: 0.23),
+        ..color = WicaraColors.primary.withValues(alpha: 0.26),
     ];
 
     for (var i = 0; i < 3; i++) {
@@ -1043,19 +2111,19 @@ class _LessonGlyph extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF1FF),
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(size / 2),
       ),
       alignment: Alignment.center,
       child: icon != null
-          ? Icon(icon, color: WicaraColors.periwinkle, size: size * 0.43)
+          ? Icon(icon, color: WicaraColors.secondary, size: size * 0.43)
           : Text(
               text ?? '',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: WicaraColors.periwinkle,
+                color: WicaraColors.secondary,
                 fontSize: size * 0.32,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w600,
                 height: 0.9,
               ),
             ),
@@ -1073,14 +2141,14 @@ class _SoftBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F2FF),
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.periwinkle,
-          fontWeight: FontWeight.w900,
+          color: WicaraColors.secondary,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1098,15 +2166,15 @@ class _NumberBadge extends StatelessWidget {
       width: 25,
       height: 25,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F2FF),
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(13),
       ),
       alignment: Alignment.center,
       child: Text(
         value,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.periwinkle,
-          fontWeight: FontWeight.w900,
+          color: WicaraColors.secondary,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1118,44 +2186,39 @@ class _WeekDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    const alphas = [0.18, 0.28, 0.38, 0.5, 0.62, 0.78, 0.94];
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            for (var i = 0; i < labels.length; i++) ...[
-              Text(
-                labels[i],
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
+        for (var i = 0; i < labels.length; i++)
+          SizedBox(
+            width: 18,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  labels[i],
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              if (i < labels.length - 1) const SizedBox(width: 10),
-            ],
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            for (var i = 0; i < labels.length; i++) ...[
-              Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  color: i < 6 ? WicaraColors.periwinkle : Colors.white,
-                  shape: BoxShape.circle,
-                  border: i < 6
-                      ? null
-                      : Border.all(color: WicaraColors.softMuted, width: 1.4),
+                const SizedBox(height: 10),
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: WicaraColors.secondary.withValues(alpha: alphas[i]),
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              if (i < labels.length - 1) const SizedBox(width: 12),
-            ],
-          ],
-        ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1184,7 +2247,7 @@ class _MasteryRow extends StatelessWidget {
             label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -1194,7 +2257,7 @@ class _MasteryRow extends StatelessWidget {
             child: LinearProgressIndicator(
               value: value,
               minHeight: 5,
-              color: WicaraColors.periwinkle,
+              color: WicaraColors.secondary,
               backgroundColor: WicaraColors.line,
             ),
           ),
@@ -1210,7 +2273,7 @@ class _MasteryRow extends StatelessWidget {
               maxLines: 1,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.muted,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
