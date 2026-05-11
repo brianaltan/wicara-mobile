@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wicara_mobile/src/app/wicara_app.dart';
+import 'package:wicara_mobile/src/core/theme/wicara_theme.dart';
 import 'package:wicara_mobile/src/features/auth/data/mock_auth_repository.dart';
 import 'package:wicara_mobile/src/features/onboarding/data/mock_onboarding_repository.dart';
+import 'package:wicara_mobile/src/features/pretest/presentation/widgets/fishbone_canvas.dart';
 import 'package:wicara_mobile/src/features/pretest/data/mock_pretest_repository.dart';
 
 void main() {
@@ -117,7 +119,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Help us understand your thinking'), findsOneWidget);
-    expect(find.text('Canvas'), findsOneWidget);
+    expect(find.text('Use canvas'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Use canvas'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use canvas'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Canvas workspace'), findsOneWidget);
+
+    final canvasPaint = find.descendant(
+      of: find.byType(FishboneCanvas),
+      matching: find.byType(CustomPaint),
+    );
+
+    await tester.drag(canvasPaint.last, const Offset(56, 38));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save work'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send to chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sent to chat'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close panel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Canvas work v1'), findsOneWidget);
+    expect(find.byType(CanvasWorkPreview), findsOneWidget);
 
     await tester.ensureVisible(find.byIcon(Icons.arrow_upward_rounded));
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
@@ -164,5 +196,108 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Profile'), findsWidgets);
+  });
+
+  testWidgets('whiteboard canvas exposes drawing controls', (tester) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: WicaraTheme.light(),
+        home: const Scaffold(
+          body: Center(child: SizedBox(width: 374, child: FishboneCanvas())),
+        ),
+      ),
+    );
+
+    expect(find.text('Canvas'), findsOneWidget);
+    expect(find.byTooltip('Pen mode'), findsOneWidget);
+    expect(find.byTooltip('Hand mode'), findsOneWidget);
+    expect(find.byTooltip('Eraser mode'), findsOneWidget);
+    expect(find.byTooltip('Shape helper'), findsOneWidget);
+    expect(find.byTooltip('Zoom in'), findsOneWidget);
+    expect(find.byTooltip('Zoom out'), findsOneWidget);
+    expect(find.byTooltip('Hide grid'), findsOneWidget);
+    expect(find.byTooltip('Clear canvas'), findsOneWidget);
+    expect(find.byTooltip('Pen size 6.0'), findsOneWidget);
+    expect(find.byTooltip('Pen color'), findsNWidgets(5));
+    expect(find.text('Save work'), findsOneWidget);
+    expect(find.text('Send to chat'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('125%'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Hide grid'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Show grid'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Shape helper'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Line shape'), findsOneWidget);
+    expect(find.byTooltip('Arrow shape'), findsOneWidget);
+    expect(find.byTooltip('Rectangle shape'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Rectangle shape'));
+    await tester.pumpAndSettle();
+    final canvasPaint = find.descendant(
+      of: find.byType(FishboneCanvas),
+      matching: find.byType(CustomPaint),
+    );
+
+    await tester.drag(canvasPaint.last, const Offset(64, 48));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Hand mode'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(canvasPaint.last, const Offset(24, 18));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Pen mode'));
+    await tester.tap(find.byTooltip('Pen size 6.0'));
+    await tester.tap(find.byTooltip('Pen color').at(2));
+    await tester.pumpAndSettle();
+
+    await tester.drag(canvasPaint.last, const Offset(42, 32));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Undo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Redo'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Eraser mode'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Unsaved'), findsOneWidget);
+
+    await tester.tap(find.text('Save work'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved, ready to send'), findsOneWidget);
+
+    await tester.tap(find.text('Send to chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sent to chat'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear canvas'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Clear canvas?'), findsOneWidget);
+
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Clear canvas?'), findsNothing);
   });
 }

@@ -33,9 +33,9 @@ class _PretestPageState extends State<PretestPage> {
   _PretestStage _stage = _PretestStage.question;
   String _selectedOptionId = 'B';
   int _confidence = 6;
-  bool _isCanvasExpanded = true;
   bool _isSubmitting = false;
   KnowledgeState? _knowledgeState;
+  final List<CanvasWorkSnapshot> _canvasSnapshots = [];
 
   static const _question = PretestQuestion(
     stepLabel: '2 / 12',
@@ -92,7 +92,7 @@ class _PretestPageState extends State<PretestPage> {
         PretestReasoning(
           answer: _answer,
           explanation: _reasoningController.text,
-          usedCanvas: _isCanvasExpanded,
+          usedCanvas: _canvasSnapshots.isNotEmpty,
         ),
       );
       if (!mounted) {
@@ -133,6 +133,10 @@ class _PretestPageState extends State<PretestPage> {
       );
   }
 
+  void _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) {
+    setState(() => _canvasSnapshots.add(snapshot));
+  }
+
   void _goBack() {
     if (_stage == _PretestStage.reasoning) {
       setState(() => _stage = _PretestStage.question);
@@ -158,21 +162,41 @@ class _PretestPageState extends State<PretestPage> {
       context: context,
       builder: (context) {
         return Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 28,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720, maxHeight: 620),
-              child: FishboneCanvas(
-                height: 540,
-                isLargePanel: true,
-                onOpenLargePanel: () => Navigator.of(context).pop(),
+          insetPadding: EdgeInsets.zero,
+          backgroundColor: WicaraColors.pageBackground,
+          surfaceTintColor: WicaraColors.pageBackground,
+          child: SizedBox.expand(
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final horizontalPadding = constraints.maxWidth > 640
+                      ? 28.0
+                      : 12.0;
+                  final verticalPadding = constraints.maxHeight > 700
+                      ? 24.0
+                      : 12.0;
+                  final canvasWidth = math.min(
+                    constraints.maxWidth - horizontalPadding * 2,
+                    860.0,
+                  );
+                  final canvasHeight = math.max(
+                    420.0,
+                    constraints.maxHeight - verticalPadding * 2,
+                  );
+
+                  return Center(
+                    child: SizedBox(
+                      width: canvasWidth,
+                      height: canvasHeight,
+                      child: FishboneCanvas(
+                        height: canvasHeight,
+                        isLargePanel: true,
+                        onOpenLargePanel: () => Navigator.of(context).pop(),
+                        onSendToChat: _handleCanvasSentToChat,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -225,13 +249,10 @@ class _PretestPageState extends State<PretestPage> {
         question: _question,
         selectedOption: _selectedOption,
         controller: _reasoningController,
-        isCanvasExpanded: _isCanvasExpanded,
+        canvasSnapshots: _canvasSnapshots,
         isSubmitting: _isSubmitting,
         onBack: _goBack,
-        onOpenLargeCanvas: _openLargeCanvas,
-        onToggleCanvas: () {
-          setState(() => _isCanvasExpanded = !_isCanvasExpanded);
-        },
+        onUseCanvas: _openLargeCanvas,
         onSubmit: _submitReasoning,
       ),
       _PretestStage.result => _ResultStage(
@@ -389,11 +410,10 @@ class _ReasoningStage extends StatelessWidget {
     required this.question,
     required this.selectedOption,
     required this.controller,
-    required this.isCanvasExpanded,
+    required this.canvasSnapshots,
     required this.isSubmitting,
     required this.onBack,
-    required this.onOpenLargeCanvas,
-    required this.onToggleCanvas,
+    required this.onUseCanvas,
     required this.onSubmit,
   });
 
@@ -401,102 +421,135 @@ class _ReasoningStage extends StatelessWidget {
   final PretestQuestion question;
   final PretestOption selectedOption;
   final TextEditingController controller;
-  final bool isCanvasExpanded;
+  final List<CanvasWorkSnapshot> canvasSnapshots;
   final bool isSubmitting;
   final VoidCallback onBack;
-  final VoidCallback onOpenLargeCanvas;
-  final VoidCallback onToggleCanvas;
+  final VoidCallback onUseCanvas;
   final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 14, 28, 20),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: constraints.maxHeight - 34),
+    return SizedBox(
+      height: constraints.maxHeight,
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(28, 14, 28, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _AssessmentHeader(
+                    leading: Icons.chevron_left_rounded,
+                    onLeadingPressed: onBack,
+                  ),
+                  const SizedBox(height: 48),
+                  Text(
+                    'Help us understand your thinking',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontSize: 22,
+                      height: 1.14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Review the question, your answer, then explain your reasoning.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: WicaraColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 27),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _ChatBubble(text: question.prompt, isUser: false),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _ChatBubble(
+                      text: '${selectedOption.label}. ${selectedOption.text}',
+                      isUser: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: _ChatBubble(
+                      text:
+                          'Why did you choose this answer? Explain your thinking.',
+                      isUser: false,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _CanvasPromptBubble(
+                      hasCanvasWork: canvasSnapshots.isNotEmpty,
+                      onUseCanvas: onUseCanvas,
+                    ),
+                  ),
+                  if (canvasSnapshots.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _CanvasAttachmentBubble(
+                        snapshot: canvasSnapshots.last,
+                        onOpenCanvas: onUseCanvas,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          _ReasoningFooter(
+            controller: controller,
+            isSubmitting: isSubmitting,
+            onSubmit: onSubmit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReasoningFooter extends StatelessWidget {
+  const _ReasoningFooter({
+    required this.controller,
+    required this.isSubmitting,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final bool isSubmitting;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: WicaraColors.pageBackground.withValues(alpha: 0.96),
+        border: const Border(top: BorderSide(color: WicaraColors.line)),
+        boxShadow: [
+          BoxShadow(
+            color: WicaraColors.shadowBlue.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 11, 28, 14),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _AssessmentHeader(
-              leading: Icons.chevron_left_rounded,
-              onLeadingPressed: onBack,
-            ),
-            const SizedBox(height: 48),
-            Text(
-              'Help us understand your thinking',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontSize: 22, height: 1.14),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Review the question, your answer, then explain your reasoning.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 27),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _ChatBubble(text: question.prompt, isUser: false),
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _ChatBubble(
-                text: '${selectedOption.label}. ${selectedOption.text}',
-                isUser: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: _ChatBubble(
-                text: 'Why did you choose this answer? Explain your thinking.',
-                isUser: false,
-              ),
-            ),
-            const SizedBox(height: 31),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: onToggleCanvas,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(
-                    color: WicaraColors.secondary,
-                    width: 1.4,
-                  ),
-                  foregroundColor: WicaraColors.secondary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: Icon(
-                  isCanvasExpanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.draw_outlined,
-                ),
-                label: Text(
-                  isCanvasExpanded ? 'Collapse Canvas' : 'Show Canvas',
-                ),
-              ),
-            ),
-            if (isCanvasExpanded) ...[
-              const SizedBox(height: 16),
-              FishboneCanvas(onOpenLargePanel: onOpenLargeCanvas),
-            ],
-            const SizedBox(height: 35),
             _ReasoningInput(
               controller: controller,
               isSubmitting: isSubmitting,
               onSubmit: onSubmit,
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 11),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -924,6 +977,196 @@ class _ChatBubble extends StatelessWidget {
           fontWeight: FontWeight.w600,
           height: 1.35,
         ),
+      ),
+    );
+  }
+}
+
+class _CanvasPromptBubble extends StatelessWidget {
+  const _CanvasPromptBubble({
+    required this.hasCanvasWork,
+    required this.onUseCanvas,
+  });
+
+  final bool hasCanvasWork;
+  final VoidCallback onUseCanvas;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          constraints: const BoxConstraints(maxWidth: 260),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: WicaraColors.line),
+            boxShadow: [
+              BoxShadow(
+                color: WicaraColors.shadowBlue.withValues(alpha: 0.16),
+                blurRadius: 15,
+                offset: const Offset(0, 9),
+              ),
+            ],
+          ),
+          child: Text(
+            hasCanvasWork
+                ? 'Canvas work is attached. Add another sketch if needed.'
+                : 'Need a whiteboard? Open canvas and send your sketch here.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _CanvasQuickActionButton(
+          label: hasCanvasWork ? 'Open canvas' : 'Use canvas',
+          onPressed: onUseCanvas,
+        ),
+      ],
+    );
+  }
+}
+
+class _CanvasQuickActionButton extends StatelessWidget {
+  const _CanvasQuickActionButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: WicaraColors.secondary,
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: [
+              BoxShadow(
+                color: WicaraColors.secondary.withValues(alpha: 0.22),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.draw_outlined, color: Colors.white, size: 19),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CanvasAttachmentBubble extends StatelessWidget {
+  const _CanvasAttachmentBubble({
+    required this.snapshot,
+    required this.onOpenCanvas,
+  });
+
+  final CanvasWorkSnapshot snapshot;
+  final VoidCallback onOpenCanvas;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 270),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: WicaraColors.secondarySoft,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: WicaraColors.secondaryLight),
+        boxShadow: [
+          BoxShadow(
+            color: WicaraColors.shadowBlue.withValues(alpha: 0.18),
+            blurRadius: 15,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.image_outlined,
+                color: WicaraColors.secondary,
+                size: 18,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Canvas work v${snapshot.version}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: AspectRatio(
+              aspectRatio: 4 / 3,
+              child: CanvasWorkPreview(snapshot: snapshot),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${snapshot.elementCount} marks${snapshot.hasAttachment ? ' • paper attached' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onOpenCanvas,
+                style: TextButton.styleFrom(
+                  foregroundColor: WicaraColors.secondary,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Edit'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
