@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../curriculum/domain/curriculum_models.dart';
+import '../../curriculum/domain/curriculum_repository.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
 
@@ -13,7 +15,9 @@ enum _HomeTab { home, queue, progress, profile }
 enum _QueueTab { recommended, tracks, gallery }
 
 class AppHomePage extends StatefulWidget {
-  const AppHomePage({super.key});
+  const AppHomePage({required this.curriculumRepository, super.key});
+
+  final CurriculumRepository curriculumRepository;
 
   @override
   State<AppHomePage> createState() => _AppHomePageState();
@@ -244,6 +248,7 @@ class _AppHomePageState extends State<AppHomePage> {
       ),
       _HomeTab.progress => _ProgressHub(
         constraints: constraints,
+        curriculumRepository: widget.curriculumRepository,
         onBack: _openHome,
         showLearningReport: _showLearningReport,
         showKnowledgeMap: _showKnowledgeMap,
@@ -3145,6 +3150,7 @@ class _ProfileSettingTile extends StatelessWidget {
 class _ProgressHub extends StatelessWidget {
   const _ProgressHub({
     required this.constraints,
+    required this.curriculumRepository,
     required this.onBack,
     required this.showLearningReport,
     required this.showKnowledgeMap,
@@ -3155,6 +3161,7 @@ class _ProgressHub extends StatelessWidget {
   });
 
   final BoxConstraints constraints;
+  final CurriculumRepository curriculumRepository;
   final VoidCallback onBack;
   final bool showLearningReport;
   final bool showKnowledgeMap;
@@ -3174,6 +3181,7 @@ class _ProgressHub extends StatelessWidget {
     if (showKnowledgeMap) {
       return _KnowledgeMapDetail(
         constraints: constraints,
+        curriculumRepository: curriculumRepository,
         onBack: onCloseKnowledgeMap,
       );
     }
@@ -3635,9 +3643,14 @@ class _WeeklyHoverTile extends StatelessWidget {
 }
 
 class _KnowledgeMapDetail extends StatefulWidget {
-  const _KnowledgeMapDetail({required this.constraints, required this.onBack});
+  const _KnowledgeMapDetail({
+    required this.constraints,
+    required this.curriculumRepository,
+    required this.onBack,
+  });
 
   final BoxConstraints constraints;
+  final CurriculumRepository curriculumRepository;
   final VoidCallback onBack;
 
   @override
@@ -3645,12 +3658,54 @@ class _KnowledgeMapDetail extends StatefulWidget {
 }
 
 class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
-  static const _subjects = [
+  static const _fallbackSubjects = [
     _SubjectMapItem('Math', WicaraColors.math, false),
     _SubjectMapItem('Physics', WicaraColors.physics, true),
     _SubjectMapItem('Chemistry', WicaraColors.chemistry, true),
     _SubjectMapItem('Biology', WicaraColors.biology, true),
   ];
+
+  _KnowledgeGraph _graph = _mathKnowledgeGraph;
+  List<_SubjectMapItem> _subjects = _fallbackSubjects;
+  bool _isLoadingCurriculum = true;
+  bool _isUsingFallbackGraph = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurriculum();
+  }
+
+  Future<void> _loadCurriculum() async {
+    try {
+      final results = await Future.wait([
+        widget.curriculumRepository.fetchSubjects(),
+        widget.curriculumRepository.fetchKnowledgeMap(subject: 'math'),
+      ]);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _subjects = _subjectTabsFromApi(results[0] as List<CurriculumSubject>);
+        _graph = _knowledgeGraphFromApi(results[1] as CurriculumKnowledgeMap);
+        _isUsingFallbackGraph = false;
+        _isLoadingCurriculum = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _graph = _mathKnowledgeGraph;
+        _subjects = _fallbackSubjects;
+        _isUsingFallbackGraph = true;
+        _isLoadingCurriculum = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3689,15 +3744,20 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    _mathKnowledgeGraph.title,
+                    _graph.title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: WicaraColors.text,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  _CurriculumSourceLabel(
+                    isLoading: _isLoadingCurriculum,
+                    isUsingFallback: _isUsingFallbackGraph,
+                  ),
                   const SizedBox(height: 16),
-                  const _KnowledgeGraphCanvas(graph: _mathKnowledgeGraph),
+                  _KnowledgeGraphCanvas(graph: _graph),
                 ],
               ),
             ),
@@ -3734,6 +3794,37 @@ class _SubjectMapTabs extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _CurriculumSourceLabel extends StatelessWidget {
+  const _CurriculumSourceLabel({
+    required this.isLoading,
+    required this.isUsingFallback,
+  });
+
+  final bool isLoading;
+  final bool isUsingFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isLoading
+        ? 'Loading curriculum from backend...'
+        : isUsingFallback
+        ? 'Static fallback graph'
+        : 'Live backend curriculum graph';
+    final color = isUsingFallback
+        ? WicaraColors.accentAmber
+        : WicaraColors.math;
+
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: color,
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
       ),
     );
   }
@@ -4253,6 +4344,80 @@ enum _NodeStatus {
 
   final String label;
   final Color color;
+}
+
+List<_SubjectMapItem> _subjectTabsFromApi(List<CurriculumSubject> subjects) {
+  final activeSubjects = subjects.where((subject) => subject.isActive).toList();
+  if (activeSubjects.isEmpty) {
+    return _KnowledgeMapDetailState._fallbackSubjects;
+  }
+
+  return [
+    for (final subject in activeSubjects)
+      _SubjectMapItem(
+        _subjectLabel(subject),
+        _subjectColor(subject.code),
+        subject.code != 'math',
+      ),
+  ];
+}
+
+_KnowledgeGraph _knowledgeGraphFromApi(CurriculumKnowledgeMap graph) {
+  if (graph.groups.isEmpty || graph.nodes.isEmpty) {
+    return _mathKnowledgeGraph;
+  }
+
+  return _KnowledgeGraph(
+    title: graph.title,
+    width: graph.width,
+    height: graph.height,
+    topDown: graph.topDown,
+    groups: [
+      for (final group in graph.groups)
+        _MapGroup(label: group.label, x: group.x),
+    ],
+    nodes: [
+      for (final node in graph.nodes)
+        _KnowledgeNode(
+          id: node.id,
+          label: node.label,
+          x: node.x,
+          y: node.y,
+          status: _nodeStatusFromApi(node.status),
+        ),
+    ],
+    edges: [for (final edge in graph.edges) _KnowledgeEdge(edge.from, edge.to)],
+  );
+}
+
+String _subjectLabel(CurriculumSubject subject) {
+  return switch (subject.code) {
+    'math' => 'Math',
+    'physics' => 'Physics',
+    'chemistry' => 'Chemistry',
+    'biology' => 'Biology',
+    _ => subject.name,
+  };
+}
+
+Color _subjectColor(String code) {
+  return switch (code) {
+    'math' => WicaraColors.math,
+    'physics' => WicaraColors.physics,
+    'chemistry' => WicaraColors.chemistry,
+    'biology' => WicaraColors.biology,
+    _ => WicaraColors.primary,
+  };
+}
+
+_NodeStatus _nodeStatusFromApi(CurriculumNodeStatus status) {
+  return switch (status) {
+    CurriculumNodeStatus.mastered => _NodeStatus.mastered,
+    CurriculumNodeStatus.active => _NodeStatus.active,
+    CurriculumNodeStatus.review => _NodeStatus.review,
+    CurriculumNodeStatus.ready => _NodeStatus.ready,
+    CurriculumNodeStatus.locked => _NodeStatus.locked,
+  };
 }
 
 const _mathKnowledgeGraph = _KnowledgeGraph(
