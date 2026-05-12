@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
-import '../../../core/widgets/language_chip.dart';
 import '../../../core/widgets/security_note.dart';
 import '../domain/auth_repository.dart';
 import 'widgets/role_pill.dart';
@@ -145,7 +144,7 @@ class _SignInPageState extends State<SignInPage> {
                                   height: 38,
                                 ),
                               ),
-                              const LanguageChip(),
+                              const SizedBox(width: 38, height: 38),
                             ],
                           ),
                           const SizedBox(height: 48),

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
-import '../../../core/widgets/language_chip.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
@@ -890,7 +889,7 @@ class _AssessmentHeader extends StatelessWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 38, height: 38),
         ),
-        const LanguageChip(),
+        const SizedBox(width: 38, height: 38),
       ],
     );
   }
@@ -1097,9 +1096,9 @@ class _CanvasAttachmentBubble extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 270),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: WicaraColors.secondarySoft,
+        color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: WicaraColors.secondaryLight),
+        border: Border.all(color: WicaraColors.primaryLight),
         boxShadow: [
           BoxShadow(
             color: WicaraColors.shadowBlue.withValues(alpha: 0.18),
@@ -1115,7 +1114,7 @@ class _CanvasAttachmentBubble extends StatelessWidget {
             children: [
               const Icon(
                 Icons.image_outlined,
-                color: WicaraColors.secondary,
+                color: WicaraColors.primaryDeep,
                 size: 18,
               ),
               const SizedBox(width: 7),
@@ -1157,7 +1156,7 @@ class _CanvasAttachmentBubble extends StatelessWidget {
               TextButton(
                 onPressed: onOpenCanvas,
                 style: TextButton.styleFrom(
-                  foregroundColor: WicaraColors.secondary,
+                  foregroundColor: WicaraColors.primaryDeep,
                   minimumSize: const Size(0, 32),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
