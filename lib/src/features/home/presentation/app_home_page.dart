@@ -298,7 +298,7 @@ class _HomeDashboard extends StatelessWidget {
                 titleFontSize: 23,
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 20),
             Text(
               'Ready to continue learning and build something great today?',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
