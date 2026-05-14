@@ -80,5 +80,13 @@ abstract class AuthRepository {
 
   Future<AuthSession> signInWithGoogle({required AuthRole role});
 
+  Future<AuthSession> signInWithGoogleIdToken({
+    required String idToken,
+    required String nonce,
+    required AuthRole role,
+  });
+
+  Stream<AuthSession> googleSignInSessions({required AuthRole role});
+
   Future<void> signOut();
 }

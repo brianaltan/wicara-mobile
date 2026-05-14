@@ -11,6 +11,7 @@ import '../application/auth_controller.dart';
 import '../domain/auth_repository.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import 'widgets/google_sign_in_action.dart';
 import 'widgets/role_pill.dart';
 import 'widgets/wicara_text_field.dart';
 
@@ -103,6 +104,37 @@ class _SignInPageState extends State<SignInPage> {
     setState(() => _isSubmitting = true);
     try {
       final session = await widget.authController.signInWithGoogle(role: _role);
+      widget.onboardingController.syncDisplayName(session.displayName);
+      if (!mounted) {
+        return;
+      }
+      _openNextRoute(session);
+    } on AuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  void _startGoogleWebSignIn() {
+    setState(() => _isSubmitting = true);
+  }
+
+  Future<void> _continueWithGoogleIdToken(
+    GoogleWebCredential credential,
+  ) async {
+    setState(() => _isSubmitting = true);
+    try {
+      final session = await widget.authController.signInWithGoogleIdToken(
+        idToken: credential.idToken,
+        nonce: credential.nonce,
+        role: _role,
+      );
       widget.onboardingController.syncDisplayName(session.displayName);
       if (!mounted) {
         return;
@@ -421,10 +453,14 @@ class _SignInPageState extends State<SignInPage> {
                                       label: copy.orContinueWithLabel,
                                     ),
                                     const SizedBox(height: 18),
-                                    _GoogleButton(
+                                    GoogleSignInAction(
                                       onPressed: _isSubmitting
                                           ? null
+                                          : kIsWeb
+                                          ? _startGoogleWebSignIn
                                           : _continueWithGoogle,
+                                      onWebCredential:
+                                          _continueWithGoogleIdToken,
                                     ),
                                     if (_showDevelopmentBypass) ...[
                                       const SizedBox(height: 14),
@@ -574,62 +610,6 @@ class _DividerText extends StatelessWidget {
         ),
         const Expanded(child: Divider(color: WicaraColors.line)),
       ],
-    );
-  }
-}
-
-class _GoogleButton extends StatelessWidget {
-  const _GoogleButton({required this.onPressed});
-
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 47,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: WicaraColors.line, width: 1.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(11),
-          ),
-          foregroundColor: WicaraColors.text,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _GoogleGlyph(),
-            const SizedBox(width: 14),
-            Text(
-              'Continue with Google',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: WicaraColors.ink,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GoogleGlyph extends StatelessWidget {
-  const _GoogleGlyph();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Text(
-      'G',
-      style: TextStyle(
-        color: Color(0xFF4285F4),
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        height: 1,
-      ),
     );
   }
 }

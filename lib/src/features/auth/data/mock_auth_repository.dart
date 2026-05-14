@@ -15,7 +15,7 @@ class MockAuthRepository implements AuthRepository {
 
     return AuthSession(
       userId: 'mock-learner-001',
-      displayName: 'Aisyah Putri',
+      displayName: request.emailOrPhone.trim(),
       role: request.role,
       onboardingCompleted: true,
       token: 'mock-session-token',
@@ -52,6 +52,20 @@ class MockAuthRepository implements AuthRepository {
       onboardingCompleted: true,
       token: 'mock-google-session-token',
     );
+  }
+
+  @override
+  Future<AuthSession> signInWithGoogleIdToken({
+    required String idToken,
+    required String nonce,
+    required AuthRole role,
+  }) {
+    return signInWithGoogle(role: role);
+  }
+
+  @override
+  Stream<AuthSession> googleSignInSessions({required AuthRole role}) {
+    return const Stream<AuthSession>.empty();
   }
 
   @override

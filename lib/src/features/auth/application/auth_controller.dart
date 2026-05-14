@@ -59,6 +59,20 @@ class AuthController extends ChangeNotifier {
     return session;
   }
 
+  Future<AuthSession> signInWithGoogleIdToken({
+    required String idToken,
+    required String nonce,
+    required AuthRole role,
+  }) async {
+    final session = await _authRepository.signInWithGoogleIdToken(
+      idToken: idToken,
+      nonce: nonce,
+      role: role,
+    );
+    await _setSession(session, lastProtectedRoute: AppRoutes.onboarding);
+    return session;
+  }
+
   Future<AuthSession> register(RegisterRequest request) async {
     final session = await _authRepository.register(request);
     await _setSession(session, lastProtectedRoute: AppRoutes.onboarding);
