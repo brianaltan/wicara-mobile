@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/wicara_colors.dart';
+import '../../../onboarding/domain/onboarding_copy.dart';
 
 class ConfidencePicker extends StatelessWidget {
   const ConfidencePicker({
     required this.value,
     required this.onChanged,
+    required this.copy,
     super.key,
   });
 
   final int value;
   final ValueChanged<int> onChanged;
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +22,7 @@ class ConfidencePicker extends StatelessWidget {
         const Divider(color: WicaraColors.line),
         const SizedBox(height: 17),
         Text(
-          'How confident are you?',
+          copy.confidenceQuestionLabel,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: WicaraColors.secondary,
             fontWeight: FontWeight.w500,
@@ -29,7 +32,7 @@ class ConfidencePicker extends StatelessWidget {
         Row(
           children: [
             Text(
-              'Low',
+              copy.lowLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.secondaryLight,
                 fontWeight: FontWeight.w400,
@@ -58,7 +61,7 @@ class ConfidencePicker extends StatelessWidget {
               ),
             ),
             Text(
-              'High',
+              copy.highLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.secondary,
                 fontWeight: FontWeight.w500,
