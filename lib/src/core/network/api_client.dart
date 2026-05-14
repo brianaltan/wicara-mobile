@@ -6,9 +6,11 @@ class ApiClient {
   ApiClient({required this.baseUrl, http.Client? httpClient})
     : _httpClient = httpClient ?? http.Client();
 
+  static const deployedBaseUrl = 'http://16.78.247.45';
+
   static const defaultBaseUrl = String.fromEnvironment(
     'WICARA_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: deployedBaseUrl,
   );
 
   final String baseUrl;
