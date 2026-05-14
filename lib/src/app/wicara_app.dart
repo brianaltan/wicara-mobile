@@ -15,6 +15,8 @@ import '../features/onboarding/domain/onboarding_repository.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/pretest/domain/pretest_repository.dart';
 import '../features/pretest/presentation/pretest_page.dart';
+import '../features/workspace/domain/workspace_models.dart';
+import '../features/workspace/domain/workspace_repository.dart';
 import '../features/workspace/presentation/workspace_modules_page.dart';
 import 'app_routes.dart';
 
@@ -26,6 +28,7 @@ class WicaraApp extends StatefulWidget {
     required this.learningGoalRepository,
     required this.onboardingRepository,
     required this.pretestRepository,
+    this.workspaceRepository,
     this.homeRepository,
     this.initialRoute = AppRoutes.landing,
     super.key,
@@ -38,6 +41,7 @@ class WicaraApp extends StatefulWidget {
   final HomeRepository? homeRepository;
   final OnboardingRepository onboardingRepository;
   final PretestRepository pretestRepository;
+  final WorkspaceRepository? workspaceRepository;
   final String initialRoute;
 
   @override
@@ -141,6 +145,12 @@ class _WicaraAppState extends State<WicaraApp> {
         ),
         AppRoutes.workspaceModules => WorkspaceModulesPage(
           onboardingController: widget.onboardingController,
+          workspaceRepository:
+              widget.workspaceRepository ??
+              const _UnavailableWorkspaceRepository(),
+          routeArguments: settings.arguments is WorkspaceRouteArguments
+              ? settings.arguments! as WorkspaceRouteArguments
+              : null,
         ),
         _ => LandingPage(onboardingController: widget.onboardingController),
       },
@@ -161,6 +171,42 @@ class _WicaraAppState extends State<WicaraApp> {
     }
 
     return routeName;
+  }
+}
+
+class _UnavailableWorkspaceRepository implements WorkspaceRepository {
+  const _UnavailableWorkspaceRepository();
+
+  @override
+  Future<WorkspaceSession> createOrResumeWorkspace({
+    required String trackId,
+    required String moduleId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceSession> fetchWorkspace(String workspaceId) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceAppendResult> appendEvent({
+    required String workspaceId,
+    required String eventType,
+    String textPayload = '',
+    Map<String, dynamic> metadata = const {},
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<void> updateModuleState({
+    required String trackId,
+    required String moduleId,
+    required String status,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
   }
 }
 

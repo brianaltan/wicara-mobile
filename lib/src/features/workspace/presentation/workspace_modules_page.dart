@@ -7,6 +7,8 @@ import '../../../core/theme/wicara_colors.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
+import '../domain/workspace_models.dart';
+import '../domain/workspace_repository.dart';
 
 enum _WorkspaceContentMode { choosing, explanation, videoLoading, videoReady }
 
@@ -15,10 +17,14 @@ enum _WorkspaceQuizState { unanswered, correct, review }
 class WorkspaceModulesPage extends StatefulWidget {
   const WorkspaceModulesPage({
     required this.onboardingController,
+    required this.workspaceRepository,
+    this.routeArguments,
     super.key,
   });
 
   final OnboardingController onboardingController;
+  final WorkspaceRepository workspaceRepository;
+  final WorkspaceRouteArguments? routeArguments;
 
   @override
   State<WorkspaceModulesPage> createState() => _WorkspaceModulesPageState();
@@ -33,7 +39,17 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   _WorkspaceContentMode _contentMode = _WorkspaceContentMode.choosing;
   _WorkspaceQuizState _quizState = _WorkspaceQuizState.unanswered;
   String? _selectedQuizAnswer;
+  WorkspaceSession? _workspace;
+  bool _isLoadingWorkspace = true;
+  bool _isAppendingEvent = false;
+  String? _workspaceError;
   Timer? _videoTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkspace();
+  }
 
   @override
   void dispose() {
@@ -41,6 +57,50 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadWorkspace() async {
+    final arguments = widget.routeArguments;
+    if (arguments == null || !arguments.isValid) {
+      setState(() {
+        _isLoadingWorkspace = false;
+        _workspaceError =
+            'Open a track module from Home or Queue before using workspace.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoadingWorkspace = true;
+      _workspaceError = null;
+    });
+    try {
+      final workspace = await widget.workspaceRepository
+          .createOrResumeWorkspace(
+            trackId: arguments.trackId,
+            moduleId: arguments.moduleId,
+          );
+      await widget.workspaceRepository.updateModuleState(
+        trackId: arguments.trackId,
+        moduleId: arguments.moduleId,
+        status: 'active',
+      );
+      if (!mounted) return;
+      setState(() {
+        _workspace = workspace;
+        _chatEntries
+          ..clear()
+          ..addAll(_entriesFromEvents(workspace.events));
+        _isLoadingWorkspace = false;
+      });
+      _scrollToBottom();
+    } on WorkspaceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingWorkspace = false;
+        _workspaceError = error.message;
+      });
+    }
   }
 
   void _chooseExplanation() {
@@ -65,44 +125,150 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     _videoTimer = Timer(const Duration(milliseconds: 1350), () {
       if (!mounted) return;
       setState(() => _contentMode = _WorkspaceContentMode.videoReady);
+      _appendWorkspaceEvent(
+        eventType: 'media_generated',
+        metadata: const {
+          'generation_mode': 'simulated_mobile_timer',
+          'duration_ms': 1350,
+        },
+      );
       _scrollToBottom();
     });
   }
 
-  void _answerQuiz(String answer) {
+  Future<void> _answerQuiz(String answer) async {
+    final isCorrect = answer == '3';
     setState(() {
       _selectedQuizAnswer = answer;
-      _quizState = answer == '3'
+      _quizState = isCorrect
           ? _WorkspaceQuizState.correct
           : _WorkspaceQuizState.review;
     });
+    await _appendWorkspaceEvent(
+      eventType: 'quiz_answer',
+      textPayload: answer,
+      metadata: {
+        'selected_answer': answer,
+        'correct_answer': '3',
+        'is_correct': isCorrect,
+        'confidence': isCorrect ? 8 : 4,
+      },
+    );
+    final arguments = widget.routeArguments;
+    if (isCorrect && arguments != null && arguments.isValid) {
+      await widget.workspaceRepository.updateModuleState(
+        trackId: arguments.trackId,
+        moduleId: arguments.moduleId,
+        status: 'completed',
+      );
+    }
     _scrollToBottom();
   }
 
-  void _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) {
+  Future<void> _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) async {
     setState(() {
       _canvasSnapshots.add(snapshot);
       _chatEntries.add(_WorkspaceChatEntry.canvas(snapshot));
     });
+    await _appendWorkspaceEvent(
+      eventType: 'canvas_sent',
+      metadata: {
+        'version': snapshot.version,
+        'element_count': snapshot.elementCount,
+        'has_attachment': snapshot.hasAttachment,
+        'show_grid': snapshot.showGrid,
+        'canvas_width': snapshot.canvasSize.width,
+        'canvas_height': snapshot.canvasSize.height,
+      },
+    );
     _scrollToBottom();
   }
 
-  void _sendMessage() {
+  Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
 
     _messageController.clear();
     setState(() {
       _chatEntries.add(_WorkspaceChatEntry.text(text: message, isUser: true));
-      _chatEntries.add(
-        const _WorkspaceChatEntry.text(
-          text:
-              'Nice. I will keep the canvas and chat in sync while we work through this module.',
-          isUser: false,
-        ),
-      );
     });
+    await _appendWorkspaceEvent(eventType: 'text', textPayload: message);
     _scrollToBottom();
+  }
+
+  Future<void> _appendWorkspaceEvent({
+    required String eventType,
+    String textPayload = '',
+    Map<String, dynamic> metadata = const {},
+  }) async {
+    final workspace = _workspace;
+    if (workspace == null) {
+      setState(() {
+        _workspaceError = 'Workspace is not ready yet.';
+      });
+      return;
+    }
+    setState(() {
+      _isAppendingEvent = true;
+      _workspaceError = null;
+    });
+    try {
+      final result = await widget.workspaceRepository.appendEvent(
+        workspaceId: workspace.id,
+        eventType: eventType,
+        textPayload: textPayload,
+        metadata: metadata,
+      );
+      if (!mounted) return;
+      setState(() {
+        _workspace = result.workspace;
+        if (result.tutorResponse != null &&
+            result.tutorResponse!.text.trim().isNotEmpty) {
+          _chatEntries.add(
+            _WorkspaceChatEntry.text(
+              text: result.tutorResponse!.text,
+              isUser: false,
+            ),
+          );
+        }
+        _isAppendingEvent = false;
+      });
+    } on WorkspaceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isAppendingEvent = false;
+        _workspaceError = error.message;
+        _chatEntries.add(
+          _WorkspaceChatEntry.text(
+            text: 'Workspace sync failed: ${error.message}',
+            isUser: false,
+          ),
+        );
+      });
+    }
+  }
+
+  List<_WorkspaceChatEntry> _entriesFromEvents(List<WorkspaceEvent> events) {
+    return events
+        .map((event) {
+          if (event.eventType == 'canvas_sent') {
+            final count = event.metadata['element_count'];
+            return _WorkspaceChatEntry.text(
+              text:
+                  'Canvas snapshot sent${count == null ? '' : ' ($count marks)'}',
+              isUser: true,
+            );
+          }
+          if (event.textPayload.trim().isEmpty) {
+            return null;
+          }
+          return _WorkspaceChatEntry.text(
+            text: event.textPayload,
+            isUser: event.isLearner,
+          );
+        })
+        .whereType<_WorkspaceChatEntry>()
+        .toList(growable: false);
   }
 
   void _openCanvas() {
@@ -212,7 +378,16 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                             ],
                           ),
                           const SizedBox(height: 14),
-                          _WorkspaceTopicCard(copy: copy),
+                          _WorkspaceTopicCard(
+                            copy: copy,
+                            title:
+                                _workspace?.currentTopic ??
+                                widget.routeArguments?.moduleTitle ??
+                                'Workspace module',
+                            description: _workspace == null
+                                ? 'Connect this module to backend workspace evidence before chatting, sketching, or answering.'
+                                : 'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
+                          ),
                         ],
                       ),
                     ),
@@ -232,6 +407,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 selectedQuizAnswer: _selectedQuizAnswer,
                                 chatEntries: _chatEntries,
                                 canvasSnapshots: _canvasSnapshots,
+                                isLoadingWorkspace: _isLoadingWorkspace,
+                                isAppendingEvent: _isAppendingEvent,
+                                workspaceError: _workspaceError,
                                 onChooseExplanation: _chooseExplanation,
                                 onGenerateVideo: _generateVideo,
                                 onAnswerQuiz: _answerQuiz,
@@ -278,6 +456,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.selectedQuizAnswer,
     required this.chatEntries,
     required this.canvasSnapshots,
+    required this.isLoadingWorkspace,
+    required this.isAppendingEvent,
+    required this.workspaceError,
     required this.onChooseExplanation,
     required this.onGenerateVideo,
     required this.onAnswerQuiz,
@@ -289,6 +470,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final String? selectedQuizAnswer;
   final List<_WorkspaceChatEntry> chatEntries;
   final List<CanvasWorkSnapshot> canvasSnapshots;
+  final bool isLoadingWorkspace;
+  final bool isAppendingEvent;
+  final String? workspaceError;
   final VoidCallback onChooseExplanation;
   final VoidCallback onGenerateVideo;
   final ValueChanged<String> onAnswerQuiz;
@@ -319,6 +503,26 @@ class _WorkspaceChatPanel extends StatelessWidget {
               ],
             ),
           ),
+          if (isLoadingWorkspace) ...[
+            const SizedBox(height: 10),
+            const _WorkspaceSyncNotice(
+              icon: Icons.cloud_sync_outlined,
+              text: 'Connecting to backend workspace...',
+            ),
+          ] else if (workspaceError != null) ...[
+            const SizedBox(height: 10),
+            _WorkspaceSyncNotice(
+              icon: Icons.error_outline_rounded,
+              text: workspaceError!,
+              isError: true,
+            ),
+          ] else if (isAppendingEvent) ...[
+            const SizedBox(height: 10),
+            const _WorkspaceSyncNotice(
+              icon: Icons.sync_rounded,
+              text: 'Saving workspace evidence...',
+            ),
+          ],
           const SizedBox(height: 14),
           _WorkspaceChoiceGrid(
             contentMode: contentMode,
@@ -464,6 +668,47 @@ class _WorkspaceChoiceGrid extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _WorkspaceSyncNotice extends StatelessWidget {
+  const _WorkspaceSyncNotice({
+    required this.icon,
+    required this.text,
+    this.isError = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isError ? WicaraColors.accentCoral : WicaraColors.secondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isError ? const Color(0xFFFFF2EF) : WicaraColors.secondarySoft,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -637,9 +882,15 @@ class _AgentAvatar extends StatelessWidget {
 }
 
 class _WorkspaceTopicCard extends StatelessWidget {
-  const _WorkspaceTopicCard({required this.copy});
+  const _WorkspaceTopicCard({
+    required this.copy,
+    required this.title,
+    required this.description,
+  });
 
   final OnboardingCopy copy;
+  final String title;
+  final String description;
 
   @override
   Widget build(BuildContext context) {
@@ -676,7 +927,7 @@ class _WorkspaceTopicCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Limits from graphs',
+            title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: WicaraColors.ink,
               fontWeight: FontWeight.w800,
@@ -684,7 +935,7 @@ class _WorkspaceTopicCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Focus on reading left-hand and right-hand behavior, then connect what the graph approaches to the limit value.',
+            description,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,

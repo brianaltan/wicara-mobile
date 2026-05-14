@@ -1,4 +1,5 @@
 import '../../pretest/domain/pretest_models.dart';
+import '../../workspace/domain/workspace_models.dart';
 
 class HomeSnapshot {
   const HomeSnapshot({
@@ -13,6 +14,8 @@ class HomeSnapshot {
     required this.selectedSubjects,
     required this.availableSubjects,
     required this.onboardingCompleted,
+    this.nextQueueItem,
+    this.activeTracks = const [],
   });
 
   final String displayName;
@@ -26,6 +29,8 @@ class HomeSnapshot {
   final List<String> selectedSubjects;
   final List<String> availableSubjects;
   final bool onboardingCompleted;
+  final LearningQueueItem? nextQueueItem;
+  final List<LearningTrackSummary> activeTracks;
 
   String get firstName {
     final trimmed = displayName.trim();
@@ -61,6 +66,86 @@ class HomeSnapshot {
     ].where((part) => part.trim().isNotEmpty).toList();
     return parts.isEmpty ? 'Not set' : parts.join(' - ');
   }
+
+  WorkspaceRouteArguments? get firstWorkspaceTarget {
+    final queueItem = nextQueueItem;
+    if (queueItem != null && queueItem.hasWorkspaceTarget) {
+      return WorkspaceRouteArguments(
+        trackId: queueItem.trackId!,
+        moduleId: queueItem.moduleId!,
+        moduleTitle: queueItem.title,
+      );
+    }
+
+    for (final track in activeTracks) {
+      for (final module in track.modules) {
+        if (module.status == 'ready' || module.status == 'active') {
+          return WorkspaceRouteArguments(
+            trackId: track.id,
+            moduleId: module.id,
+            moduleTitle: module.title,
+          );
+        }
+      }
+    }
+    return null;
+  }
+}
+
+class LearningQueueItem {
+  const LearningQueueItem({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    this.trackId,
+    this.moduleId,
+  });
+
+  final String id;
+  final String? trackId;
+  final String? moduleId;
+  final String title;
+  final String subtitle;
+  final String status;
+
+  bool get hasWorkspaceTarget =>
+      trackId != null &&
+      trackId!.isNotEmpty &&
+      moduleId != null &&
+      moduleId!.isNotEmpty;
+}
+
+class LearningTrackSummary {
+  const LearningTrackSummary({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.progressPercent,
+    required this.modules,
+  });
+
+  final String id;
+  final String title;
+  final String status;
+  final int progressPercent;
+  final List<LearningTrackModuleSummary> modules;
+}
+
+class LearningTrackModuleSummary {
+  const LearningTrackModuleSummary({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.status,
+    required this.estimatedMinutes,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String status;
+  final int estimatedMinutes;
 }
 
 class DailyEvaluationSession {
