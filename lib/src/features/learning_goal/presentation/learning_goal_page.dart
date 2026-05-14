@@ -6,9 +6,13 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../onboarding/application/onboarding_controller.dart';
+import '../../onboarding/domain/onboarding_copy.dart';
 
 class LearningGoalPage extends StatefulWidget {
-  const LearningGoalPage({super.key});
+  const LearningGoalPage({required this.onboardingController, super.key});
+
+  final OnboardingController onboardingController;
 
   @override
   State<LearningGoalPage> createState() => _LearningGoalPageState();
@@ -72,24 +76,31 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final pageWidth = math.min(constraints.maxWidth, 430.0);
+    return AnimatedBuilder(
+      animation: widget.onboardingController,
+      builder: (context, _) {
+        final copy = OnboardingCopy.forLanguage(
+          widget.onboardingController.profile.preferredLanguage,
+        );
 
-            return Center(
-              child: SizedBox(
-                width: pageWidth,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 48,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+        return Scaffold(
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final pageWidth = math.min(constraints.maxWidth, 430.0);
+
+                return Center(
+                  child: SizedBox(
+                    width: pageWidth,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight - 48,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
                         Row(
                           children: [
                             IconButton(
@@ -132,7 +143,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                   ),
                                   const SizedBox(height: 14),
                                   Text(
-                                    'What would you like to learn?',
+                                    copy.learningGoalTitle,
                                     textAlign: TextAlign.center,
                                     style: Theme.of(context)
                                         .textTheme
@@ -141,7 +152,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                   ),
                                   const SizedBox(height: 9),
                                   Text(
-                                    'Tell WICARA the topic. We will generate a short adaptive pretest before building your track.',
+                                    copy.learningGoalSubtitle,
                                     textAlign: TextAlign.center,
                                     style: Theme.of(context)
                                         .textTheme
@@ -182,7 +193,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                           CrossAxisAlignment.stretch,
                                       children: [
                                         Text(
-                                          'Learning topic',
+                                          copy.learningTopicLabel,
                                           textAlign: TextAlign.center,
                                           style: Theme.of(context)
                                               .textTheme
@@ -195,6 +206,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                         const SizedBox(height: 13),
                                         _LearningGoalField(
                                           controller: _controller,
+                                          copy: copy,
                                         ),
                                         const SizedBox(height: 18),
                                         AnimatedSwitcher(
@@ -202,12 +214,16 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                             milliseconds: 180,
                                           ),
                                           child: _isComplete
-                                              ? const _GeneratedPretestNotice()
-                                              : const _PretestPreviewNotice(),
+                                              ? _GeneratedPretestNotice(
+                                                  copy: copy,
+                                                )
+                                              : _PretestPreviewNotice(
+                                                  copy: copy,
+                                                ),
                                         ),
                                         const SizedBox(height: 22),
                                         GradientButton(
-                                          label: 'Generate Pretest',
+                                          label: copy.generatePretestLabel,
                                           onPressed:
                                               _controller.text.trim().isEmpty
                                               ? null
@@ -222,23 +238,26 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                             ),
                           ),
                         ),
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 class _LearningGoalField extends StatefulWidget {
-  const _LearningGoalField({required this.controller});
+  const _LearningGoalField({required this.controller, required this.copy});
 
   final TextEditingController controller;
+  final OnboardingCopy copy;
 
   @override
   State<_LearningGoalField> createState() => _LearningGoalFieldState();
@@ -260,7 +279,7 @@ class _LearningGoalFieldState extends State<_LearningGoalField> {
         maxLines: 4,
         textAlign: TextAlign.center,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(hintText: 'Type a topic'),
+        decoration: InputDecoration(hintText: widget.copy.typeATopicHint),
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: WicaraColors.text,
           fontSize: _topicFontSize(widget.controller.text),
@@ -283,28 +302,32 @@ class _LearningGoalFieldState extends State<_LearningGoalField> {
 }
 
 class _PretestPreviewNotice extends StatelessWidget {
-  const _PretestPreviewNotice();
+  const _PretestPreviewNotice({required this.copy});
+
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
     return _NoticeBox(
       icon: Icons.psychology_alt_outlined,
-      title: 'Adaptive pretest ready next',
-      description: 'A few questions will calibrate your starting point.',
+      title: copy.adaptivePretestReadyNextLabel,
+      description: copy.adaptivePretestReadyDescription,
       color: WicaraColors.primary,
     );
   }
 }
 
 class _GeneratedPretestNotice extends StatelessWidget {
-  const _GeneratedPretestNotice();
+  const _GeneratedPretestNotice({required this.copy});
+
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
     return _NoticeBox(
       icon: Icons.check_circle_rounded,
-      title: 'Pretest generated complete!',
-      description: 'Opening your adaptive pretest now.',
+      title: copy.pretestGeneratedCompleteLabel,
+      description: copy.openingAdaptivePretestLabel,
       color: WicaraColors.accentMint,
     );
   }
