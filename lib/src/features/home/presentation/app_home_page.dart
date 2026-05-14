@@ -6114,6 +6114,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
   bool _isLoadingCurriculum = true;
   bool _isLoadingMoreSections = false;
   bool _isUsingFallbackGraph = true;
+  int _curriculumRequestSerial = 0;
 
   @override
   void initState() {
@@ -6122,6 +6123,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
   }
 
   Future<void> _loadCurriculum() async {
+    final requestSerial = ++_curriculumRequestSerial;
     try {
       final subjects = await widget.curriculumRepository.fetchSubjects();
       final tabs = _subjectTabsFromApi(subjects);
@@ -6130,14 +6132,17 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         subject: selectedSubjectCode,
       );
 
-      if (!mounted) {
+      if (!mounted || requestSerial != _curriculumRequestSerial) {
         return;
       }
 
       setState(() {
         _subjects = tabs;
         _selectedSubjectCode = selectedSubjectCode;
-        _graph = _knowledgeGraphFromApi(graph);
+        _graph = _knowledgeGraphFromApi(
+          graph,
+          focusSubjectCode: selectedSubjectCode,
+        );
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
         _isUsingFallbackGraph = false;
@@ -6145,7 +6150,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         _isLoadingMoreSections = false;
       });
     } catch (_) {
-      if (!mounted) {
+      if (!mounted || requestSerial != _curriculumRequestSerial) {
         return;
       }
 
@@ -6167,6 +6172,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
       return;
     }
 
+    final requestSerial = ++_curriculumRequestSerial;
     setState(() {
       _selectedSubjectCode = subject.code;
       _isLoadingCurriculum = true;
@@ -6180,12 +6186,12 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         subject: subject.code,
       );
 
-      if (!mounted) {
+      if (!mounted || requestSerial != _curriculumRequestSerial) {
         return;
       }
 
       setState(() {
-        _graph = _knowledgeGraphFromApi(graph);
+        _graph = _knowledgeGraphFromApi(graph, focusSubjectCode: subject.code);
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
         _isUsingFallbackGraph = false;
@@ -6193,7 +6199,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         _isLoadingMoreSections = false;
       });
     } catch (_) {
-      if (!mounted) {
+      if (!mounted || requestSerial != _curriculumRequestSerial) {
         return;
       }
 
@@ -6247,6 +6253,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
 
   void _selectNode(_KnowledgeNode node) {
     setState(() => _selectedNode = node);
+    final copy = _HomeCopyScope.of(context);
     final fallback = _ConceptDetailData.fromGraph(_graph, node);
 
     showModalBottomSheet<void>(
@@ -6255,10 +6262,13 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return _ConceptDetailBottomSheet(
-          detailFuture: _loadConceptDetail(node, fallback),
-          fallback: fallback,
-          onClose: () => Navigator.of(sheetContext).pop(),
+        return _HomeCopyScope(
+          copy: copy,
+          child: _ConceptDetailBottomSheet(
+            detailFuture: _loadConceptDetail(node, fallback),
+            fallback: fallback,
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
         );
       },
     ).whenComplete(() {
@@ -6374,36 +6384,84 @@ class _SubjectMapTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 8.0;
-        final buttonWidth = (constraints.maxWidth - spacing) / 2;
-
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: WicaraColors.speechBlue,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: WicaraColors.primaryLight),
-          ),
-          child: Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            alignment: WrapAlignment.center,
-            children: [
-              for (final subject in subjects)
-                SizedBox(
-                  width: buttonWidth,
-                  child: _SubjectMapTabButton(
-                    item: subject,
-                    isSelected: subject.code == selectedCode,
-                    onSelected: () => onSelected(subject),
-                  ),
-                ),
+    return SizedBox(
+      height: 36,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var index = 0; index < subjects.length; index++) ...[
+              _SubjectMapTabButton(
+                item: subjects[index],
+                isSelected: subjects[index].code == selectedCode,
+                onSelected: () => onSelected(subjects[index]),
+              ),
+              if (index != subjects.length - 1) const SizedBox(width: 8),
             ],
-          ),
-        );
-      },
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubjectMapTabButton extends StatelessWidget {
+  const _SubjectMapTabButton({
+    required this.item,
+    required this.isSelected,
+    required this.onSelected,
+  });
+
+  final _SubjectMapItem item;
+  final bool isSelected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = isSelected
+        ? item.color.withValues(alpha: 0.62)
+        : WicaraColors.primaryLight;
+    final textColor = item.isLocked
+        ? WicaraColors.softMuted
+        : isSelected
+        ? item.color
+        : WicaraColors.muted;
+
+    return InkWell(
+      onTap: item.isLocked ? null : onSelected,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? item.color.withValues(alpha: 0.1) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (item.isLocked) ...[
+              Icon(Icons.lock_rounded, size: 12, color: textColor),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -6502,78 +6560,6 @@ class _SubjectMapItem {
   final String label;
   final Color color;
   final bool isLocked;
-}
-
-class _SubjectMapTabButton extends StatelessWidget {
-  const _SubjectMapTabButton({
-    required this.item,
-    required this.isSelected,
-    required this.onSelected,
-  });
-
-  final _SubjectMapItem item;
-  final bool isSelected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: item.isLocked ? null : onSelected,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 38,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? item.color.withValues(alpha: 0.55)
-                : Colors.transparent,
-          ),
-          boxShadow: [
-            if (isSelected)
-              BoxShadow(
-                color: item.color.withValues(alpha: 0.16),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-          ],
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.isLocked) ...[
-                Icon(
-                  Icons.lock_rounded,
-                  size: 12,
-                  color: isSelected ? item.color : WicaraColors.softMuted,
-                ),
-                const SizedBox(width: 3),
-              ],
-              Text(
-                item.label,
-                maxLines: 1,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: item.isLocked
-                      ? WicaraColors.softMuted
-                      : isSelected
-                      ? item.color
-                      : WicaraColors.muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _KnowledgeMapPreview extends StatelessWidget {
@@ -7957,6 +7943,7 @@ class _KnowledgeGraph {
     required this.nodes,
     required this.edges,
     this.topDown = false,
+    this.focusSubjectCode,
   });
 
   final String title;
@@ -7966,9 +7953,10 @@ class _KnowledgeGraph {
   final List<_KnowledgeNode> nodes;
   final List<_KnowledgeEdge> edges;
   final bool topDown;
+  final String? focusSubjectCode;
 
   List<_KnowledgeSection> get sections {
-    return [
+    final orderedSections = [
       for (var index = 0; index < groups.length; index++)
         _KnowledgeSection(
           label: groups[index].label,
@@ -7977,6 +7965,11 @@ class _KnowledgeGraph {
               .toList(),
         ),
     ];
+    final subjectCode = focusSubjectCode;
+    if (subjectCode == null || subjectCode.isEmpty) {
+      return orderedSections;
+    }
+    return _focusOrderedSections(orderedSections, subjectCode);
   }
 
   int _groupIndexFor(double x) {
@@ -8035,6 +8028,83 @@ class _KnowledgeSection {
 
   final String label;
   final List<_KnowledgeNode> nodes;
+}
+
+class _RankedKnowledgeSection {
+  const _RankedKnowledgeSection({
+    required this.section,
+    required this.rank,
+    required this.index,
+  });
+
+  final _KnowledgeSection section;
+  final int rank;
+  final int index;
+}
+
+List<_KnowledgeSection> _focusOrderedSections(
+  List<_KnowledgeSection> sections,
+  String subjectCode,
+) {
+  final rankedSections = <_RankedKnowledgeSection>[
+    for (var index = 0; index < sections.length; index++)
+      _RankedKnowledgeSection(
+        section: sections[index],
+        rank: _focusSectionRank(sections[index].label, subjectCode),
+        index: index,
+      ),
+  ];
+  rankedSections.sort((left, right) {
+    final rankCompare = left.rank.compareTo(right.rank);
+    if (rankCompare != 0) {
+      return rankCompare;
+    }
+    return left.index.compareTo(right.index);
+  });
+  return [for (final item in rankedSections) item.section];
+}
+
+int _focusSectionRank(String label, String subjectCode) {
+  final normalizedSubject = subjectCode.trim().toLowerCase();
+  final normalizedLabel = label.trim().toLowerCase();
+  final isIpas = normalizedLabel.startsWith('ipas');
+  final isIpa = normalizedLabel.startsWith('ipa terpadu');
+
+  return switch (normalizedSubject) {
+    'matematika' || 'math' => normalizedLabel.contains(' - ') ? 1 : 0,
+    'ipas' => isIpas || !normalizedLabel.contains(' - ') ? 0 : 1,
+    'ipa' =>
+      isIpa
+          ? 0
+          : isIpas
+          ? 1
+          : 2,
+    'fisika' =>
+      normalizedLabel.startsWith('fisika')
+          ? 0
+          : isIpa
+          ? 1
+          : isIpas
+          ? 2
+          : 3,
+    'kimia' =>
+      normalizedLabel.startsWith('kimia')
+          ? 0
+          : isIpa
+          ? 1
+          : isIpas
+          ? 2
+          : 3,
+    'biologi' =>
+      normalizedLabel.startsWith('biologi')
+          ? 0
+          : isIpa
+          ? 1
+          : isIpas
+          ? 2
+          : 3,
+    _ => 0,
+  };
 }
 
 class _MapGroup {
@@ -8130,7 +8200,10 @@ String _defaultSubjectCode(List<_SubjectMapItem> subjects) {
   return subjects.firstWhere((subject) => !subject.isLocked).code;
 }
 
-_KnowledgeGraph _knowledgeGraphFromApi(CurriculumKnowledgeMap graph) {
+_KnowledgeGraph _knowledgeGraphFromApi(
+  CurriculumKnowledgeMap graph, {
+  String? focusSubjectCode,
+}) {
   if (graph.groups.isEmpty || graph.nodes.isEmpty) {
     return _mathKnowledgeGraph;
   }
@@ -8158,6 +8231,7 @@ _KnowledgeGraph _knowledgeGraphFromApi(CurriculumKnowledgeMap graph) {
         ),
     ],
     edges: [for (final edge in graph.edges) _KnowledgeEdge(edge.from, edge.to)],
+    focusSubjectCode: focusSubjectCode,
   );
 }
 
