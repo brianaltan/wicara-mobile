@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../onboarding/application/onboarding_controller.dart';
+import '../../onboarding/domain/onboarding_copy.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
@@ -15,9 +17,14 @@ import 'widgets/knowledge_state_card.dart';
 enum _PretestStage { question, reasoning, result }
 
 class PretestPage extends StatefulWidget {
-  const PretestPage({required this.pretestRepository, super.key});
+  const PretestPage({
+    required this.pretestRepository,
+    required this.onboardingController,
+    super.key,
+  });
 
   final PretestRepository pretestRepository;
+  final OnboardingController onboardingController;
 
   @override
   State<PretestPage> createState() => _PretestPageState();
@@ -231,6 +238,9 @@ class _PretestPageState extends State<PretestPage> {
 
   @override
   Widget build(BuildContext context) {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
@@ -244,7 +254,7 @@ class _PretestPageState extends State<PretestPage> {
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(
                     key: ValueKey(_stage),
-                    child: _stageView(constraints),
+                    child: _stageView(constraints, copy),
                   ),
                 ),
               ),
@@ -255,7 +265,7 @@ class _PretestPageState extends State<PretestPage> {
     );
   }
 
-  Widget _stageView(BoxConstraints constraints) {
+  Widget _stageView(BoxConstraints constraints, OnboardingCopy copy) {
     if (_isLoadingQuestion) {
       return _PretestStateView(
         constraints: constraints,
@@ -277,6 +287,7 @@ class _PretestPageState extends State<PretestPage> {
     return switch (_stage) {
       _PretestStage.question => _QuestionStage(
         constraints: constraints,
+        copy: copy,
         question: question,
         selectedOptionId: _selectedOptionId,
         confidence: _confidence,
@@ -299,6 +310,7 @@ class _PretestPageState extends State<PretestPage> {
       ),
       _PretestStage.result => _ResultStage(
         constraints: constraints,
+        copy: copy,
         result: _knowledgeState,
         onContinue: _goHome,
       ),
@@ -372,6 +384,7 @@ class _PretestStateView extends StatelessWidget {
 class _QuestionStage extends StatelessWidget {
   const _QuestionStage({
     required this.constraints,
+    required this.copy,
     required this.question,
     required this.selectedOptionId,
     required this.confidence,
@@ -383,6 +396,7 @@ class _QuestionStage extends StatelessWidget {
   });
 
   final BoxConstraints constraints;
+  final OnboardingCopy copy;
   final PretestQuestion question;
   final String selectedOptionId;
   final int confidence;
@@ -497,6 +511,7 @@ class _QuestionStage extends StatelessWidget {
                   ConfidencePicker(
                     value: confidence,
                     onChanged: onConfidenceChanged,
+                    copy: copy,
                   ),
                   const SizedBox(height: 20),
                   GradientButton(
@@ -694,11 +709,13 @@ class _ReasoningFooter extends StatelessWidget {
 class _ResultStage extends StatelessWidget {
   const _ResultStage({
     required this.constraints,
+    required this.copy,
     required this.result,
     required this.onContinue,
   });
 
   final BoxConstraints constraints;
+  final OnboardingCopy copy;
   final KnowledgeState? result;
   final VoidCallback onContinue;
 
@@ -706,16 +723,18 @@ class _ResultStage extends StatelessWidget {
   Widget build(BuildContext context) {
     final state =
         result ??
-        const KnowledgeState(
+        KnowledgeState(
           skill: 'Missing prerequisite: causal drivers',
           gapLabel: 'GAP',
           message:
               'The gap looks like choosing a tool before naming the defect driver, evidence, and likely cause chain.',
-          pathTitle: 'Personalized path generated',
+          pathTitle: copy.personalizedPathGeneratedLabel,
           pathMeta: '12-15 min   •   3 skills',
-          pathDescription:
-              'Start with prerequisites, then practice root-cause questions.',
+          pathDescription: copy.personalizedPathDescription,
         );
+    final localizedPathMeta = copy.isIndonesian
+        ? state.pathMeta.replaceAll('skills', 'skill')
+        : state.pathMeta;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 14, 28, 22),
@@ -726,24 +745,24 @@ class _ResultStage extends StatelessWidget {
           children: [
             const SizedBox(height: 78),
             Text(
-              'Your knowledge state',
+              copy.yourKnowledgeStateLabel,
               style: Theme.of(
                 context,
               ).textTheme.headlineMedium?.copyWith(fontSize: 25, height: 1.12),
             ),
             const SizedBox(height: 10),
             Text(
-              'Based on your responses.',
+              copy.basedOnYourResponsesLabel,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 38),
-            _KnowledgeGapDiagnosisCard(gapLabel: state.gapLabel),
+            _KnowledgeGapDiagnosisCard(gapLabel: state.gapLabel, copy: copy),
             const SizedBox(height: 37),
             Text(
-              "What's next",
+              copy.whatsNextLabel,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -751,8 +770,9 @@ class _ResultStage extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             KnowledgeStateCard(
-              title: state.pathTitle,
-              message: '${state.pathMeta}\n${state.pathDescription}',
+              title: copy.personalizedPathGeneratedLabel,
+              message:
+                  '$localizedPathMeta\n${copy.isIndonesian ? copy.personalizedPathDescription : state.pathDescription}',
               badge: '',
               icon: Icons.center_focus_strong_outlined,
               iconColor: WicaraColors.secondaryDeep,
@@ -761,10 +781,13 @@ class _ResultStage extends StatelessWidget {
               showChevron: false,
             ),
             const SizedBox(height: 32),
-            GradientButton(label: 'Continue to my path', onPressed: onContinue),
+            GradientButton(
+              label: copy.continueToMyPathLabel,
+              onPressed: onContinue,
+            ),
             const SizedBox(height: 20),
             Text(
-              'You can retake the pretest anytime.',
+              copy.retakePretestAnytimeLabel,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.softMuted,
@@ -779,9 +802,13 @@ class _ResultStage extends StatelessWidget {
 }
 
 class _KnowledgeGapDiagnosisCard extends StatelessWidget {
-  const _KnowledgeGapDiagnosisCard({required this.gapLabel});
+  const _KnowledgeGapDiagnosisCard({
+    required this.gapLabel,
+    required this.copy,
+  });
 
   final String gapLabel;
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -850,7 +877,7 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Missing prerequisite gaps',
+                        copy.missingPrerequisiteGapsLabel,
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontSize: 16,

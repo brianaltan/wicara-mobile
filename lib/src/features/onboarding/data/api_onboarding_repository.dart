@@ -36,6 +36,7 @@ class ApiOnboardingRepository implements OnboardingRepository {
         },
       );
       await _sessionStore.markOnboardingCompleted(
+        lastProtectedRoute: '/home',
         displayName: profile.fullName,
       );
     } on ApiClientException catch (error) {

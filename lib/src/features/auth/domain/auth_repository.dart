@@ -79,4 +79,6 @@ abstract class AuthRepository {
   Future<AuthSession> register(RegisterRequest request);
 
   Future<AuthSession> signInWithGoogle({required AuthRole role});
+
+  Future<void> signOut();
 }

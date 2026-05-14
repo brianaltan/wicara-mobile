@@ -11,6 +11,7 @@ class ApiAuthRepository implements AuthRepository {
     required AuthSessionStore sessionStore,
     required String googleWebClientId,
   }) : _apiClient = apiClient,
+       _googleWebClientId = googleWebClientId.trim(),
        _sessionStore = sessionStore,
        _googleSignIn = GoogleSignIn(
          scopes: const ['email', 'profile'],
@@ -21,6 +22,7 @@ class ApiAuthRepository implements AuthRepository {
        );
 
   final ApiClient _apiClient;
+  final String _googleWebClientId;
   final AuthSessionStore _sessionStore;
   final GoogleSignIn _googleSignIn;
 
@@ -36,7 +38,12 @@ class ApiAuthRepository implements AuthRepository {
         },
       );
       final session = _toAuthSession(json, request.role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on ApiClientException catch (error) {
       throw AuthException(error.message);
@@ -56,7 +63,12 @@ class ApiAuthRepository implements AuthRepository {
         },
       );
       final session = _toAuthSession(json, request.role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on ApiClientException catch (error) {
       throw AuthException(error.message);
@@ -66,6 +78,14 @@ class ApiAuthRepository implements AuthRepository {
   @override
   Future<AuthSession> signInWithGoogle({required AuthRole role}) async {
     try {
+      if (kIsWeb && _googleWebClientId.isEmpty) {
+        throw const AuthException(
+          'Google web client ID is missing. Set WICARA_GOOGLE_WEB_CLIENT_ID '
+          'with --dart-define or add a '
+          '<meta name="google-signin-client_id" content="..."> tag in web/index.html.',
+        );
+      }
+
       final account = await _googleSignIn.signIn();
       if (account == null) {
         throw const AuthException('Google sign-in was cancelled.');
@@ -87,7 +107,12 @@ class ApiAuthRepository implements AuthRepository {
         },
       );
       final session = _toAuthSession(json, role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on AuthException {
       rethrow;
@@ -98,13 +123,24 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<void> signOut() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // We still clear the local app session even if Google sign-out fails.
+    }
+  }
+
   AuthSession _toAuthSession(Map<String, dynamic> json, AuthRole role) {
+    final token = (json['token'] ?? '').toString().trim();
+
     return AuthSession(
       userId: (json['user_id'] ?? '').toString(),
       displayName: (json['display_name'] ?? '').toString(),
       role: role,
       onboardingCompleted: json['onboarding_completed'] == true,
-      token: (json['token'] ?? '').toString(),
+      token: token.isEmpty ? null : token,
     );
   }
 }

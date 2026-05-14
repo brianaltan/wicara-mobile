@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'src/app/app_routes.dart';
 import 'src/app/wicara_app.dart';
 import 'src/core/network/api_client.dart';
+import 'src/features/auth/application/auth_controller.dart';
 import 'src/features/auth/data/api_auth_repository.dart';
 import 'src/features/auth/data/auth_session_store.dart';
+import 'src/features/auth/data/google_web_client_id.dart';
 import 'src/features/curriculum/data/api_curriculum_repository.dart';
 import 'src/features/home/data/api_home_repository.dart';
 import 'src/features/learning_goal/data/api_learning_goal_repository.dart';
+import 'src/features/onboarding/application/onboarding_controller.dart';
 import 'src/features/onboarding/data/api_onboarding_repository.dart';
+import 'src/features/onboarding/data/onboarding_profile_store.dart';
 import 'src/features/pretest/data/api_pretest_repository.dart';
 import 'src/features/pretest/data/pretest_session_store.dart';
 
@@ -18,43 +21,56 @@ const _googleWebClientId = String.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await authSessionStore.restore();
 
+  final sessionStore = authSessionStore;
+  final pretestStore = pretestSessionStore;
   final apiClient = ApiClient(baseUrl: ApiClient.defaultBaseUrl);
-  final session = authSessionStore.currentSession;
-  final initialRoute = session == null
-      ? AppRoutes.landing
-      : session.onboardingCompleted
-      ? AppRoutes.home
-      : AppRoutes.onboarding;
+  final googleWebClientId = resolveGoogleWebClientId(_googleWebClientId);
+  final authController = AuthController(
+    authRepository: ApiAuthRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+      googleWebClientId: googleWebClientId,
+    ),
+    sessionStore: sessionStore,
+    apiClient: apiClient,
+  );
+
+  await authController.initialize();
+  final onboardingController = OnboardingController(
+    onboardingRepository: ApiOnboardingRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+    ),
+    profileStore: OnboardingProfileStore(),
+  );
+  await onboardingController.initialize(
+    displayName: authController.session?.displayName ?? 'Learner',
+  );
 
   runApp(
     WicaraApp(
-      authRepository: ApiAuthRepository(
-        apiClient: apiClient,
-        sessionStore: authSessionStore,
-        googleWebClientId: _googleWebClientId,
-      ),
+      authController: authController,
+      onboardingController: onboardingController,
       curriculumRepository: ApiCurriculumRepository(apiClient: apiClient),
       learningGoalRepository: ApiLearningGoalRepository(
         apiClient: apiClient,
-        sessionStore: authSessionStore,
-        pretestSessionStore: pretestSessionStore,
+        sessionStore: sessionStore,
+        pretestSessionStore: pretestStore,
       ),
       homeRepository: ApiHomeRepository(
         apiClient: apiClient,
-        sessionStore: authSessionStore,
+        sessionStore: sessionStore,
       ),
       onboardingRepository: ApiOnboardingRepository(
         apiClient: apiClient,
-        sessionStore: authSessionStore,
+        sessionStore: sessionStore,
       ),
       pretestRepository: ApiPretestRepository(
         apiClient: apiClient,
-        sessionStore: authSessionStore,
-        pretestSessionStore: pretestSessionStore,
+        sessionStore: sessionStore,
+        pretestSessionStore: pretestStore,
       ),
-      initialRoute: initialRoute,
     ),
   );
 }
