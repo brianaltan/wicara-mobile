@@ -58,7 +58,7 @@ packages:
     source: hosted
     version: "1.19.1"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf
@@ -137,7 +137,7 @@ packages:
     source: hosted
     version: "6.3.3"
   google_identity_services_web:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: google_identity_services_web
       sha256: "5d187c46dc59e02646e10fe82665fc3884a9b71bc1c90c2b8b749316d33ee454"
@@ -177,7 +177,7 @@ packages:
     source: hosted
     version: "2.5.0"
   google_sign_in_web:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: google_sign_in_web
       sha256: "460547beb4962b7623ac0fb8122d6b8268c951cf0b646dd150d60498430e4ded"
@@ -534,7 +534,7 @@ packages:
     source: hosted
     version: "15.2.0"
   web:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: web
       sha256: "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a"
