@@ -67,4 +67,7 @@ class MockAuthRepository implements AuthRepository {
   Stream<AuthSession> googleSignInSessions({required AuthRole role}) {
     return const Stream<AuthSession>.empty();
   }
+
+  @override
+  Future<void> signOut() async {}
 }

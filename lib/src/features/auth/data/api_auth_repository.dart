@@ -49,7 +49,12 @@ class ApiAuthRepository implements AuthRepository {
         },
       );
       final session = _toAuthSession(json, request.role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on ApiClientException catch (error) {
       throw AuthException(error.message);
@@ -69,7 +74,12 @@ class ApiAuthRepository implements AuthRepository {
         },
       );
       final session = _toAuthSession(json, request.role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on ApiClientException catch (error) {
       throw AuthException(error.message);
@@ -160,7 +170,12 @@ class ApiAuthRepository implements AuthRepository {
 
       final json = await _apiClient.postJson('/api/v1/auth/google', body: body);
       final session = _toAuthSession(json, role);
-      await _sessionStore.save(session);
+      await _sessionStore.save(
+        session: session,
+        lastProtectedRoute: session.onboardingCompleted
+            ? '/home'
+            : '/onboarding',
+      );
       return session;
     } on AuthException {
       rethrow;
@@ -171,13 +186,24 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<void> signOut() async {
+    try {
+      await _googleSignIn?.signOut();
+    } catch (_) {
+      // We still clear the local app session even if Google sign-out fails.
+    }
+  }
+
   AuthSession _toAuthSession(Map<String, dynamic> json, AuthRole role) {
+    final token = (json['token'] ?? '').toString().trim();
+
     return AuthSession(
       userId: (json['user_id'] ?? '').toString(),
       displayName: (json['display_name'] ?? '').toString(),
       role: role,
       onboardingCompleted: json['onboarding_completed'] == true,
-      token: (json['token'] ?? '').toString(),
+      token: token.isEmpty ? null : token,
     );
   }
 }

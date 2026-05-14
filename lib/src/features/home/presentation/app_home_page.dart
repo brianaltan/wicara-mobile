@@ -7,9 +7,14 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
-import '../../auth/data/auth_session_store.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
 import '../../curriculum/domain/curriculum_repository.dart';
+import '../../onboarding/application/onboarding_controller.dart';
+import '../../onboarding/domain/onboarding_copy.dart';
+import '../../onboarding/domain/onboarding_options.dart';
+import '../../onboarding/domain/onboarding_profile.dart';
+import '../../onboarding/presentation/widgets/subject_tile.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
 import '../../pretest/domain/pretest_models.dart';
@@ -19,15 +24,34 @@ enum _HomeTab { home, queue, progress, profile }
 
 enum _QueueTab { recommended, tracks, gallery }
 
+class _HomeCopyScope extends InheritedWidget {
+  const _HomeCopyScope({required this.copy, required super.child});
+
+  final OnboardingCopy copy;
+
+  static OnboardingCopy of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_HomeCopyScope>();
+    assert(scope != null, 'Missing _HomeCopyScope in widget tree.');
+    return scope!.copy;
+  }
+
+  @override
+  bool updateShouldNotify(_HomeCopyScope oldWidget) => copy != oldWidget.copy;
+}
+
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
     required this.homeRepository,
+    required this.authController,
+    required this.onboardingController,
     super.key,
   });
 
   final CurriculumRepository curriculumRepository;
   final HomeRepository homeRepository;
+  final AuthController authController;
+  final OnboardingController onboardingController;
 
   @override
   State<AppHomePage> createState() => _AppHomePageState();
@@ -224,46 +248,59 @@ class _AppHomePageState extends State<AppHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final pageWidth = math.min(constraints.maxWidth, 430.0);
+    return AnimatedBuilder(
+      animation: widget.onboardingController,
+      builder: (context, _) {
+        final copy = OnboardingCopy.forLanguage(
+          widget.onboardingController.profile.preferredLanguage,
+        );
 
-            return Center(
-              child: SizedBox(
-                width: pageWidth,
-                child: Stack(
-                  children: [
-                    Positioned.fill(child: _animatedTabView(constraints)),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: _showEvaluationResult || _showDailyEvaluation
-                            ? const SizedBox.shrink()
-                            : _ShortcutBar(
-                                key: const ValueKey('shortcut-bar'),
-                                selectedTab: _selectedTab,
-                                onSelected: (tab) => setState(() {
-                                  _selectedTab = tab;
-                                  _showDailyEvaluation = false;
-                                  _showEvaluationResult = false;
-                                  _showLearningReport = false;
-                                  _showKnowledgeMap = false;
-                                }),
-                              ),
+        return Scaffold(
+          body: _HomeCopyScope(
+            copy: copy,
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final pageWidth = math.min(constraints.maxWidth, 430.0);
+
+                  return Center(
+                    child: SizedBox(
+                      width: pageWidth,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: _animatedTabView(constraints)),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child:
+                                  _showEvaluationResult || _showDailyEvaluation
+                                  ? const SizedBox.shrink()
+                                  : _ShortcutBar(
+                                      key: const ValueKey('shortcut-bar'),
+                                      selectedTab: _selectedTab,
+                                      onSelected: (tab) => setState(() {
+                                        _selectedTab = tab;
+                                        _showDailyEvaluation = false;
+                                        _showEvaluationResult = false;
+                                        _showLearningReport = false;
+                                        _showKnowledgeMap = false;
+                                      }),
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -296,22 +333,34 @@ class _AppHomePageState extends State<AppHomePage> {
   }
 
   Widget _tabView(BoxConstraints constraints) {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
     if (_showDailyEvaluation) {
       if (_isLoadingDailyEvaluation) {
         return _DashboardStatePage(
           constraints: constraints,
-          title: 'Loading Daily Evals',
-          message: 'Fetching spaced-review questions from backend.',
+          title: copy.isIndonesian
+              ? 'Memuat Evaluasi Harian'
+              : 'Loading Daily Evals',
+          message: copy.isIndonesian
+              ? 'Mengambil soal spaced review dari backend.'
+              : 'Fetching spaced-review questions from backend.',
         );
       }
       if (_dailyEvaluationError != null ||
           _backendDailyEvaluationQuestions.isEmpty) {
         return _DashboardStatePage(
           constraints: constraints,
-          title: 'Daily Evals unavailable',
+          title: copy.isIndonesian
+              ? 'Evaluasi Harian tidak tersedia'
+              : 'Daily Evals unavailable',
           message:
-              _dailyEvaluationError ?? 'Backend returned no review questions.',
-          actionLabel: 'Try again',
+              _dailyEvaluationError ??
+              (copy.isIndonesian
+                  ? 'Backend tidak mengembalikan soal review.'
+                  : 'Backend returned no review questions.'),
+          actionLabel: copy.isIndonesian ? 'Coba lagi' : 'Try again',
           onAction: () {
             _openDailyEvaluation();
           },
@@ -384,6 +433,9 @@ class _AppHomePageState extends State<AppHomePage> {
           constraints: constraints,
           snapshot: snapshot,
           onBack: _openHome,
+          authController: widget.authController,
+          onboardingController: widget.onboardingController,
+          onProfileSaved: _retryHomeSnapshot,
         ),
       ),
     };
@@ -405,6 +457,7 @@ class _HomeSnapshotBuilder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return FutureBuilder<HomeSnapshot>(
       future: snapshotFuture,
       builder: (context, snapshot) {
@@ -414,20 +467,46 @@ class _HomeSnapshotBuilder extends StatelessWidget {
         if (snapshot.hasError) {
           return _DashboardStatePage(
             constraints: constraints,
-            title: 'Dashboard unavailable',
+            title: copy.isIndonesian
+                ? 'Dashboard tidak tersedia'
+                : 'Dashboard unavailable',
             message: snapshot.error.toString(),
-            actionLabel: 'Retry',
+            actionLabel: copy.isIndonesian ? 'Coba lagi' : 'Retry',
             onAction: onRetry,
           );
         }
         return _DashboardStatePage(
           constraints: constraints,
-          title: 'Loading dashboard',
-          message: 'Fetching your profile from backend.',
+          title: copy.isIndonesian ? 'Memuat dashboard' : 'Loading dashboard',
+          message: copy.isIndonesian
+              ? 'Mengambil profilmu dari backend.'
+              : 'Fetching your profile from backend.',
         );
       },
     );
   }
+}
+
+String _displayGradeSummary(HomeSnapshot snapshot, OnboardingCopy copy) {
+  final parts = <String>[];
+  if (snapshot.educationLevel.trim().isNotEmpty) {
+    parts.add(_educationLabel(snapshot.educationLevel, copy));
+  }
+  if (snapshot.gradeLevel.trim().isNotEmpty) {
+    parts.add(copy.gradeValue(snapshot.gradeLevel));
+  }
+  return parts.join(' - ');
+}
+
+String _educationLabel(String value, OnboardingCopy copy) {
+  final normalized = value.trim().toLowerCase();
+  return switch (normalized) {
+    'elementary' => copy.isIndonesian ? 'Sekolah dasar' : 'Elementary school',
+    'junior_high' => copy.isIndonesian ? 'SMP' : 'Junior high school',
+    'senior_high' => copy.isIndonesian ? 'SMA' : 'Senior high school',
+    'university' => copy.isIndonesian ? 'Universitas' : 'University',
+    _ => value,
+  };
 }
 
 class _DashboardStatePage extends StatelessWidget {
@@ -536,6 +615,7 @@ class _HomeDashboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
       child: ConstrainedBox(
@@ -547,14 +627,14 @@ class _HomeDashboardContent extends StatelessWidget {
               padding: const EdgeInsets.only(top: 20),
               child: _SectionWordmark(
                 assetPath: 'lib/src/assets/waveIcon.png',
-                title: 'Welcome back,\n${snapshot.firstName}',
+                title: '${copy.welcomeBack}${snapshot.firstName}',
                 iconSize: 84,
                 titleFontSize: 23,
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              'Ready to continue learning and build something great today?',
+              copy.homeSubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
@@ -569,7 +649,7 @@ class _HomeDashboardContent extends StatelessWidget {
               onContinue: onContinueSession,
             ),
             const SizedBox(height: 25),
-            _LearningSetupStatusCard(snapshot: snapshot),
+            _StreakCard(streakDays: snapshot.streakDays),
             const SizedBox(height: 24),
             _DailyEvaluationCard(onTakeEvaluation: onTakeDailyEvaluation),
           ],
@@ -600,12 +680,11 @@ class _LearningQueue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final description = switch (selectedTab) {
-      _QueueTab.recommended => 'Suggested tracks to help you reach your goals.',
-      _QueueTab.tracks =>
-        'Explore your learning tracks or create a new one here.',
-      _QueueTab.gallery =>
-        'Review the videos and summaries from your learning journey.',
+      _QueueTab.recommended => copy.learnSubtitleRecommended,
+      _QueueTab.tracks => copy.learnSubtitleTracks,
+      _QueueTab.gallery => copy.learnSubtitleGallery,
     };
 
     return SingleChildScrollView(
@@ -617,9 +696,9 @@ class _LearningQueue extends StatelessWidget {
           children: [
             _QueueHeader(onBack: onBack),
             const SizedBox(height: 34),
-            const _SectionWordmark(
+            _SectionWordmark(
               assetPath: 'lib/src/assets/learnIcon.png',
-              title: 'Learn',
+              title: copy.learnLabel,
               iconSize: 84,
             ),
             const SizedBox(height: 16),
@@ -665,12 +744,13 @@ class _BackendSubjectQueueContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final subjects = snapshot.selectedSubjects;
     if (subjects.isEmpty) {
-      return const _BackendEmptyPanel(
+      return _BackendEmptyPanel(
         icon: Icons.menu_book_outlined,
-        title: 'No selected subjects',
-        message: 'Update onboarding to choose the subjects for your queue.',
+        title: copy.subjectsLabel,
+        message: copy.chooseSubjectsSubtitle,
       );
     }
 
@@ -700,7 +780,7 @@ class _BackendSubjectQueueContent extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        subject,
+                        copy.subjectLabel(subject),
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontSize: 16,
@@ -709,7 +789,7 @@ class _BackendSubjectQueueContent extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        snapshot.gradeSummary,
+                        _displayGradeSummary(snapshot, copy),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: WicaraColors.muted,
                           fontWeight: FontWeight.w600,
@@ -849,6 +929,7 @@ class _TodayQueueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final glyphSource = snapshot.selectedSubjects.isEmpty
         ? 'set'
         : snapshot.selectedSubjects.first.trim();
@@ -865,7 +946,7 @@ class _TodayQueueCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  "Today's learning queue",
+                  copy.todaysLearningQueueLabel,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -880,7 +961,7 @@ class _TodayQueueCard extends StatelessWidget {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: Text(
-                  'View all',
+                  copy.viewAllLabel,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: WicaraColors.secondary,
                     fontWeight: FontWeight.w600,
@@ -897,10 +978,12 @@ class _TodayQueueCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SoftBadge('From onboarding'),
+                    _SoftBadge(copy.customizeLaterNote),
                     const SizedBox(height: 11),
                     Text(
-                      snapshot.subjectSummary,
+                      snapshot.selectedSubjects
+                          .map(copy.subjectLabel)
+                          .join(', '),
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontSize: 18,
                         height: 1.15,
@@ -908,7 +991,7 @@ class _TodayQueueCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      snapshot.gradeSummary,
+                      _displayGradeSummary(snapshot, copy),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: WicaraColors.muted,
                         fontWeight: FontWeight.w600,
@@ -917,8 +1000,8 @@ class _TodayQueueCard extends StatelessWidget {
                     const SizedBox(height: 14),
                     Text(
                       snapshot.dailyStudyTime.isEmpty
-                          ? 'Daily study time not set'
-                          : snapshot.dailyStudyTime,
+                          ? copy.dailyStudyTimeOptionalLabel
+                          : copy.dailyStudyTimeDisplay(snapshot.dailyStudyTime),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: WicaraColors.softMuted,
                         fontWeight: FontWeight.w600,
@@ -931,7 +1014,10 @@ class _TodayQueueCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          GradientButton(label: 'Continue session', onPressed: onContinue),
+          GradientButton(
+            label: copy.continueSessionLabel,
+            onPressed: onContinue,
+          ),
         ],
       ),
     );
@@ -945,6 +1031,7 @@ class _ExploreTracksCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
       child: Row(
@@ -968,7 +1055,7 @@ class _ExploreTracksCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Want to learn something new?',
+                  copy.wantToLearnSomethingNewLabel,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -976,7 +1063,7 @@ class _ExploreTracksCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  'Explore tracks you have created or start another one.',
+                  copy.exploreTracksDescription,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -997,7 +1084,7 @@ class _ExploreTracksCard extends StatelessWidget {
               minimumSize: const Size(0, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text('Explore'),
+            child: Text(copy.exploreLabel),
           ),
         ],
       ),
@@ -1005,21 +1092,21 @@ class _ExploreTracksCard extends StatelessWidget {
   }
 }
 
-class _LearningSetupStatusCard extends StatelessWidget {
-  const _LearningSetupStatusCard({required this.snapshot});
+class _StreakCard extends StatelessWidget {
+  const _StreakCard({required this.streakDays});
 
-  final HomeSnapshot snapshot;
+  final int streakDays;
 
   @override
   Widget build(BuildContext context) {
-    final subjectCount = snapshot.selectedSubjects.length;
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(19, 18, 19, 18),
       child: Row(
         children: [
           const Icon(
-            Icons.verified_rounded,
-            color: WicaraColors.secondary,
+            Icons.local_fire_department_rounded,
+            color: WicaraColors.accentCoral,
             size: 28,
           ),
           const SizedBox(width: 13),
@@ -1028,9 +1115,7 @@ class _LearningSetupStatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  snapshot.onboardingCompleted
-                      ? 'Onboarding complete'
-                      : 'Onboarding incomplete',
+                  copy.currentStreakLabel,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.text,
                     fontWeight: FontWeight.w600,
@@ -1038,7 +1123,7 @@ class _LearningSetupStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '$subjectCount selected subject${subjectCount == 1 ? '' : 's'}',
+                  copy.streakDaysLabel(streakDays),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -1047,6 +1132,7 @@ class _LearningSetupStatusCard extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 166, child: _WeekDots()),
         ],
       ),
     );
@@ -1058,13 +1144,14 @@ class _DailyEvaluationUnavailableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(20, 19, 20, 21),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Daily evaluation',
+            copy.dailyEvaluationLabel,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1072,7 +1159,9 @@ class _DailyEvaluationUnavailableCard extends StatelessWidget {
           ),
           const SizedBox(height: 11),
           Text(
-            'No daily evaluation assigned yet.',
+            copy.isIndonesian
+                ? 'Belum ada evaluasi harian yang ditugaskan.'
+                : 'No daily evaluation assigned yet.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
@@ -1088,7 +1177,9 @@ class _DailyEvaluationUnavailableCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: const Text('No evaluation'),
+            child: Text(
+              copy.isIndonesian ? 'Belum ada evaluasi' : 'No evaluation',
+            ),
           ),
         ],
       ),
@@ -1110,13 +1201,14 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(20, 19, 20, 21),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Daily evaluation',
+            copy.dailyEvaluationLabel,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1125,8 +1217,8 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
           const SizedBox(height: 11),
           Text.rich(
             TextSpan(
-              text: "Today's topic: ",
-              children: const [
+              text: copy.todaysTopicLabel,
+              children: [
                 TextSpan(
                   text: 'Calculus I',
                   style: TextStyle(
@@ -1134,10 +1226,7 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                TextSpan(
-                  text:
-                      '. Pick a confidence score if you want, then take your daily check.',
-                ),
+                TextSpan(text: copy.dailyEvaluationPrompt),
               ],
             ),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1392,6 +1481,7 @@ class _EvaluationCompletePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
       child: ConstrainedBox(
@@ -1402,7 +1492,7 @@ class _EvaluationCompletePage extends StatelessWidget {
             _QueueHeader(onBack: onBackHome),
             const SizedBox(height: 25),
             Text(
-              'Evaluation Complete 🎉',
+              copy.evaluationCompleteLabel,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontSize: 20,
@@ -1411,7 +1501,7 @@ class _EvaluationCompletePage extends StatelessWidget {
             ),
             const SizedBox(height: 9),
             Text(
-              "Great work! You're building lasting knowledge.",
+              copy.evaluationCompleteSubtitle,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.muted,
@@ -1488,6 +1578,7 @@ class _EvaluationScoreRingState extends State<_EvaluationScoreRing>
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return AspectRatio(
       aspectRatio: 1,
       child: AnimatedBuilder(
@@ -1510,7 +1601,7 @@ class _EvaluationScoreRingState extends State<_EvaluationScoreRing>
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    'Score',
+                    copy.scoreLabel,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
@@ -1842,6 +1933,7 @@ class _BackHomeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: WicaraColors.secondary,
@@ -1863,7 +1955,7 @@ class _BackHomeButton extends StatelessWidget {
             height: 47,
             child: Center(
               child: Text(
-                'Back to Home',
+                copy.backToHomeLabel,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -1885,6 +1977,7 @@ class _QueueTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Container(
       height: 48,
       padding: const EdgeInsets.all(4),
@@ -1897,21 +1990,21 @@ class _QueueTabs extends StatelessWidget {
         children: [
           Expanded(
             child: _QueueTabButton(
-              label: 'Recommended',
+              label: copy.recommendedLabel,
               isSelected: selectedTab == _QueueTab.recommended,
               onTap: () => onChanged(_QueueTab.recommended),
             ),
           ),
           Expanded(
             child: _QueueTabButton(
-              label: 'Tracks',
+              label: copy.tracksLabel,
               isSelected: selectedTab == _QueueTab.tracks,
               onTap: () => onChanged(_QueueTab.tracks),
             ),
           ),
           Expanded(
             child: _QueueTabButton(
-              label: 'Gallery',
+              label: copy.galleryLabel,
               isSelected: selectedTab == _QueueTab.gallery,
               onTap: () => onChanged(_QueueTab.gallery),
             ),
@@ -2085,6 +2178,7 @@ class _GalleryQueueContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2111,7 +2205,7 @@ class _GalleryQueueContent extends StatelessWidget {
                   const SizedBox(width: 13),
                   Expanded(
                     child: Text(
-                      'Content Gallery',
+                      copy.contentGalleryLabel,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -2122,7 +2216,7 @@ class _GalleryQueueContent extends StatelessWidget {
               ),
               const SizedBox(height: 13),
               Text(
-                'All videos generated before are here, ready to replay with the notes that WICARA compiled for you.',
+                copy.contentGalleryDescription,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: WicaraColors.muted,
                   fontWeight: FontWeight.w600,
@@ -2692,6 +2786,7 @@ class _PriorityCallout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(19, 18, 19, 18),
       decoration: BoxDecoration(
@@ -2712,7 +2807,7 @@ class _PriorityCallout extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              "Recommended for Calculus I based on\nyour current gaps and readiness.",
+              copy.recommendedForCurrentReadinessLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.text,
                 fontWeight: FontWeight.w600,
@@ -3046,6 +3141,7 @@ class _TrackActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Material(
       color: filled ? WicaraColors.secondary : Colors.white,
       borderRadius: BorderRadius.circular(10),
@@ -3067,7 +3163,7 @@ class _TrackActionButton extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            'Continue Learning',
+            copy.continueLearningLabel,
             maxLines: 1,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: filled ? Colors.white : WicaraColors.secondary,
@@ -3088,6 +3184,7 @@ class _NewTrackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 17),
       child: Column(
@@ -3115,7 +3212,7 @@ class _NewTrackCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Learn something new',
+                      copy.learnSomethingNewLabel,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -3124,7 +3221,7 @@ class _NewTrackCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      'Create a new track outside your current list.',
+                      copy.newTrackDescription,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3156,6 +3253,7 @@ class _NewTrackActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -3171,7 +3269,7 @@ class _NewTrackActionButton extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            'New track',
+            copy.newTrackLabel,
             maxLines: 1,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: Colors.white,
@@ -3197,6 +3295,7 @@ class _ShortcutBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Container(
       height: 78,
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
@@ -3234,28 +3333,28 @@ class _ShortcutBar extends StatelessWidget {
             tab: _HomeTab.home,
             selectedTab: selectedTab,
             icon: Icons.home_rounded,
-            label: 'Home',
+            label: copy.homeLabel,
             onSelected: onSelected,
           ),
           _ShortcutItem(
             tab: _HomeTab.queue,
             selectedTab: selectedTab,
             icon: Icons.school_outlined,
-            label: 'Learn',
+            label: copy.learnLabel,
             onSelected: onSelected,
           ),
           _ShortcutItem(
             tab: _HomeTab.progress,
             selectedTab: selectedTab,
             icon: Icons.bar_chart_rounded,
-            label: 'Progress',
+            label: copy.progressLabel,
             onSelected: onSelected,
           ),
           _ShortcutItem(
             tab: _HomeTab.profile,
             selectedTab: selectedTab,
             icon: Icons.person_outline_rounded,
-            label: 'Profile',
+            label: copy.profileTitle,
             onSelected: onSelected,
           ),
         ],
@@ -3347,14 +3446,242 @@ class _ProfilePage extends StatelessWidget {
     required this.constraints,
     required this.snapshot,
     required this.onBack,
+    required this.authController,
+    required this.onboardingController,
+    required this.onProfileSaved,
   });
 
   final BoxConstraints constraints;
   final HomeSnapshot snapshot;
   final VoidCallback onBack;
+  final AuthController authController;
+  final OnboardingController onboardingController;
+  final VoidCallback onProfileSaved;
+
+  Future<void> _persistProfileUpdate(
+    BuildContext context,
+    Future<void> Function() update,
+  ) async {
+    final copy = OnboardingCopy.forLanguage(
+      onboardingController.profile.preferredLanguage,
+    );
+
+    try {
+      await onboardingController.replaceProfile(_profileFromSnapshot());
+      await update();
+      await onboardingController.saveProfile();
+      onProfileSaved();
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              copy.isIndonesian
+                  ? 'Profil berhasil diperbarui.'
+                  : 'Profile updated.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  Future<void> _editCountry(BuildContext context, OnboardingCopy copy) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _SearchableProfileOptionSheet(
+        title: copy.countryLabel,
+        options: onboardingCountryOptions,
+        initialValue: snapshot.country,
+        searchHint: copy.searchLabel,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateCountry(selected),
+      );
+    }
+  }
+
+  Future<void> _editGradeLevel(
+    BuildContext context,
+    OnboardingCopy copy,
+  ) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _ProfileOptionSheet(
+        title: copy.gradeLevelLabel,
+        options: onboardingGradeLevelOptions,
+        initialValue: snapshot.gradeLevel,
+        displayFor: copy.gradeValue,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateGradeLevel(selected),
+      );
+    }
+  }
+
+  Future<void> _editLanguage(BuildContext context, OnboardingCopy copy) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _ProfileOptionSheet(
+        title: copy.languageLabel,
+        options: onboardingLanguageOptions,
+        initialValue: snapshot.preferredLanguage,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null && selected != snapshot.preferredLanguage) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updatePreferredLanguage(selected),
+      );
+    }
+  }
+
+  Future<void> _editStudyGoal(BuildContext context, OnboardingCopy copy) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _ProfileOptionSheet(
+        title: copy.studyGoalLabel,
+        options: onboardingStudyGoalOptions,
+        initialValue: snapshot.studyGoal,
+        displayFor: copy.studyGoalDisplay,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateStudyGoal(selected),
+      );
+    }
+  }
+
+  Future<void> _editDailyStudyTime(
+    BuildContext context,
+    OnboardingCopy copy,
+  ) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _ProfileOptionSheet(
+        title: copy.dailyStudyTimeLabel,
+        options: onboardingDailyStudyTimeOptions,
+        initialValue: snapshot.dailyStudyTime,
+        displayFor: copy.dailyStudyTimeDisplay,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateDailyStudyTime(selected),
+      );
+    }
+  }
+
+  Future<void> _editSubjects(BuildContext context, OnboardingCopy copy) async {
+    final selected = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _SubjectSelectionSheet(
+        title: copy.subjectsLabel,
+        selectedSubjects: snapshot.selectedSubjects,
+        copy: copy,
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (selected != null) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateSelectedSubjects(selected),
+      );
+    }
+  }
+
+  Future<void> _editFullName(BuildContext context, OnboardingCopy copy) async {
+    var draftName = snapshot.displayName;
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(copy.fullNameLabel),
+          content: TextFormField(
+            initialValue: draftName,
+            autofocus: true,
+            decoration: InputDecoration(hintText: copy.fullNameLabel),
+            textInputAction: TextInputAction.done,
+            onChanged: (value) => draftName = value,
+            onFieldSubmitted: (value) =>
+                Navigator.of(context).pop(value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(copy.cancelLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(draftName.trim()),
+              child: Text(copy.applyLabel),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!context.mounted) {
+      return;
+    }
+    if (submitted != null && submitted.isNotEmpty) {
+      await _persistProfileUpdate(
+        context,
+        () => onboardingController.updateFullName(submitted),
+      );
+    }
+  }
 
   Future<void> _logout(BuildContext context) async {
-    await authSessionStore.clear();
+    await authController.signOut();
     if (!context.mounted) {
       return;
     }
@@ -3365,6 +3692,9 @@ class _ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final profile = onboardingController.profile;
+    final copy = OnboardingCopy.forLanguage(profile.preferredLanguage);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
       child: ConstrainedBox(
@@ -3374,71 +3704,77 @@ class _ProfilePage extends StatelessWidget {
           children: [
             _QueueHeader(onBack: onBack),
             const SizedBox(height: 34),
-            const _SectionWordmark(
+            _SectionWordmark(
               assetPath: 'lib/src/assets/profileIcon.png',
-              title: 'Profile',
+              title: copy.profileTitle,
               iconSize: 84,
             ),
             const SizedBox(height: 12),
             Text(
-              'Manage your learning preferences and account.',
+              copy.profileSubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 28),
-            _ProfileHeaderCard(snapshot: snapshot),
+            _ProfileHeaderCard(
+              snapshot: snapshot,
+              roleLabel: copy.learnerLabel,
+            ),
             const SizedBox(height: 22),
             _ProfileSection(
-              title: 'Learning setup',
+              title: copy.learningSetupTitle,
               children: [
                 _ProfileSettingTile(
                   icon: Icons.person_outline_rounded,
-                  label: 'Full name',
+                  label: copy.fullNameLabel,
                   value: snapshot.displayName,
+                  onTap: () => _editFullName(context, copy),
                 ),
                 _ProfileSettingTile(
                   icon: Icons.public_rounded,
-                  label: 'Country',
-                  value: snapshot.country.isEmpty
-                      ? 'Not set'
-                      : snapshot.country,
+                  label: copy.countryLabel,
+                  value: snapshot.country,
+                  onTap: () => _editCountry(context, copy),
                 ),
                 _ProfileSettingTile(
                   icon: Icons.school_outlined,
-                  label: 'Grade level',
-                  value: snapshot.gradeSummary,
+                  label: copy.gradeLevelLabel,
+                  value: _displayGradeSummary(snapshot, copy),
+                  onTap: () => _editGradeLevel(context, copy),
                 ),
                 _ProfileSettingTile(
                   icon: Icons.language_rounded,
-                  label: 'Language',
-                  value: snapshot.preferredLanguage,
+                  label: copy.languageLabel,
+                  value: copy.languageDisplay(snapshot.preferredLanguage),
+                  onTap: () => _editLanguage(context, copy),
                 ),
               ],
             ),
             const SizedBox(height: 18),
             _ProfileSection(
-              title: 'Preferences',
+              title: copy.preferencesSectionTitle,
               children: [
                 _ProfileSettingTile(
                   icon: Icons.menu_book_outlined,
-                  label: 'Subjects',
-                  value: snapshot.subjectSummary,
+                  label: copy.subjectsLabel,
+                  value: snapshot.selectedSubjects
+                      .map(copy.subjectLabel)
+                      .join(', '),
+                  onTap: () => _editSubjects(context, copy),
                 ),
                 _ProfileSettingTile(
                   icon: Icons.track_changes_rounded,
-                  label: 'Study goal',
-                  value: snapshot.studyGoal.isEmpty
-                      ? 'Not set'
-                      : snapshot.studyGoal,
+                  label: copy.studyGoalLabel,
+                  value: copy.studyGoalDisplay(snapshot.studyGoal),
+                  onTap: () => _editStudyGoal(context, copy),
                 ),
                 _ProfileSettingTile(
                   icon: Icons.schedule_rounded,
-                  label: 'Daily study time',
-                  value: snapshot.dailyStudyTime.isEmpty
-                      ? 'Not set'
-                      : snapshot.dailyStudyTime,
+                  label: copy.dailyStudyTimeLabel,
+                  value: copy.dailyStudyTimeDisplay(snapshot.dailyStudyTime),
+                  onTap: () => _editDailyStudyTime(context, copy),
                 ),
               ],
             ),
@@ -3454,19 +3790,33 @@ class _ProfilePage extends StatelessWidget {
                 ),
               ),
               icon: const Icon(Icons.logout_rounded, size: 20),
-              label: const Text('Log out'),
+              label: Text(copy.logoutLabel),
             ),
           ],
         ),
       ),
     );
   }
+
+  OnboardingProfile _profileFromSnapshot() {
+    return OnboardingProfile(
+      fullName: snapshot.displayName,
+      country: snapshot.country,
+      educationLevel: snapshot.educationLevel,
+      gradeLevel: snapshot.gradeLevel,
+      preferredLanguage: snapshot.preferredLanguage,
+      selectedSubjects: snapshot.selectedSubjects,
+      studyGoal: snapshot.studyGoal,
+      dailyStudyTime: snapshot.dailyStudyTime,
+    );
+  }
 }
 
 class _ProfileHeaderCard extends StatelessWidget {
-  const _ProfileHeaderCard({required this.snapshot});
+  const _ProfileHeaderCard({required this.snapshot, required this.roleLabel});
 
   final HomeSnapshot snapshot;
+  final String roleLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -3504,7 +3854,7 @@ class _ProfileHeaderCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  'Learner',
+                  roleLabel,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.muted,
                     fontWeight: FontWeight.w600,
@@ -3552,58 +3902,310 @@ class _ProfileSettingTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: WicaraColors.speechBlue,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: WicaraColors.secondary, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
               children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.muted,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: WicaraColors.speechBlue,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: WicaraColors.secondary, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: WicaraColors.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: WicaraColors.text,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: WicaraColors.text,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: onTap == null
+                      ? WicaraColors.softMuted
+                      : WicaraColors.secondary,
+                  size: 24,
                 ),
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: WicaraColors.softMuted,
-            size: 24,
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileOptionSheet extends StatelessWidget {
+  const _ProfileOptionSheet({
+    required this.title,
+    required this.options,
+    required this.initialValue,
+    this.displayFor,
+  });
+
+  final String title;
+  final List<String> options;
+  final String initialValue;
+  final String Function(String value)? displayFor;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = option == initialValue;
+                  return ListTile(
+                    title: Text(displayFor?.call(option) ?? option),
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: WicaraColors.secondary,
+                          )
+                        : null,
+                    onTap: () => Navigator.of(context).pop(option),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchableProfileOptionSheet extends StatefulWidget {
+  const _SearchableProfileOptionSheet({
+    required this.title,
+    required this.options,
+    required this.initialValue,
+    required this.searchHint,
+  });
+
+  final String title;
+  final List<String> options;
+  final String initialValue;
+  final String searchHint;
+
+  @override
+  State<_SearchableProfileOptionSheet> createState() =>
+      _SearchableProfileOptionSheetState();
+}
+
+class _SearchableProfileOptionSheetState
+    extends State<_SearchableProfileOptionSheet> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _controller.text.trim().toLowerCase();
+    final filteredOptions = widget.options.where((option) {
+      if (query.isEmpty) {
+        return true;
+      }
+      return option.toLowerCase().contains(query);
+    }).toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          4,
+          20,
+          20 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: widget.searchHint,
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: WicaraColors.fieldFill,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: filteredOptions.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final option = filteredOptions[index];
+                  final isSelected = option == widget.initialValue;
+                  return ListTile(
+                    title: Text(option),
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: WicaraColors.secondary,
+                          )
+                        : null,
+                    onTap: () => Navigator.of(context).pop(option),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubjectSelectionSheet extends StatefulWidget {
+  const _SubjectSelectionSheet({
+    required this.title,
+    required this.selectedSubjects,
+    required this.copy,
+  });
+
+  final String title;
+  final List<String> selectedSubjects;
+  final OnboardingCopy copy;
+
+  @override
+  State<_SubjectSelectionSheet> createState() => _SubjectSelectionSheetState();
+}
+
+class _SubjectSelectionSheetState extends State<_SubjectSelectionSheet> {
+  late final List<String> _selectedSubjects = [...widget.selectedSubjects];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: onboardingSubjectOptions.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final subject = onboardingSubjectOptions[index];
+                  final isSelected = _selectedSubjects.contains(subject.key);
+                  return SubjectTile(
+                    title: widget.copy.subjectLabel(subject.key),
+                    description: widget.copy.subjectDescription(subject.key),
+                    icon: subject.icon,
+                    tint: subject.tint,
+                    isSelected: isSelected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value) {
+                          if (!_selectedSubjects.contains(subject.key)) {
+                            _selectedSubjects.add(subject.key);
+                          }
+                        } else {
+                          _selectedSubjects.remove(subject.key);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(_selectedSubjects),
+                child: Text(widget.copy.applyLabel),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3634,6 +4236,7 @@ class _ProgressHub extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     if (showLearningReport) {
       return _LearningReportDetail(
         constraints: constraints,
@@ -3657,14 +4260,14 @@ class _ProgressHub extends StatelessWidget {
           children: [
             _QueueHeader(onBack: onBack),
             const SizedBox(height: 34),
-            const _SectionWordmark(
+            _SectionWordmark(
               assetPath: 'lib/src/assets/progressIcon.png',
-              title: 'Progress',
+              title: copy.progressLabel,
               iconSize: 84,
             ),
             const SizedBox(height: 12),
             Text(
-              'Start with your learning report, then explore the knowledge map.',
+              copy.progressSubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
@@ -3689,13 +4292,14 @@ class _LearningReportOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _ProgressOptionPanel(
       onTap: onOpen,
       icon: Icons.analytics_outlined,
       iconColor: WicaraColors.primaryDeep,
       iconBackground: WicaraColors.speechBlue,
-      title: 'Learning Report',
-      subtitle: 'Weekly performance, fixed gaps, unlocked concepts.',
+      title: copy.learningReportLabel,
+      subtitle: copy.learningReportDescription,
       child: Column(
         children: [
           Row(
@@ -3712,7 +4316,7 @@ class _LearningReportOption extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              _SoftBadge('+4 fixed'),
+              _SoftBadge(copy.fixedShortLabel),
             ],
           ),
           const SizedBox(height: 20),
@@ -3720,35 +4324,43 @@ class _LearningReportOption extends StatelessWidget {
             height: 112,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: const [
-                _ReportBarGroup(label: 'Overall', before: 0.72, after: 0.88),
-                SizedBox(width: 18),
+              children: [
                 _ReportBarGroup(
-                  label: 'Application',
+                  label: copy.overallLabel,
+                  before: 0.72,
+                  after: 0.88,
+                ),
+                const SizedBox(width: 18),
+                _ReportBarGroup(
+                  label: copy.applicationLabel,
                   before: 0.65,
                   after: 0.85,
                 ),
-                SizedBox(width: 18),
-                _ReportBarGroup(label: 'Analysis', before: 0.58, after: 0.82),
+                const SizedBox(width: 18),
+                _ReportBarGroup(
+                  label: copy.analysisLabel,
+                  before: 0.58,
+                  after: 0.82,
+                ),
               ],
             ),
           ),
           const SizedBox(height: 20),
           Row(
-            children: const [
+            children: [
               Expanded(
                 child: _ReportMetric(
-                  label: 'Fixed gaps',
+                  label: copy.fixedGapsLabel,
                   value: '12',
-                  delta: '+4 this week',
+                  delta: copy.thisWeekFixedDelta,
                 ),
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 12),
               Expanded(
                 child: _ReportMetric(
-                  label: 'Remaining gaps',
+                  label: copy.remainingGapsLabel,
                   value: '5',
-                  delta: '-2 this week',
+                  delta: copy.thisWeekRemainingDelta,
                 ),
               ),
             ],
@@ -3824,6 +4436,7 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final selected = _weeks[_selectedWeek];
 
     return SingleChildScrollView(
@@ -3841,19 +4454,19 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
               children: [
                 Expanded(
                   child: Text(
-                    'Learning Report',
+                    copy.learningReportLabel,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontSize: 24,
                       height: 1.12,
                     ),
                   ),
                 ),
-                _SoftBadge('Complete'),
+                _SoftBadge(copy.completeLabel),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              'Hover or tap a week to preview growth, fixed gaps, and memory lift.',
+              copy.learningReportHint,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
@@ -3918,7 +4531,7 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Skill growth',
+                    copy.skillGrowthLabel,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -3931,19 +4544,19 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         _ReportBarGroup(
-                          label: 'Overall',
+                          label: copy.overallLabel,
                           before: math.max(selected.overall - 0.16, 0.18),
                           after: selected.overall,
                         ),
                         const SizedBox(width: 18),
                         _ReportBarGroup(
-                          label: 'Application',
+                          label: copy.applicationLabel,
                           before: math.max(selected.application - 0.2, 0.18),
                           after: selected.application,
                         ),
                         const SizedBox(width: 18),
                         _ReportBarGroup(
-                          label: 'Analysis',
+                          label: copy.analysisLabel,
                           before: math.max(selected.analysis - 0.24, 0.18),
                           after: selected.analysis,
                         ),
@@ -3991,21 +4604,22 @@ class _WeeklyReportSnapshot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Row(
       children: [
         Expanded(
           child: _ReportMetric(
-            label: 'Score',
+            label: copy.scoreLabel,
             value: '${data.score}%',
-            delta: '+${data.retention}% retention',
+            delta: copy.retentionDeltaLabel(data.retention),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _ReportMetric(
-            label: 'Fixed gaps',
+            label: copy.fixedGapsLabel,
             value: '${data.fixed}',
-            delta: '${data.remaining} left',
+            delta: copy.remainingCountLabel(data.remaining),
           ),
         ),
       ],
@@ -4028,6 +4642,7 @@ class _WeeklyHoverTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final barColor = isSelected
         ? WicaraColors.primaryDeep
         : WicaraColors.primaryLight;
@@ -4061,7 +4676,7 @@ class _WeeklyHoverTile extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'W$weekNumber',
+                copy.weekLabel(weekNumber),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: isSelected
                       ? WicaraColors.primaryDeep
@@ -4307,6 +4922,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScroll,
       child: SingleChildScrollView(
@@ -4321,7 +4937,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
               _QueueHeader(onBack: widget.onBack),
               const SizedBox(height: 38),
               Text(
-                'Knowledge Map',
+                copy.knowledgeMapLabel,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontSize: 24,
                   height: 1.12,
@@ -4329,7 +4945,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Explore Kurikulum Merdeka phases, subject domains, and prerequisite paths.',
+                copy.knowledgeMapDescription,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: WicaraColors.muted,
                   fontWeight: FontWeight.w600,
@@ -4440,11 +5056,12 @@ class _CurriculumSourceLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final label = isLoading
-        ? 'Loading curriculum from backend...'
+        ? copy.loadingCurriculumLabel
         : isUsingFallback
-        ? 'Static fallback graph'
-        : 'Live Kurikulum Merdeka graph';
+        ? copy.fallbackGraphLabel
+        : copy.liveCurriculumGraphLabel;
     final color = isUsingFallback
         ? WicaraColors.accentAmber
         : WicaraColors.math;
@@ -4601,38 +5218,39 @@ class _KnowledgeMapPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Row(
-      children: const [
+      children: [
         Expanded(
           child: _SubjectGraphPreviewTile(
-            label: 'Math',
+            label: copy.subjectLabel('Math'),
             color: WicaraColors.math,
             icon: Icons.calculate_outlined,
             nodes: 42,
           ),
         ),
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
         Expanded(
           child: _SubjectGraphPreviewTile(
-            label: 'Physics',
+            label: copy.subjectLabel('Physics'),
             color: WicaraColors.physics,
             icon: Icons.bolt_outlined,
             nodes: 18,
           ),
         ),
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
         Expanded(
           child: _SubjectGraphPreviewTile(
-            label: 'Chemistry',
+            label: copy.subjectLabel('Chemistry'),
             color: WicaraColors.chemistry,
             icon: Icons.science_outlined,
             nodes: 21,
           ),
         ),
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
         Expanded(
           child: _SubjectGraphPreviewTile(
-            label: 'Biology',
+            label: copy.subjectLabel('Biology'),
             color: WicaraColors.biology,
             icon: Icons.eco_outlined,
             nodes: 19,
@@ -4658,6 +5276,7 @@ class _SubjectGraphPreviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return Container(
       height: 150,
       padding: const EdgeInsets.fromLTRB(8, 9, 8, 9),
@@ -4688,7 +5307,7 @@ class _SubjectGraphPreviewTile extends StatelessWidget {
           ),
           const SizedBox(height: 1),
           Text(
-            '$nodes nodes',
+            copy.nodeCountLabel(nodes),
             textAlign: TextAlign.center,
             maxLines: 1,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -5559,6 +6178,7 @@ class _KnowledgeConceptDetailPanelState
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final node = widget.detail.node;
     final masteryConfidence = widget.detail.masteryConfidence
         .clamp(0, 1)
@@ -5640,7 +6260,7 @@ class _KnowledgeConceptDetailPanelState
                     children: [
                       Expanded(
                         child: Text(
-                          'Mastery confidence',
+                          copy.masteryConfidenceLabel,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: WicaraColors.text,
@@ -5676,9 +6296,9 @@ class _KnowledgeConceptDetailPanelState
             ),
             const SizedBox(height: 16),
             _ConceptDetailSection(
-              title: 'About this concept',
+              title: copy.aboutThisConceptLabel,
               child: Text(
-                _nodeDescription(node),
+                _nodeDescription(node, copy),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: WicaraColors.muted,
                   fontWeight: FontWeight.w600,
@@ -5688,13 +6308,13 @@ class _KnowledgeConceptDetailPanelState
             ),
             const SizedBox(height: 16),
             _ConceptDetailSection(
-              title: 'Prerequisites',
+              title: copy.prerequisitesLabel,
               child: Column(
                 children: [
                   if (prerequisites.isEmpty)
                     _ConceptRelationRow(
                       relation: _ConceptRelationItem.fromNode(node),
-                      labelOverride: 'No direct prerequisite',
+                      labelOverride: copy.noDirectPrerequisiteLabel,
                     )
                   else
                     for (final relation in prerequisites)
@@ -5704,13 +6324,13 @@ class _KnowledgeConceptDetailPanelState
             ),
             const SizedBox(height: 16),
             _ConceptDetailSection(
-              title: 'Related concepts',
+              title: copy.relatedConceptsLabel,
               child: Column(
                 children: [
                   if (related.isEmpty)
                     _ConceptRelationRow(
                       relation: _ConceptRelationItem.fromNode(node),
-                      labelOverride: 'No direct related concept',
+                      labelOverride: copy.noDirectRelatedConceptLabel,
                     )
                   else
                     for (final relation in related)
@@ -5733,7 +6353,7 @@ class _KnowledgeConceptDetailPanelState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Cross-subject connections',
+                          copy.crossSubjectConnectionsLabel,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: WicaraColors.text,
@@ -5742,7 +6362,7 @@ class _KnowledgeConceptDetailPanelState
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Graph of Graphs links are visible when available.',
+                          copy.graphOfGraphsHint,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: WicaraColors.muted,
@@ -5769,7 +6389,7 @@ class _KnowledgeConceptDetailPanelState
                 relation: crossSubject,
                 fallbackLabel: node.gradeBand?.isNotEmpty == true
                     ? node.gradeBand!
-                    : 'Kurikulum Merdeka concept bridge',
+                    : copy.conceptBridgeFallbackLabel,
               ),
             ],
           ],
@@ -5898,7 +6518,7 @@ class _CrossSubjectCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          _SoftBadge('RELATED'),
+          _SoftBadge(_HomeCopyScope.of(context).relatedBadgeLabel),
         ],
       ),
     );
@@ -5957,12 +6577,12 @@ class _NodeStatusDot extends StatelessWidget {
   }
 }
 
-String _nodeDescription(_KnowledgeNode node) {
+String _nodeDescription(_KnowledgeNode node, OnboardingCopy copy) {
   final description = node.description;
   if (description != null && description.isNotEmpty) {
     return description;
   }
-  return 'Concept in the Kurikulum Merdeka prerequisite graph.';
+  return copy.conceptFallbackDescription;
 }
 
 class _KnowledgeGraph {
@@ -6577,13 +7197,16 @@ class _KnowledgeMapOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _ProgressOptionPanel(
       onTap: onOpen,
       icon: Icons.account_tree_outlined,
       iconColor: WicaraColors.primaryDeep,
       iconBackground: WicaraColors.speechBlue,
-      title: 'Knowledge Map',
-      subtitle: 'Visualize prerequisites, gaps, and next concepts.',
+      title: copy.knowledgeMapLabel,
+      subtitle: copy.isIndonesian
+          ? 'Visualisasikan prasyarat, gap, dan konsep berikutnya.'
+          : 'Visualize prerequisites, gaps, and next concepts.',
       child: SizedBox(height: 164, child: _KnowledgeMapPreview()),
     );
   }

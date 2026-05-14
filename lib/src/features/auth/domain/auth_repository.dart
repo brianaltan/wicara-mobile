@@ -87,4 +87,6 @@ abstract class AuthRepository {
   });
 
   Stream<AuthSession> googleSignInSessions({required AuthRole role});
+
+  Future<void> signOut();
 }

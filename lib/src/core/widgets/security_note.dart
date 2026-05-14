@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import '../theme/wicara_colors.dart';
 
 class SecurityNote extends StatelessWidget {
-  const SecurityNote({this.maxWidth = 230, super.key});
+  const SecurityNote({
+    required this.message,
+    this.maxWidth = 230,
+    super.key,
+  });
 
   final double maxWidth;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -29,24 +34,13 @@ class SecurityNote extends StatelessWidget {
           const SizedBox(width: 10),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth),
-            child: Text.rich(
-              TextSpan(
-                text: 'Your data is private and secure.\n',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontWeight: FontWeight.w400,
-                ),
-                children: [
-                  TextSpan(
-                    text: 'Learn how we protect you.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: WicaraColors.primaryDeep,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+            child: Text(
+              message,
               textAlign: TextAlign.left,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
         ],

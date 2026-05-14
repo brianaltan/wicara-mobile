@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/wicara_colors.dart';
+import '../../onboarding/application/onboarding_controller.dart';
+import '../../onboarding/domain/onboarding_copy.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 
 enum _WorkspaceContentMode { choosing, explanation, videoLoading, videoReady }
@@ -11,7 +13,12 @@ enum _WorkspaceContentMode { choosing, explanation, videoLoading, videoReady }
 enum _WorkspaceQuizState { unanswered, correct, review }
 
 class WorkspaceModulesPage extends StatefulWidget {
-  const WorkspaceModulesPage({super.key});
+  const WorkspaceModulesPage({
+    required this.onboardingController,
+    super.key,
+  });
+
+  final OnboardingController onboardingController;
 
   @override
   State<WorkspaceModulesPage> createState() => _WorkspaceModulesPageState();
@@ -150,6 +157,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
     return Scaffold(
       backgroundColor: WicaraColors.pageBackground,
       body: SafeArea(
@@ -202,7 +212,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                             ],
                           ),
                           const SizedBox(height: 14),
-                          const _WorkspaceTopicCard(),
+                          _WorkspaceTopicCard(copy: copy),
                         ],
                       ),
                     ),
@@ -235,6 +245,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                     _WorkspaceFooter(
                       controller: _messageController,
                       onSend: _sendMessage,
+                      copy: copy,
                     ),
                   ],
                 ),
@@ -626,7 +637,9 @@ class _AgentAvatar extends StatelessWidget {
 }
 
 class _WorkspaceTopicCard extends StatelessWidget {
-  const _WorkspaceTopicCard();
+  const _WorkspaceTopicCard({required this.copy});
+
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -654,7 +667,7 @@ class _WorkspaceTopicCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              'Current topic',
+              copy.currentTopicLabel,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: WicaraColors.secondaryDeep,
                 fontWeight: FontWeight.w800,
@@ -1158,10 +1171,15 @@ class _CanvasSnapshotBubble extends StatelessWidget {
 }
 
 class _WorkspaceFooter extends StatelessWidget {
-  const _WorkspaceFooter({required this.controller, required this.onSend});
+  const _WorkspaceFooter({
+    required this.controller,
+    required this.onSend,
+    required this.copy,
+  });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -1179,7 +1197,11 @@ class _WorkspaceFooter extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(28, 11, 28, 14),
-        child: _WorkspaceComposerInput(controller: controller, onSend: onSend),
+        child: _WorkspaceComposerInput(
+          controller: controller,
+          onSend: onSend,
+          copy: copy,
+        ),
       ),
     );
   }
@@ -1189,10 +1211,12 @@ class _WorkspaceComposerInput extends StatelessWidget {
   const _WorkspaceComposerInput({
     required this.controller,
     required this.onSend,
+    required this.copy,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -1206,7 +1230,7 @@ class _WorkspaceComposerInput extends StatelessWidget {
             textInputAction: TextInputAction.send,
             onSubmitted: (_) => onSend(),
             decoration: InputDecoration(
-              hintText: 'Ask or reflect here...',
+              hintText: copy.askOrReflectHereHint,
               filled: true,
               fillColor: WicaraColors.fieldFill,
               contentPadding: const EdgeInsets.symmetric(
