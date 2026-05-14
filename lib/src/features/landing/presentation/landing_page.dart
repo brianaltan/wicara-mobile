@@ -63,12 +63,12 @@ class LandingPage extends StatelessWidget {
                             ).pushNamed(AppRoutes.signIn),
                           ),
                           const SizedBox(height: _buttonGap),
-                          _SecondaryButton(
-                            label: 'I already have an account',
-                            onPressed: () => Navigator.of(
-                              context,
-                            ).pushNamed(AppRoutes.signIn),
-                          ),
+                          // _SecondaryButton(
+                          //   label: 'I already have an account',
+                          //   onPressed: () => Navigator.of(
+                          //     context,
+                          //   ).pushNamed(AppRoutes.signIn),
+                          // ),
                         ],
                       ),
                     ),
