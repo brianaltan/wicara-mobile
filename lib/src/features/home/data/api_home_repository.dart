@@ -1,6 +1,7 @@
 import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../pretest/data/api_pretest_repository.dart';
+import '../../pretest/domain/pretest_models.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
 
@@ -58,26 +59,42 @@ class ApiHomeRepository implements HomeRepository {
       headers: {'Authorization': 'Bearer $token'},
     );
     final questions = json['questions'];
+    final parsedQuestions = questions is List
+        ? questions
+              .whereType<Map<String, dynamic>>()
+              .map(questionFromJson)
+              .toList(growable: false)
+        : const <PretestQuestion>[];
+    final currentQuestionJson = json['question'];
+    final currentQuestion = currentQuestionJson is Map<String, dynamic>
+        ? questionFromJson(currentQuestionJson)
+        : (parsedQuestions.isEmpty ? null : parsedQuestions.first);
     return DailyEvaluationSession(
       sessionId: _string(json['session_id']),
-      questions: questions is List
-          ? questions
-                .whereType<Map<String, dynamic>>()
-                .map(questionFromJson)
-                .toList(growable: false)
-          : const [],
+      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      status: _string(json['status']),
+      language: _stringWithFallback(json['language'], 'en'),
+      source: _string(json['source']),
+      reviewDue: _reviewDueFromJson(json['review_due']),
+      progress: _progressFromJson(json['progress'], parsedQuestions.length),
+      currentQuestion: currentQuestion,
+      questions: parsedQuestions,
+      retentionForecast: _retentionForecastFromJson(json['retention_forecast']),
+      recommendationCallout: _recommendationCalloutFromJson(
+        json['recommendation_callout'],
+      ),
     );
   }
 
   @override
-  Future<void> submitDailyEvaluationAnswer({
+  Future<DailyEvaluationAnswerResult> submitDailyEvaluationAnswer({
     required String sessionId,
     required String questionId,
     required String optionId,
     required int confidence,
   }) async {
     final token = _requireToken();
-    await _apiClient.postJson(
+    final json = await _apiClient.postJson(
       '/api/v1/daily-evaluations/$sessionId/answers',
       headers: {'Authorization': 'Bearer $token'},
       body: {
@@ -86,6 +103,43 @@ class ApiHomeRepository implements HomeRepository {
         'confidence': confidence,
       },
     );
+    return DailyEvaluationAnswerResult(
+      attemptId: _string(json['attempt_id']),
+      isCorrect: json['is_correct'] == true,
+      nextReviewLabel: _string(json['next_review_label']),
+      masteryDelta: _double(json['mastery_delta']),
+      sessionStatus: _string(json['session_status']),
+      completed: json['completed'] == true,
+    );
+  }
+
+  @override
+  Future<DailyEvaluationResult> fetchDailyEvaluationResult({
+    required String sessionId,
+  }) async {
+    final token = _requireToken();
+    final json = await _apiClient.getJson(
+      '/api/v1/daily-evaluations/$sessionId/result',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _dailyEvaluationResultFromJson(json);
+  }
+
+  @override
+  Future<WeeklyLearningReport> fetchWeeklyLearningReport({
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final token = _requireToken();
+    final hasDateRange = start != null && end != null;
+    final json = await _apiClient.getJson(
+      hasDateRange ? '/api/v1/reports/weekly' : '/api/v1/reports/weekly/latest',
+      queryParameters: hasDateRange
+          ? {'start': _dateOnly(start), 'end': _dateOnly(end)}
+          : null,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _weeklyLearningReportFromJson(json);
   }
 
   Map<String, String> _subjectNamesByCode(Map<String, dynamic> json) {
@@ -113,12 +167,325 @@ class ApiHomeRepository implements HomeRepository {
 
   String _string(Object? value) => (value ?? '').toString().trim();
 
+  String _stringWithFallback(Object? value, String fallback) {
+    final parsed = _string(value);
+    return parsed.isEmpty ? fallback : parsed;
+  }
+
+  int _int(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.round();
+    }
+    return int.tryParse(_string(value)) ?? 0;
+  }
+
+  double _double(Object? value) {
+    if (value is double) {
+      return value;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(_string(value)) ?? 0;
+  }
+
+  Map<String, dynamic> _map(Object? value) {
+    return value is Map<String, dynamic> ? value : const {};
+  }
+
+  ReviewDueSummary _reviewDueFromJson(Object? value) {
+    final json = _map(value);
+    return ReviewDueSummary(
+      title: _stringWithFallback(json['title'], 'Review due'),
+      dueCount: _int(json['due_count']),
+      summary: _string(json['summary']),
+      actionLabel: _stringWithFallback(json['action_label'], 'Start'),
+    );
+  }
+
+  DailyEvaluationProgress _progressFromJson(Object? value, int totalFallback) {
+    final json = _map(value);
+    final total = _int(json['total']);
+    final current = _int(json['current']);
+    final completed = _int(json['completed']);
+    final effectiveTotal = total == 0 ? totalFallback : total;
+    final effectiveCurrent = current == 0 && effectiveTotal > 0 ? 1 : current;
+    return DailyEvaluationProgress(
+      current: effectiveCurrent,
+      total: effectiveTotal,
+      completed: completed,
+      label: _stringWithFallback(
+        json['label'],
+        '$effectiveCurrent of $effectiveTotal',
+      ),
+    );
+  }
+
+  RetentionForecast _retentionForecastFromJson(Object? value) {
+    final json = _map(value);
+    final rawPoints = json['points'];
+    return RetentionForecast(
+      title: _stringWithFallback(json['title'], 'Your retention forecast'),
+      basis: _string(json['basis']),
+      points: rawPoints is List
+          ? rawPoints
+                .whereType<Map<String, dynamic>>()
+                .map(
+                  (point) => RetentionForecastPoint(
+                    label: _string(point['label']),
+                    retentionPercent: _int(point['retention_percent']),
+                    projected: point['projected'] == true,
+                  ),
+                )
+                .where((point) => point.label.isNotEmpty)
+                .toList(growable: false)
+          : const [],
+    );
+  }
+
+  RecommendationCallout _recommendationCalloutFromJson(Object? value) {
+    final json = _map(value);
+    return RecommendationCallout(
+      title: _stringWithFallback(json['title'], 'Review now'),
+      message: _string(json['message']),
+      impactLabel: _string(json['impact_label']),
+      actionLabel: _stringWithFallback(json['action_label'], 'Review now'),
+    );
+  }
+
+  DailyEvaluationResult _dailyEvaluationResultFromJson(
+    Map<String, dynamic> json,
+  ) {
+    return DailyEvaluationResult(
+      sessionId: _string(json['session_id']),
+      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      status: _string(json['status']),
+      source: _string(json['source']),
+      scorePercent: _int(json['score_percent']),
+      reviewedCount: _int(json['reviewed_count']),
+      correctCount: _int(json['correct_count']),
+      reviewAgainCount: _int(json['review_again_count']),
+      reviewedConcepts: _reviewedConceptsFromJson(json['reviewed_concepts']),
+      spacedRepetitionImpact: _impactFromJson(json['spaced_repetition_impact']),
+      nextReview: _nextReviewFromJson(json['next_review']),
+      recommendedNextActions: _recommendedActionsFromJson(
+        json['recommended_next_actions'],
+      ),
+      backToHome: _actionTargetFromJson(
+        json['back_to_home'],
+        fallbackLabel: 'Back to Home',
+      ),
+    );
+  }
+
+  List<ReviewedConcept> _reviewedConceptsFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => ReviewedConcept(
+            conceptId: _string(json['concept_id']).isEmpty
+                ? null
+                : _string(json['concept_id']),
+            title: _stringWithFallback(json['title'], 'Reviewed concept'),
+            statusLabel: _stringWithFallback(json['status_label'], 'Review'),
+            masteryScore: _double(json['mastery_score']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  SpacedRepetitionImpact _impactFromJson(Object? value) {
+    final json = _map(value);
+    return SpacedRepetitionImpact(
+      retentionLiftPercent: _int(json['retention_lift_percent']),
+      daysUntilNextReview: _int(json['days_until_next_review']),
+      summary: _string(json['summary']),
+    );
+  }
+
+  DailyEvaluationNextReview _nextReviewFromJson(Object? value) {
+    final json = _map(value);
+    return DailyEvaluationNextReview(
+      label: _string(json['label']),
+      dueDate: _string(json['due_date']),
+      intervalDays: _int(json['interval_days']),
+    );
+  }
+
+  List<RecommendedNextAction> _recommendedActionsFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => RecommendedNextAction(
+            title: _stringWithFallback(json['title'], 'Recommended action'),
+            actionType: _string(json['action_type']),
+            reason: _string(json['reason']),
+            dueDate: _string(json['due_date']).isEmpty
+                ? null
+                : _string(json['due_date']),
+            priority: _int(json['priority']),
+            dueLabel: _string(json['due_label']).isEmpty
+                ? null
+                : _string(json['due_label']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  ActionTarget _actionTargetFromJson(
+    Object? value, {
+    required String fallbackLabel,
+  }) {
+    final json = _map(value);
+    return ActionTarget(
+      label: _stringWithFallback(json['label'], fallbackLabel),
+      actionType: _string(json['action_type']),
+      target: _string(json['target']).isEmpty ? null : _string(json['target']),
+    );
+  }
+
+  WeeklyLearningReport _weeklyLearningReportFromJson(
+    Map<String, dynamic> json,
+  ) {
+    return WeeklyLearningReport(
+      rangeLabel: _stringWithFallback(json['range_label'], 'This week'),
+      rangeStart: _string(json['range_start']),
+      rangeEnd: _string(json['range_end']),
+      status: _stringWithFallback(json['status'], 'complete'),
+      source: _string(json['source']),
+      score: _int(json['score']),
+      fixedGaps: _int(json['fixed_gaps']),
+      fixedGapsDelta: _int(json['fixed_gaps_delta']),
+      remainingGaps: _int(json['remaining_gaps']),
+      remainingGapsDelta: _int(json['remaining_gaps_delta']),
+      retentionMinutes: _int(json['retention_minutes']),
+      concepts: _string(json['concepts']),
+      summaryNotes: _stringList(json['summary_notes']),
+      performanceGroups: _performanceGroupsFromJson(
+        json['performance_groups'],
+        json['trends'],
+      ),
+      gapMetrics: _gapMetricsFromJson(json),
+      unlockedThisWeek: _unlockedConceptSummaryFromJson(
+        json['unlocked_this_week'],
+      ),
+      upcomingRecommendations: _recommendedActionsFromJson(
+        json['upcoming_recommendations'],
+      ),
+      consistencySummary: _consistencySummaryFromJson(
+        json['consistency_summary'],
+      ),
+    );
+  }
+
+  List<ReportPerformanceGroup> _performanceGroupsFromJson(
+    Object? value,
+    Object? trendFallback,
+  ) {
+    if (value is List && value.isNotEmpty) {
+      return value
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (json) => ReportPerformanceGroup(
+              label: _stringWithFallback(json['label'], 'Performance'),
+              preTestPercent: _int(json['pre_test_percent']),
+              postTestPercent: _int(json['post_test_percent']),
+            ),
+          )
+          .toList(growable: false);
+    }
+    if (trendFallback is List) {
+      return trendFallback
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (json) => ReportPerformanceGroup(
+              label: _stringWithFallback(json['label'], 'Performance'),
+              preTestPercent: (_double(json['before']) * 100).round(),
+              postTestPercent: (_double(json['after']) * 100).round(),
+            ),
+          )
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
+  Map<String, GapMetric> _gapMetricsFromJson(Map<String, dynamic> json) {
+    final metrics = json['gap_metrics'];
+    if (metrics is Map<String, dynamic>) {
+      return metrics.map(
+        (key, value) => MapEntry(key, _gapMetricFromJson(value)),
+      );
+    }
+    return {
+      'fixed': GapMetric(
+        count: _int(json['fixed_gaps']),
+        weeklyDelta: _int(json['fixed_gaps_delta']),
+        deltaLabel: _deltaLabel(_int(json['fixed_gaps_delta'])),
+      ),
+      'remaining': GapMetric(
+        count: _int(json['remaining_gaps']),
+        weeklyDelta: _int(json['remaining_gaps_delta']),
+        deltaLabel: _deltaLabel(_int(json['remaining_gaps_delta'])),
+      ),
+    };
+  }
+
+  GapMetric _gapMetricFromJson(Object? value) {
+    final json = _map(value);
+    final delta = _int(json['weekly_delta']);
+    return GapMetric(
+      count: _int(json['count']),
+      weeklyDelta: delta,
+      deltaLabel: _stringWithFallback(json['delta_label'], _deltaLabel(delta)),
+    );
+  }
+
+  String _deltaLabel(int delta) {
+    if (delta > 0) {
+      return '+$delta this week';
+    }
+    return '$delta this week';
+  }
+
+  UnlockedConceptSummary _unlockedConceptSummaryFromJson(Object? value) {
+    final json = _map(value);
+    return UnlockedConceptSummary(
+      count: _int(json['count']),
+      concepts: _stringList(json['concepts']),
+    );
+  }
+
+  ConsistencySummary _consistencySummaryFromJson(Object? value) {
+    final json = _map(value);
+    return ConsistencySummary(
+      title: _stringWithFallback(json['title'], 'Consistency is compounding.'),
+      narrative: _string(json['narrative']),
+      signal: _string(json['signal']),
+    );
+  }
+
   String _requireToken() {
     final token = _sessionStore.accessToken;
     if (token == null || token.isEmpty) {
       throw const ApiClientException('Please log in before opening dashboard.');
     }
     return token;
+  }
+
+  String _dateOnly(DateTime value) {
+    final normalized = DateTime(value.year, value.month, value.day);
+    return '${normalized.year.toString().padLeft(4, '0')}-'
+        '${normalized.month.toString().padLeft(2, '0')}-'
+        '${normalized.day.toString().padLeft(2, '0')}';
   }
 
   String _educationLabel(String code) {

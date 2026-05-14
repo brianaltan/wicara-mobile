@@ -5,10 +5,19 @@ abstract class HomeRepository {
 
   Future<DailyEvaluationSession> fetchDailyEvaluation();
 
-  Future<void> submitDailyEvaluationAnswer({
+  Future<DailyEvaluationAnswerResult> submitDailyEvaluationAnswer({
     required String sessionId,
     required String questionId,
     required String optionId,
     required int confidence,
+  });
+
+  Future<DailyEvaluationResult> fetchDailyEvaluationResult({
+    required String sessionId,
+  });
+
+  Future<WeeklyLearningReport> fetchWeeklyLearningReport({
+    DateTime? start,
+    DateTime? end,
   });
 }

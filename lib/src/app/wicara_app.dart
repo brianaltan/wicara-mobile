@@ -118,11 +118,26 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
-  Future<void> submitDailyEvaluationAnswer({
+  Future<DailyEvaluationAnswerResult> submitDailyEvaluationAnswer({
     required String sessionId,
     required String questionId,
     required String optionId,
     required int confidence,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationResult> fetchDailyEvaluationResult({
+    required String sessionId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<WeeklyLearningReport> fetchWeeklyLearningReport({
+    DateTime? start,
+    DateTime? end,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
