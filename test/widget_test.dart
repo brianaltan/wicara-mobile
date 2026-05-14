@@ -3,9 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wicara_mobile/src/app/wicara_app.dart';
 import 'package:wicara_mobile/src/core/theme/wicara_theme.dart';
 import 'package:wicara_mobile/src/features/auth/data/mock_auth_repository.dart';
+import 'package:wicara_mobile/src/features/curriculum/domain/curriculum_models.dart';
+import 'package:wicara_mobile/src/features/curriculum/domain/curriculum_repository.dart';
 import 'package:wicara_mobile/src/features/onboarding/data/mock_onboarding_repository.dart';
 import 'package:wicara_mobile/src/features/pretest/presentation/widgets/fishbone_canvas.dart';
 import 'package:wicara_mobile/src/features/pretest/data/mock_pretest_repository.dart';
+
+const _curriculumRepository = _FailingCurriculumRepository();
 
 void main() {
   testWidgets('landing page opens the sign in page', (tester) async {
@@ -17,6 +21,7 @@ void main() {
     await tester.pumpWidget(
       const WicaraApp(
         authRepository: MockAuthRepository(delay: Duration.zero),
+        curriculumRepository: _curriculumRepository,
         onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
         pretestRepository: MockPretestRepository(delay: Duration.zero),
       ),
@@ -47,6 +52,7 @@ void main() {
     await tester.pumpWidget(
       const WicaraApp(
         authRepository: MockAuthRepository(delay: Duration.zero),
+        curriculumRepository: _curriculumRepository,
         onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
         pretestRepository: MockPretestRepository(delay: Duration.zero),
       ),
@@ -90,6 +96,7 @@ void main() {
     await tester.pumpWidget(
       const WicaraApp(
         authRepository: MockAuthRepository(delay: Duration.zero),
+        curriculumRepository: _curriculumRepository,
         onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
         pretestRepository: MockPretestRepository(delay: Duration.zero),
       ),
@@ -229,6 +236,16 @@ void main() {
     expect(find.text('Mathematics Prerequisite Map'), findsOneWidget);
     expect(find.text('Calculus 3'), findsOneWidget);
 
+    await tester.tap(find.text('Calculus 3').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mastery confidence'), findsOneWidget);
+    expect(find.text('Prerequisites'), findsOneWidget);
+    expect(find.text('Related concepts'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
 
@@ -337,4 +354,26 @@ void main() {
 
     expect(find.text('Clear canvas?'), findsNothing);
   });
+}
+
+class _FailingCurriculumRepository implements CurriculumRepository {
+  const _FailingCurriculumRepository();
+
+  @override
+  Future<CurriculumKnowledgeMap> fetchKnowledgeMap({required String subject}) {
+    return Future.error(Exception('Use static fallback in widget tests.'));
+  }
+
+  @override
+  Future<CurriculumConceptDetail> fetchConceptDetail({
+    required String conceptCode,
+    String? subject,
+  }) {
+    return Future.error(Exception('Use static fallback in widget tests.'));
+  }
+
+  @override
+  Future<List<CurriculumSubject>> fetchSubjects() {
+    return Future.error(Exception('Use static fallback in widget tests.'));
+  }
 }

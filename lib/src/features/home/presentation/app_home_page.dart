@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../curriculum/domain/curriculum_models.dart';
+import '../../curriculum/domain/curriculum_repository.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
 
@@ -13,7 +15,9 @@ enum _HomeTab { home, queue, progress, profile }
 enum _QueueTab { recommended, tracks, gallery }
 
 class AppHomePage extends StatefulWidget {
-  const AppHomePage({super.key});
+  const AppHomePage({required this.curriculumRepository, super.key});
+
+  final CurriculumRepository curriculumRepository;
 
   @override
   State<AppHomePage> createState() => _AppHomePageState();
@@ -144,9 +148,9 @@ class _AppHomePageState extends State<AppHomePage> {
                   children: [
                     Positioned.fill(child: _animatedTabView(constraints)),
                     Positioned(
-                      left: 28,
-                      right: 28,
-                      bottom: 18,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 180),
                         child: _showEvaluationResult || _showDailyEvaluation
@@ -244,6 +248,7 @@ class _AppHomePageState extends State<AppHomePage> {
       ),
       _HomeTab.progress => _ProgressHub(
         constraints: constraints,
+        curriculumRepository: widget.curriculumRepository,
         onBack: _openHome,
         showLearningReport: _showLearningReport,
         showKnowledgeMap: _showKnowledgeMap,
@@ -2795,17 +2800,33 @@ class _ShortcutBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 74,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
+      height: 78,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: WicaraColors.line, width: 1.3),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            WicaraColors.primarySoft,
+            WicaraColors.secondarySoft,
+          ],
+        ),
+        borderRadius: BorderRadius.zero,
+        border: Border.all(
+          color: WicaraColors.primaryLight.withValues(alpha: 0.95),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: WicaraColors.shadowBlue.withValues(alpha: 0.22),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
+            color: WicaraColors.secondaryDeep.withValues(alpha: 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, -8),
+          ),
+          BoxShadow(
+            color: WicaraColors.shadowBlue.withValues(alpha: 0.42),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -2863,28 +2884,60 @@ class _ShortcutItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = tab == selectedTab;
-    final color = isSelected ? WicaraColors.secondary : WicaraColors.muted;
+    final activeColor = WicaraColors.secondaryDeep;
+    final inactiveColor = WicaraColors.muted;
 
     return Expanded(
       child: InkWell(
         onTap: () => onSelected(tab),
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
+        borderRadius: BorderRadius.circular(24),
+        splashColor: WicaraColors.secondary.withValues(alpha: 0.10),
+        highlightColor: WicaraColors.secondarySoft.withValues(alpha: 0.38),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 170),
+          curve: Curves.easeOutCubic,
+          height: 60,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: isSelected ? activeColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isSelected
+                  ? WicaraColors.secondaryDeep
+                  : Colors.transparent,
+              width: 1.1,
             ),
-          ],
+            boxShadow: [
+              if (isSelected)
+                BoxShadow(
+                  color: WicaraColors.secondaryDeep.withValues(alpha: 0.24),
+                  blurRadius: 18,
+                  offset: const Offset(0, 9),
+                ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? Colors.white : inactiveColor,
+                size: isSelected ? 24 : 23,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: isSelected ? Colors.white : inactiveColor,
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3145,6 +3198,7 @@ class _ProfileSettingTile extends StatelessWidget {
 class _ProgressHub extends StatelessWidget {
   const _ProgressHub({
     required this.constraints,
+    required this.curriculumRepository,
     required this.onBack,
     required this.showLearningReport,
     required this.showKnowledgeMap,
@@ -3155,6 +3209,7 @@ class _ProgressHub extends StatelessWidget {
   });
 
   final BoxConstraints constraints;
+  final CurriculumRepository curriculumRepository;
   final VoidCallback onBack;
   final bool showLearningReport;
   final bool showKnowledgeMap;
@@ -3174,6 +3229,7 @@ class _ProgressHub extends StatelessWidget {
     if (showKnowledgeMap) {
       return _KnowledgeMapDetail(
         constraints: constraints,
+        curriculumRepository: curriculumRepository,
         onBack: onCloseKnowledgeMap,
       );
     }
@@ -3635,9 +3691,14 @@ class _WeeklyHoverTile extends StatelessWidget {
 }
 
 class _KnowledgeMapDetail extends StatefulWidget {
-  const _KnowledgeMapDetail({required this.constraints, required this.onBack});
+  const _KnowledgeMapDetail({
+    required this.constraints,
+    required this.curriculumRepository,
+    required this.onBack,
+  });
 
   final BoxConstraints constraints;
+  final CurriculumRepository curriculumRepository;
   final VoidCallback onBack;
 
   @override
@@ -3645,63 +3706,263 @@ class _KnowledgeMapDetail extends StatefulWidget {
 }
 
 class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
-  static const _subjects = [
-    _SubjectMapItem('Math', WicaraColors.math, false),
-    _SubjectMapItem('Physics', WicaraColors.physics, true),
-    _SubjectMapItem('Chemistry', WicaraColors.chemistry, true),
-    _SubjectMapItem('Biology', WicaraColors.biology, true),
+  static const _initialVisibleSections = 4;
+  static const _sectionBatchSize = 3;
+  static const _fallbackSubjects = [
+    _SubjectMapItem('math', 'Math', WicaraColors.math, false),
+    _SubjectMapItem('physics', 'Physics', WicaraColors.physics, true),
+    _SubjectMapItem('chemistry', 'Chemistry', WicaraColors.chemistry, true),
+    _SubjectMapItem('biology', 'Biology', WicaraColors.biology, true),
   ];
+
+  _KnowledgeGraph _graph = _mathKnowledgeGraph;
+  List<_SubjectMapItem> _subjects = _fallbackSubjects;
+  String _selectedSubjectCode = 'math';
+  int _visibleSectionCount = _initialVisibleSections;
+  _KnowledgeNode? _selectedNode;
+  bool _isLoadingCurriculum = true;
+  bool _isLoadingMoreSections = false;
+  bool _isUsingFallbackGraph = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurriculum();
+  }
+
+  Future<void> _loadCurriculum() async {
+    try {
+      final subjects = await widget.curriculumRepository.fetchSubjects();
+      final tabs = _subjectTabsFromApi(subjects);
+      final selectedSubjectCode = _defaultSubjectCode(tabs);
+      final graph = await widget.curriculumRepository.fetchKnowledgeMap(
+        subject: selectedSubjectCode,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _subjects = tabs;
+        _selectedSubjectCode = selectedSubjectCode;
+        _graph = _knowledgeGraphFromApi(graph);
+        _visibleSectionCount = _initialVisibleSections;
+        _selectedNode = null;
+        _isUsingFallbackGraph = false;
+        _isLoadingCurriculum = false;
+        _isLoadingMoreSections = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _graph = _mathKnowledgeGraph;
+        _subjects = _fallbackSubjects;
+        _selectedSubjectCode = 'math';
+        _visibleSectionCount = _initialVisibleSections;
+        _selectedNode = null;
+        _isUsingFallbackGraph = true;
+        _isLoadingCurriculum = false;
+        _isLoadingMoreSections = false;
+      });
+    }
+  }
+
+  Future<void> _selectSubject(_SubjectMapItem subject) async {
+    if (subject.isLocked || subject.code == _selectedSubjectCode) {
+      return;
+    }
+
+    setState(() {
+      _selectedSubjectCode = subject.code;
+      _isLoadingCurriculum = true;
+      _visibleSectionCount = _initialVisibleSections;
+      _selectedNode = null;
+      _isLoadingMoreSections = false;
+    });
+
+    try {
+      final graph = await widget.curriculumRepository.fetchKnowledgeMap(
+        subject: subject.code,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _graph = _knowledgeGraphFromApi(graph);
+        _visibleSectionCount = _initialVisibleSections;
+        _selectedNode = null;
+        _isUsingFallbackGraph = false;
+        _isLoadingCurriculum = false;
+        _isLoadingMoreSections = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _graph = _mathKnowledgeGraph;
+        _subjects = _fallbackSubjects;
+        _selectedSubjectCode = 'math';
+        _visibleSectionCount = _initialVisibleSections;
+        _selectedNode = null;
+        _isUsingFallbackGraph = true;
+        _isLoadingCurriculum = false;
+        _isLoadingMoreSections = false;
+      });
+    }
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+
+    if (notification.metrics.pixels >=
+        notification.metrics.maxScrollExtent - 360) {
+      _loadMoreSections();
+    }
+
+    return false;
+  }
+
+  Future<void> _loadMoreSections() async {
+    if (_isLoadingMoreSections ||
+        _visibleSectionCount >= _graph.sections.length) {
+      return;
+    }
+
+    setState(() => _isLoadingMoreSections = true);
+    await Future<void>.delayed(const Duration(milliseconds: 140));
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _visibleSectionCount = math.min(
+        _visibleSectionCount + _sectionBatchSize,
+        _graph.sections.length,
+      );
+      _isLoadingMoreSections = false;
+    });
+  }
+
+  void _selectNode(_KnowledgeNode node) {
+    setState(() => _selectedNode = node);
+    final fallback = _ConceptDetailData.fromGraph(_graph, node);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return _ConceptDetailBottomSheet(
+          detailFuture: _loadConceptDetail(node, fallback),
+          fallback: fallback,
+          onClose: () => Navigator.of(sheetContext).pop(),
+        );
+      },
+    ).whenComplete(() {
+      if (mounted) {
+        setState(() => _selectedNode = null);
+      }
+    });
+  }
+
+  Future<_ConceptDetailData> _loadConceptDetail(
+    _KnowledgeNode node,
+    _ConceptDetailData fallback,
+  ) async {
+    try {
+      final detail = await widget.curriculumRepository.fetchConceptDetail(
+        conceptCode: node.id,
+        subject: _selectedSubjectCode,
+      );
+      return _ConceptDetailData.fromApi(detail, fallbackNode: node);
+    } catch (_) {
+      return fallback;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minHeight: widget.constraints.maxHeight - 136,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _QueueHeader(onBack: widget.onBack),
-            const SizedBox(height: 38),
-            Text(
-              'Knowledge Map',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontSize: 24, height: 1.12),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Explore prerequisite paths from advanced calculus down to core foundations.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScroll,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(28, 18, 28, 118),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: widget.constraints.maxHeight - 136,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _QueueHeader(onBack: widget.onBack),
+              const SizedBox(height: 38),
+              Text(
+                'Knowledge Map',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontSize: 24,
+                  height: 1.12,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            _SubjectMapTabs(subjects: _subjects, selectedIndex: 0),
-            const SizedBox(height: 18),
-            _Panel(
-              padding: const EdgeInsets.fromLTRB(14, 15, 14, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    _mathKnowledgeGraph.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: WicaraColors.text,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+              const SizedBox(height: 8),
+              Text(
+                'Explore Kurikulum Merdeka phases, subject domains, and prerequisite paths.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 24),
+              _SubjectMapTabs(
+                subjects: _subjects,
+                selectedCode: _selectedSubjectCode,
+                onSelected: _selectSubject,
+              ),
+              const SizedBox(height: 18),
+              _Panel(
+                padding: const EdgeInsets.fromLTRB(14, 15, 14, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _graph.title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: WicaraColors.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  const _KnowledgeGraphCanvas(graph: _mathKnowledgeGraph),
-                ],
+                    const SizedBox(height: 6),
+                    _CurriculumSourceLabel(
+                      isLoading: _isLoadingCurriculum,
+                      isUsingFallback: _isUsingFallbackGraph,
+                    ),
+                    const SizedBox(height: 14),
+                    const _KnowledgeMapLegend(),
+                    const SizedBox(height: 22),
+                    _KnowledgeGraphCanvas(
+                      graph: _graph,
+                      visibleSectionCount: _visibleSectionCount,
+                      isLoadingMore: _isLoadingMoreSections,
+                      selectedNodeId: _selectedNode?.id,
+                      onNodeSelected: _selectNode,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3709,29 +3970,34 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
 }
 
 class _SubjectMapTabs extends StatelessWidget {
-  const _SubjectMapTabs({required this.subjects, required this.selectedIndex});
+  const _SubjectMapTabs({
+    required this.subjects,
+    required this.selectedCode,
+    required this.onSelected,
+  });
 
   final List<_SubjectMapItem> subjects;
-  final int selectedIndex;
+  final String selectedCode;
+  final ValueChanged<_SubjectMapItem> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: WicaraColors.speechBlue,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: WicaraColors.primaryLight),
       ),
-      child: Row(
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
         children: [
-          for (var index = 0; index < subjects.length; index++)
-            Expanded(
-              child: _SubjectMapTabButton(
-                item: subjects[index],
-                isSelected: index == selectedIndex,
-              ),
+          for (final subject in subjects)
+            _SubjectMapTabButton(
+              item: subject,
+              isSelected: subject.code == selectedCode,
+              onSelected: () => onSelected(subject),
             ),
         ],
       ),
@@ -3739,35 +4005,135 @@ class _SubjectMapTabs extends StatelessWidget {
   }
 }
 
-class _SubjectMapItem {
-  const _SubjectMapItem(this.label, this.color, this.isLocked);
+class _CurriculumSourceLabel extends StatelessWidget {
+  const _CurriculumSourceLabel({
+    required this.isLoading,
+    required this.isUsingFallback,
+  });
 
+  final bool isLoading;
+  final bool isUsingFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isLoading
+        ? 'Loading curriculum from backend...'
+        : isUsingFallback
+        ? 'Static fallback graph'
+        : 'Live Kurikulum Merdeka graph';
+    final color = isUsingFallback
+        ? WicaraColors.accentAmber
+        : WicaraColors.math;
+
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: color,
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _KnowledgeMapLegend extends StatelessWidget {
+  const _KnowledgeMapLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final status in _NodeStatus.values)
+          _KnowledgeMapLegendItem(status),
+      ],
+    );
+  }
+}
+
+class _KnowledgeMapLegendItem extends StatelessWidget {
+  const _KnowledgeMapLegendItem(this.status);
+
+  final _NodeStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: status.color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: status.color,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            status.label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: status.color,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubjectMapItem {
+  const _SubjectMapItem(this.code, this.label, this.color, this.isLocked);
+
+  final String code;
   final String label;
   final Color color;
   final bool isLocked;
 }
 
 class _SubjectMapTabButton extends StatelessWidget {
-  const _SubjectMapTabButton({required this.item, required this.isSelected});
+  const _SubjectMapTabButton({
+    required this.item,
+    required this.isSelected,
+    required this.onSelected,
+  });
 
   final _SubjectMapItem item;
   final bool isSelected;
+  final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: item.isLocked ? null : () {},
-      borderRadius: BorderRadius.circular(11),
+      onTap: item.isLocked ? null : onSelected,
+      borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
+        height: 38,
+        constraints: const BoxConstraints(minWidth: 92, maxWidth: 116),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? item.color.withValues(alpha: 0.55)
+                : Colors.transparent,
+          ),
           boxShadow: [
             if (isSelected)
               BoxShadow(
-                color: WicaraColors.primary.withValues(alpha: 0.14),
+                color: item.color.withValues(alpha: 0.16),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -3794,7 +4160,7 @@ class _SubjectMapTabButton extends StatelessWidget {
                   color: item.isLocked
                       ? WicaraColors.softMuted
                       : isSelected
-                      ? WicaraColors.primaryDeep
+                      ? item.color
                       : WicaraColors.muted,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -3965,87 +4331,118 @@ class _MiniSubjectGraphPainter extends CustomPainter {
 }
 
 class _KnowledgeGraphCanvas extends StatelessWidget {
-  const _KnowledgeGraphCanvas({required this.graph});
+  const _KnowledgeGraphCanvas({
+    required this.graph,
+    required this.visibleSectionCount,
+    required this.isLoadingMore,
+    required this.selectedNodeId,
+    required this.onNodeSelected,
+  });
 
   final _KnowledgeGraph graph;
+  final int visibleSectionCount;
+  final bool isLoadingMore;
+  final String? selectedNodeId;
+  final ValueChanged<_KnowledgeNode> onNodeSelected;
 
   @override
   Widget build(BuildContext context) {
-    final sections = graph.sections.reversed.toList();
+    final sections = graph.topDown
+        ? graph.sections
+        : graph.sections.reversed.toList();
+    final visibleSections = sections.take(visibleSectionCount).toList();
+    final hasMore = visibleSections.length < sections.length;
 
-    return Column(
-      children: [
-        for (var index = 0; index < sections.length; index++) ...[
-          _KnowledgeMapSection(section: sections[index]),
-          if (index < sections.length - 1) const _KnowledgeMapConnector(),
-        ],
-      ],
-    );
-  }
-}
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layout = _KnowledgeGraphLayout.build(
+          sections: visibleSections,
+          edges: graph.edges,
+          maxWidth: constraints.maxWidth,
+        );
 
-class _KnowledgeMapSection extends StatelessWidget {
-  const _KnowledgeMapSection({required this.section});
-
-  final _KnowledgeSection section;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 88, child: _MapGroupHeader(label: section.label)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final nodeWidth = constraints.maxWidth >= 228
-                  ? (constraints.maxWidth - 8) / 2
-                  : constraints.maxWidth;
-
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
+        return Column(
+          children: [
+            SizedBox(
+              height: layout.height,
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  for (final node in section.nodes)
-                    SizedBox(
-                      width: nodeWidth,
-                      child: _KnowledgeGraphNode(node: node),
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _KnowledgeGraphLinkPainter(layout.links),
+                    ),
+                  ),
+                  for (final header in layout.headers)
+                    Positioned(
+                      left: header.left,
+                      top: header.top,
+                      width: header.width,
+                      child: _MapGroupHeader(label: header.label),
+                    ),
+                  for (final placement in layout.nodes)
+                    Positioned(
+                      left: placement.left,
+                      top: placement.top,
+                      width: placement.width,
+                      child: _KnowledgeGraphNode(
+                        node: placement.node,
+                        isSelected: placement.node.id == selectedNodeId,
+                        onSelected: () => onNodeSelected(placement.node),
+                      ),
                     ),
                 ],
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+            if (hasMore) _KnowledgeMapLazyTail(isLoading: isLoadingMore),
+          ],
+        );
+      },
     );
   }
 }
 
-class _KnowledgeMapConnector extends StatelessWidget {
-  const _KnowledgeMapConnector();
+class _KnowledgeMapLazyTail extends StatelessWidget {
+  const _KnowledgeMapLazyTail({required this.isLoading});
+
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 24,
-      child: Row(
-        children: [
-          const SizedBox(width: 88),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Center(
-              child: Container(
-                width: 2,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: WicaraColors.primaryLight,
-                  borderRadius: BorderRadius.circular(999),
+      height: 56,
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 140),
+          child: isLoading
+              ? SizedBox(
+                  key: const ValueKey('knowledge-map-loading-tail'),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: WicaraColors.primaryDeep,
+                    backgroundColor: WicaraColors.primaryLight,
+                  ),
+                )
+              : Row(
+                  key: const ValueKey('knowledge-map-idle-tail'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var index = 0; index < 3; index++) ...[
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: WicaraColors.primaryLight,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      if (index < 2) const SizedBox(width: 5),
+                    ],
+                  ],
                 ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -4060,7 +4457,7 @@ class _MapGroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      constraints: const BoxConstraints(minHeight: 58),
+      constraints: const BoxConstraints(minHeight: 38),
       decoration: BoxDecoration(
         color: WicaraColors.speechBlue,
         borderRadius: BorderRadius.circular(12),
@@ -4082,10 +4479,328 @@ class _MapGroupHeader extends StatelessWidget {
   }
 }
 
-class _KnowledgeGraphNode extends StatefulWidget {
-  const _KnowledgeGraphNode({required this.node});
+class _KnowledgeGraphLayout {
+  const _KnowledgeGraphLayout({
+    required this.height,
+    required this.headers,
+    required this.nodes,
+    required this.links,
+  });
+
+  final double height;
+  final List<_GraphHeaderPlacement> headers;
+  final List<_GraphNodePlacement> nodes;
+  final List<_GraphLinkPlacement> links;
+
+  static _KnowledgeGraphLayout build({
+    required List<_KnowledgeSection> sections,
+    required List<_KnowledgeEdge> edges,
+    required double maxWidth,
+  }) {
+    const cardHeight = 116.0;
+    const headerHeight = 44.0;
+    const headerGap = 30.0;
+    const rowGap = 28.0;
+    const layerGap = 72.0;
+    const horizontalGap = 10.0;
+
+    final visibleSections = sections
+        .where((section) => section.nodes.isNotEmpty)
+        .toList(growable: false);
+    final orderedNodes = <_KnowledgeNode>[
+      for (final section in visibleSections)
+        ...([...section.nodes]..sort((a, b) => a.y.compareTo(b.y))),
+    ];
+    if (orderedNodes.isEmpty) {
+      return const _KnowledgeGraphLayout(
+        height: 120,
+        headers: [],
+        nodes: [],
+        links: [],
+      );
+    }
+
+    final sectionIndexByNodeId = <String, int>{};
+    final sectionLabelByNodeId = <String, String>{};
+    for (var index = 0; index < visibleSections.length; index++) {
+      for (final node in visibleSections[index].nodes) {
+        sectionIndexByNodeId[node.id] = index;
+        sectionLabelByNodeId[node.id] = visibleSections[index].label;
+      }
+    }
+
+    final visibleNodeIds = orderedNodes.map((node) => node.id).toSet();
+    final visibleEdges = edges
+        .where(
+          (edge) =>
+              visibleNodeIds.contains(edge.from) &&
+              visibleNodeIds.contains(edge.to),
+        )
+        .toList(growable: false);
+    final levels = _assignLevels(
+      nodes: orderedNodes,
+      edges: visibleEdges,
+      sectionIndexByNodeId: sectionIndexByNodeId,
+    );
+    final nodesByLevel = <int, List<_KnowledgeNode>>{};
+    for (final node in orderedNodes) {
+      nodesByLevel.putIfAbsent(levels[node.id] ?? 0, () => []).add(node);
+    }
+
+    final maxColumns = maxWidth >= 352
+        ? 3
+        : maxWidth >= 230
+        ? 2
+        : 1;
+    final headers = <_GraphHeaderPlacement>[];
+    final placements = <_GraphNodePlacement>[];
+    var top = 2.0;
+
+    for (final level in nodesByLevel.keys.toList()..sort()) {
+      final levelNodes = nodesByLevel[level]!
+        ..sort((a, b) {
+          final sectionCompare = (sectionIndexByNodeId[a.id] ?? 0).compareTo(
+            sectionIndexByNodeId[b.id] ?? 0,
+          );
+          if (sectionCompare != 0) {
+            return sectionCompare;
+          }
+          return a.y.compareTo(b.y);
+        });
+      final headerLabel = _levelLabel(levelNodes, sectionLabelByNodeId);
+      headers.add(
+        _GraphHeaderPlacement(
+          label: headerLabel,
+          left: math.max(0.0, (maxWidth - 198.0) / 2),
+          top: top,
+          width: math.min(198.0, maxWidth),
+        ),
+      );
+      top += headerHeight + headerGap;
+
+      var cursor = 0;
+      while (cursor < levelNodes.length) {
+        final remaining = levelNodes.length - cursor;
+        final columns = math.min(maxColumns, remaining);
+        final cardWidth = _cardWidthFor(
+          maxWidth: maxWidth,
+          columns: columns,
+          horizontalGap: horizontalGap,
+        );
+        final rowWidth =
+            (cardWidth * columns) + (horizontalGap * (columns - 1));
+        final startLeft = math.max(0.0, (maxWidth - rowWidth) / 2);
+
+        for (var column = 0; column < columns; column++) {
+          final node = levelNodes[cursor + column];
+          placements.add(
+            _GraphNodePlacement(
+              node: node,
+              left: startLeft + (column * (cardWidth + horizontalGap)),
+              top: top,
+              width: cardWidth,
+              height: cardHeight,
+            ),
+          );
+        }
+
+        cursor += columns;
+        top += cardHeight + rowGap;
+      }
+
+      top += layerGap - rowGap;
+    }
+
+    final placementsById = {for (final node in placements) node.node.id: node};
+    final links = <_GraphLinkPlacement>[
+      for (final edge in visibleEdges)
+        if (placementsById[edge.from] case final from?)
+          if (placementsById[edge.to] case final to?)
+            _GraphLinkPlacement(
+              from: from.bottomCenter,
+              to: to.topCenter,
+              color: to.node.status.color,
+            ),
+    ];
+
+    return _KnowledgeGraphLayout(
+      height: math.max(120.0, top - layerGap + 26),
+      headers: headers,
+      nodes: placements,
+      links: links,
+    );
+  }
+
+  static Map<String, int> _assignLevels({
+    required List<_KnowledgeNode> nodes,
+    required List<_KnowledgeEdge> edges,
+    required Map<String, int> sectionIndexByNodeId,
+  }) {
+    final nodeIds = nodes.map((node) => node.id).toSet();
+    final levels = {
+      for (final node in nodes) node.id: sectionIndexByNodeId[node.id] ?? 0,
+    };
+    final orderedEdges = [...edges]
+      ..sort((a, b) {
+        final fromCompare = (sectionIndexByNodeId[a.from] ?? 0).compareTo(
+          sectionIndexByNodeId[b.from] ?? 0,
+        );
+        if (fromCompare != 0) {
+          return fromCompare;
+        }
+        return a.to.compareTo(b.to);
+      });
+
+    for (var pass = 0; pass < nodes.length; pass++) {
+      var changed = false;
+      for (final edge in orderedEdges) {
+        if (!nodeIds.contains(edge.from) || !nodeIds.contains(edge.to)) {
+          continue;
+        }
+        final fromLevel = levels[edge.from] ?? 0;
+        final currentToLevel = levels[edge.to] ?? 0;
+        final nextToLevel = math.max(currentToLevel, fromLevel + 1);
+        if (nextToLevel != currentToLevel) {
+          levels[edge.to] = nextToLevel;
+          changed = true;
+        }
+      }
+      if (!changed) {
+        break;
+      }
+    }
+
+    final compactedLevels = <int, int>{};
+    var nextLevel = 0;
+    for (final level in (levels.values.toSet().toList()..sort())) {
+      compactedLevels[level] = nextLevel++;
+    }
+
+    return {
+      for (final entry in levels.entries)
+        entry.key: compactedLevels[entry.value] ?? 0,
+    };
+  }
+
+  static double _cardWidthFor({
+    required double maxWidth,
+    required int columns,
+    required double horizontalGap,
+  }) {
+    final available = math.max(120.0, maxWidth - 4);
+    final width = (available - (horizontalGap * (columns - 1))) / columns;
+    if (columns == 1) {
+      return math.min(224.0, width);
+    }
+    if (columns == 2) {
+      return math.min(150.0, width);
+    }
+    return math.min(108.0, width);
+  }
+
+  static String _levelLabel(
+    List<_KnowledgeNode> nodes,
+    Map<String, String> sectionLabelByNodeId,
+  ) {
+    final labels = <String>[];
+    for (final node in nodes) {
+      final label = sectionLabelByNodeId[node.id];
+      if (label != null && !labels.contains(label)) {
+        labels.add(label);
+      }
+    }
+    if (labels.isEmpty) {
+      return 'Prerequisite layer';
+    }
+    if (labels.length == 1) {
+      return labels.first;
+    }
+    return '${labels.first} + ${labels.length - 1}';
+  }
+}
+
+class _GraphHeaderPlacement {
+  const _GraphHeaderPlacement({
+    required this.label,
+    required this.left,
+    required this.top,
+    required this.width,
+  });
+
+  final String label;
+  final double left;
+  final double top;
+  final double width;
+}
+
+class _GraphNodePlacement {
+  const _GraphNodePlacement({
+    required this.node,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
 
   final _KnowledgeNode node;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+
+  Offset get topCenter => Offset(left + (width / 2), top);
+  Offset get bottomCenter => Offset(left + (width / 2), top + height);
+}
+
+class _GraphLinkPlacement {
+  const _GraphLinkPlacement({
+    required this.from,
+    required this.to,
+    required this.color,
+  });
+
+  final Offset from;
+  final Offset to;
+  final Color color;
+}
+
+class _KnowledgeGraphLinkPainter extends CustomPainter {
+  const _KnowledgeGraphLinkPainter(this.links);
+
+  final List<_GraphLinkPlacement> links;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final link in links) {
+      final paint = Paint()
+        ..color = link.color.withValues(alpha: 0.24)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8
+        ..strokeCap = StrokeCap.round;
+      final midY = (link.from.dy + link.to.dy) / 2;
+      final path = Path()
+        ..moveTo(link.from.dx, link.from.dy)
+        ..cubicTo(link.from.dx, midY, link.to.dx, midY, link.to.dx, link.to.dy);
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _KnowledgeGraphLinkPainter oldDelegate) {
+    return oldDelegate.links != links;
+  }
+}
+
+class _KnowledgeGraphNode extends StatefulWidget {
+  const _KnowledgeGraphNode({
+    required this.node,
+    required this.isSelected,
+    required this.onSelected,
+  });
+
+  final _KnowledgeNode node;
+  final bool isSelected;
+  final VoidCallback onSelected;
 
   @override
   State<_KnowledgeGraphNode> createState() => _KnowledgeGraphNodeState();
@@ -4097,64 +4812,735 @@ class _KnowledgeGraphNodeState extends State<_KnowledgeGraphNode> {
   @override
   Widget build(BuildContext context) {
     final color = widget.node.status.color;
-    final selected = _isHovered || widget.node.status == _NodeStatus.active;
+    final selected =
+        widget.isSelected ||
+        _isHovered ||
+        widget.node.status == _NodeStatus.active;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        constraints: BoxConstraints(minHeight: widget.node.height),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? WicaraColors.speechBlue : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected
-                ? WicaraColors.primaryLight
-                : color.withValues(alpha: 0.45),
-            width: selected ? 1.6 : 1.1,
-          ),
-          boxShadow: [
-            if (selected)
-              BoxShadow(
-                color: WicaraColors.primary.withValues(alpha: 0.14),
-                blurRadius: 12,
-                offset: const Offset(0, 7),
+      child: GestureDetector(
+        onTap: widget.onSelected,
+        child: SizedBox(
+          height: widget.node.height,
+          child: Column(
+            children: [
+              _NodeStatusMarker(status: widget.node.status),
+              const SizedBox(height: 6),
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? color.withValues(alpha: 0.08)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selected
+                          ? color.withValues(alpha: 0.55)
+                          : color.withValues(alpha: 0.24),
+                      width: selected ? 1.8 : 1.1,
+                    ),
+                    boxShadow: [
+                      if (selected)
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.15),
+                          blurRadius: 14,
+                          offset: const Offset(0, 7),
+                        ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            widget.node.label,
+                            maxLines: 3,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: WicaraColors.text,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.12,
+                                ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        widget.node.statusLabel ?? widget.node.status.label,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: color,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-          ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NodeStatusMarker extends StatelessWidget {
+  const _NodeStatusMarker({required this.status});
+
+  final _NodeStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = status.color;
+    final icon = switch (status) {
+      _NodeStatus.mastered => Icons.check_rounded,
+      _NodeStatus.active => Icons.radio_button_unchecked_rounded,
+      _NodeStatus.review => Icons.schedule_rounded,
+      _NodeStatus.ready => Icons.circle_rounded,
+      _NodeStatus.gap => Icons.priority_high_rounded,
+      _NodeStatus.locked => Icons.lock_outline_rounded,
+    };
+
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: status == _NodeStatus.active
+                ? Colors.white
+                : color.withValues(alpha: 0.13),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: color, width: 1.7),
+          ),
+          child: Icon(
+            icon,
+            color: color,
+            size: status == _NodeStatus.ready ? 9 : 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConceptDetailBottomSheet extends StatelessWidget {
+  const _ConceptDetailBottomSheet({
+    required this.detailFuture,
+    required this.fallback,
+    required this.onClose,
+  });
+
+  final Future<_ConceptDetailData> detailFuture;
+  final _ConceptDetailData fallback;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.42,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) {
+        return DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: FutureBuilder<_ConceptDetailData>(
+            future: detailFuture,
+            initialData: fallback,
+            builder: (context, snapshot) {
+              final detail = snapshot.data ?? fallback;
+              return SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: WicaraColors.line,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _KnowledgeConceptDetailPanel(
+                      detail: detail,
+                      isLoading:
+                          snapshot.connectionState == ConnectionState.waiting,
+                      onClose: onClose,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ConceptDetailData {
+  const _ConceptDetailData({
+    required this.node,
+    required this.masteryConfidence,
+    required this.prerequisites,
+    required this.relatedConcepts,
+    required this.crossSubjectConnections,
+  });
+
+  final _KnowledgeNode node;
+  final double masteryConfidence;
+  final List<_ConceptRelationItem> prerequisites;
+  final List<_ConceptRelationItem> relatedConcepts;
+  final List<_ConceptRelationItem> crossSubjectConnections;
+
+  factory _ConceptDetailData.fromGraph(
+    _KnowledgeGraph graph,
+    _KnowledgeNode node,
+  ) {
+    return _ConceptDetailData(
+      node: node,
+      masteryConfidence: node.confidence,
+      prerequisites: [
+        for (final relation in graph.prerequisitesFor(node).take(5))
+          _ConceptRelationItem.fromNode(relation),
+      ],
+      relatedConcepts: [
+        for (final relation in graph.relatedFor(node).take(5))
+          _ConceptRelationItem.fromNode(relation),
+      ],
+      crossSubjectConnections: const [],
+    );
+  }
+
+  factory _ConceptDetailData.fromApi(
+    CurriculumConceptDetail detail, {
+    required _KnowledgeNode fallbackNode,
+  }) {
+    final concept = detail.concept;
+    return _ConceptDetailData(
+      node: _KnowledgeNode(
+        id: concept.id.isEmpty ? fallbackNode.id : concept.id,
+        label: concept.label.isEmpty ? fallbackNode.label : concept.label,
+        x: fallbackNode.x,
+        y: fallbackNode.y,
+        description: concept.description.isEmpty
+            ? fallbackNode.description
+            : concept.description,
+        gradeBand: concept.gradeBand.isEmpty
+            ? fallbackNode.gradeBand
+            : concept.gradeBand,
+        status: _nodeStatusFromApi(concept.status),
+        statusLabel: concept.statusLabel.isEmpty
+            ? fallbackNode.statusLabel
+            : concept.statusLabel,
+      ),
+      masteryConfidence: detail.masteryConfidence.clamp(0, 1).toDouble(),
+      prerequisites: [
+        for (final relation in detail.prerequisites)
+          _ConceptRelationItem.fromApi(relation),
+      ],
+      relatedConcepts: [
+        for (final relation in detail.relatedConcepts)
+          _ConceptRelationItem.fromApi(relation),
+      ],
+      crossSubjectConnections: [
+        for (final relation in detail.crossSubjectConnections)
+          _ConceptRelationItem.fromApi(relation),
+      ],
+    );
+  }
+}
+
+class _ConceptRelationItem {
+  const _ConceptRelationItem({
+    required this.label,
+    required this.subjectName,
+    required this.status,
+    required this.statusLabel,
+  });
+
+  final String label;
+  final String subjectName;
+  final _NodeStatus status;
+  final String statusLabel;
+
+  factory _ConceptRelationItem.fromNode(_KnowledgeNode node) {
+    return _ConceptRelationItem(
+      label: node.label,
+      subjectName: node.gradeBand ?? '',
+      status: node.status,
+      statusLabel: node.statusLabel ?? node.status.label,
+    );
+  }
+
+  factory _ConceptRelationItem.fromApi(CurriculumConceptRelation relation) {
+    return _ConceptRelationItem(
+      label: relation.label,
+      subjectName: relation.subjectName,
+      status: _nodeStatusFromApi(relation.status),
+      statusLabel: relation.statusLabel,
+    );
+  }
+}
+
+class _KnowledgeConceptDetailPanel extends StatefulWidget {
+  const _KnowledgeConceptDetailPanel({
+    required this.detail,
+    required this.isLoading,
+    required this.onClose,
+  });
+
+  final _ConceptDetailData detail;
+  final bool isLoading;
+  final VoidCallback onClose;
+
+  @override
+  State<_KnowledgeConceptDetailPanel> createState() =>
+      _KnowledgeConceptDetailPanelState();
+}
+
+class _KnowledgeConceptDetailPanelState
+    extends State<_KnowledgeConceptDetailPanel> {
+  bool _showCrossSubject = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final node = widget.detail.node;
+    final masteryConfidence = widget.detail.masteryConfidence
+        .clamp(0, 1)
+        .toDouble();
+    final confidencePercent = (masteryConfidence * 100).round();
+    final prerequisites = widget.detail.prerequisites.take(3).toList();
+    final related = widget.detail.relatedConcepts.take(3).toList();
+    final crossSubject = widget.detail.crossSubjectConnections.isEmpty
+        ? null
+        : widget.detail.crossSubjectConnections.first;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: Container(
+        key: ValueKey(node.id),
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              widget.node.label,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.text,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                height: 1.15,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    node.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: WicaraColors.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      height: 1.08,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _StatusBadge(status: node.status),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: widget.onClose,
+                  borderRadius: BorderRadius.circular(999),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: WicaraColors.muted,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (widget.isLoading) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: const LinearProgressIndicator(
+                  minHeight: 3,
+                  color: WicaraColors.primaryDeep,
+                  backgroundColor: WicaraColors.primaryLight,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: WicaraColors.line),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Mastery confidence',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: WicaraColors.text,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      Text(
+                        '$confidencePercent%',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: WicaraColors.primaryDeep,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 7,
+                      value: masteryConfidence,
+                      backgroundColor: WicaraColors.primaryLight,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        node.status.color,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              widget.node.status.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: color,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
+            const SizedBox(height: 16),
+            _ConceptDetailSection(
+              title: 'About this concept',
+              child: Text(
+                _nodeDescription(node),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                  height: 1.55,
+                ),
               ),
             ),
+            const SizedBox(height: 16),
+            _ConceptDetailSection(
+              title: 'Prerequisites',
+              child: Column(
+                children: [
+                  if (prerequisites.isEmpty)
+                    _ConceptRelationRow(
+                      relation: _ConceptRelationItem.fromNode(node),
+                      labelOverride: 'No direct prerequisite',
+                    )
+                  else
+                    for (final relation in prerequisites)
+                      _ConceptRelationRow(relation: relation),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _ConceptDetailSection(
+              title: 'Related concepts',
+              child: Column(
+                children: [
+                  if (related.isEmpty)
+                    _ConceptRelationRow(
+                      relation: _ConceptRelationItem.fromNode(node),
+                      labelOverride: 'No direct related concept',
+                    )
+                  else
+                    for (final relation in related)
+                      _ConceptRelationRow(relation: relation),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: WicaraColors.fieldFill,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: WicaraColors.line),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cross-subject connections',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: WicaraColors.text,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Graph of Graphs links are visible when available.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: WicaraColors.muted,
+                                fontWeight: FontWeight.w600,
+                                height: 1.25,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _showCrossSubject,
+                    activeThumbColor: WicaraColors.primaryDeep,
+                    activeTrackColor: WicaraColors.primaryLight,
+                    onChanged: (value) =>
+                        setState(() => _showCrossSubject = value),
+                  ),
+                ],
+              ),
+            ),
+            if (_showCrossSubject) ...[
+              const SizedBox(height: 10),
+              _CrossSubjectCard(
+                relation: crossSubject,
+                fallbackLabel: node.gradeBand?.isNotEmpty == true
+                    ? node.gradeBand!
+                    : 'Kurikulum Merdeka concept bridge',
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+}
+
+class _ConceptDetailSection extends StatelessWidget {
+  const _ConceptDetailSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: WicaraColors.text,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+class _ConceptRelationRow extends StatelessWidget {
+  const _ConceptRelationRow({required this.relation, this.labelOverride});
+
+  final _ConceptRelationItem relation;
+  final String? labelOverride;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Row(
+        children: [
+          _NodeStatusDot(status: relation.status),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              labelOverride ?? relation.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _StatusBadge(status: relation.status),
+          const SizedBox(width: 4),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: WicaraColors.softMuted,
+            size: 18,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CrossSubjectCard extends StatelessWidget {
+  const _CrossSubjectCard({
+    required this.relation,
+    required this.fallbackLabel,
+  });
+
+  final _ConceptRelationItem? relation;
+  final String fallbackLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: WicaraColors.secondarySoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: WicaraColors.secondaryLight),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.hub_outlined,
+              color: WicaraColors.secondaryDeep,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              relation == null
+                  ? fallbackLabel
+                  : '${relation!.label} - ${relation!.subjectName}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _SoftBadge('RELATED'),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+
+  final _NodeStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: status.color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.label,
+        maxLines: 1,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: status.color,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _NodeStatusDot extends StatelessWidget {
+  const _NodeStatusDot({required this.status});
+
+  final _NodeStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: status.color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: status.color, width: 1.5),
+      ),
+      child: status == _NodeStatus.mastered
+          ? const Icon(
+              Icons.check_rounded,
+              size: 12,
+              color: WicaraColors.accentMint,
+            )
+          : null,
+    );
+  }
+}
+
+String _nodeDescription(_KnowledgeNode node) {
+  final description = node.description;
+  if (description != null && description.isNotEmpty) {
+    return description;
+  }
+  return 'Concept in the Kurikulum Merdeka prerequisite graph.';
 }
 
 class _KnowledgeGraph {
@@ -4200,6 +5586,43 @@ class _KnowledgeGraph {
     }
     return bestIndex;
   }
+
+  _KnowledgeNode? nodeById(String id) {
+    for (final node in nodes) {
+      if (node.id == id) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  List<_KnowledgeNode> prerequisitesFor(_KnowledgeNode node) {
+    final prerequisites = <_KnowledgeNode>[];
+    for (final edge in edges) {
+      if (edge.to != node.id) {
+        continue;
+      }
+      final prerequisite = nodeById(edge.from);
+      if (prerequisite != null) {
+        prerequisites.add(prerequisite);
+      }
+    }
+    return prerequisites;
+  }
+
+  List<_KnowledgeNode> relatedFor(_KnowledgeNode node) {
+    final relatedNodes = <_KnowledgeNode>[];
+    for (final edge in edges) {
+      if (edge.from != node.id) {
+        continue;
+      }
+      final related = nodeById(edge.to);
+      if (related != null) {
+        relatedNodes.add(related);
+      }
+    }
+    return relatedNodes;
+  }
 }
 
 class _KnowledgeSection {
@@ -4222,17 +5645,34 @@ class _KnowledgeNode {
     required this.label,
     required this.x,
     required this.y,
+    this.description,
+    this.gradeBand,
     this.status = _NodeStatus.ready,
+    this.statusLabel,
   });
 
   final String id;
   final String label;
   final double x;
   final double y;
+  final String? description;
+  final String? gradeBand;
   final _NodeStatus status;
+  final String? statusLabel;
 
   double get width => 154;
-  double get height => 58;
+  double get height => 116;
+
+  double get confidence {
+    return switch (status) {
+      _NodeStatus.mastered => 0.92,
+      _NodeStatus.active => 0.62,
+      _NodeStatus.review => 0.48,
+      _NodeStatus.ready => 0.34,
+      _NodeStatus.gap => 0.18,
+      _NodeStatus.locked => 0.08,
+    };
+  }
 }
 
 class _KnowledgeEdge {
@@ -4247,6 +5687,7 @@ enum _NodeStatus {
   active('IN PROGRESS', WicaraColors.primaryDeep),
   review('REVIEW', WicaraColors.accentAmber),
   ready('READY', WicaraColors.primary),
+  gap('GAP', WicaraColors.accentCoral),
   locked('LOCKED', WicaraColors.softMuted);
 
   const _NodeStatus(this.label, this.color);
@@ -4255,11 +5696,113 @@ enum _NodeStatus {
   final Color color;
 }
 
+List<_SubjectMapItem> _subjectTabsFromApi(List<CurriculumSubject> subjects) {
+  final activeSubjects = subjects.where((subject) => subject.isActive).toList();
+  if (activeSubjects.isEmpty) {
+    return _KnowledgeMapDetailState._fallbackSubjects;
+  }
+
+  return [
+    for (final subject in activeSubjects)
+      _SubjectMapItem(
+        subject.code,
+        _subjectLabel(subject),
+        _subjectColor(subject.code),
+        false,
+      ),
+  ];
+}
+
+String _defaultSubjectCode(List<_SubjectMapItem> subjects) {
+  for (final preferredCode in ['matematika', 'math']) {
+    for (final subject in subjects) {
+      if (subject.code == preferredCode && !subject.isLocked) {
+        return subject.code;
+      }
+    }
+  }
+
+  return subjects.firstWhere((subject) => !subject.isLocked).code;
+}
+
+_KnowledgeGraph _knowledgeGraphFromApi(CurriculumKnowledgeMap graph) {
+  if (graph.groups.isEmpty || graph.nodes.isEmpty) {
+    return _mathKnowledgeGraph;
+  }
+
+  return _KnowledgeGraph(
+    title: graph.title,
+    width: graph.width,
+    height: graph.height,
+    topDown: graph.topDown,
+    groups: [
+      for (final group in graph.groups)
+        _MapGroup(label: group.label, x: group.x),
+    ],
+    nodes: [
+      for (final node in graph.nodes)
+        _KnowledgeNode(
+          id: node.id,
+          label: node.label,
+          x: node.x,
+          y: node.y,
+          description: node.description,
+          gradeBand: node.gradeBand,
+          status: _nodeStatusFromApi(node.status),
+          statusLabel: node.statusLabel.isEmpty ? null : node.statusLabel,
+        ),
+    ],
+    edges: [for (final edge in graph.edges) _KnowledgeEdge(edge.from, edge.to)],
+  );
+}
+
+String _subjectLabel(CurriculumSubject subject) {
+  return switch (subject.code) {
+    'matematika' => 'Matematika',
+    'ipas' => 'IPAS',
+    'ipa' => 'IPA',
+    'fisika' => 'Fisika',
+    'kimia' => 'Kimia',
+    'biologi' => 'Biologi',
+    'math' => 'Math',
+    'physics' => 'Physics',
+    'chemistry' => 'Chemistry',
+    'biology' => 'Biology',
+    _ => subject.name,
+  };
+}
+
+Color _subjectColor(String code) {
+  return switch (code) {
+    'matematika' => WicaraColors.math,
+    'ipas' || 'ipa' => WicaraColors.physics,
+    'fisika' => WicaraColors.physics,
+    'kimia' => WicaraColors.chemistry,
+    'biologi' => WicaraColors.biology,
+    'math' => WicaraColors.math,
+    'physics' => WicaraColors.physics,
+    'chemistry' => WicaraColors.chemistry,
+    'biology' => WicaraColors.biology,
+    _ => WicaraColors.primary,
+  };
+}
+
+_NodeStatus _nodeStatusFromApi(CurriculumNodeStatus status) {
+  return switch (status) {
+    CurriculumNodeStatus.mastered => _NodeStatus.mastered,
+    CurriculumNodeStatus.active => _NodeStatus.active,
+    CurriculumNodeStatus.review => _NodeStatus.review,
+    CurriculumNodeStatus.ready => _NodeStatus.ready,
+    CurriculumNodeStatus.gap => _NodeStatus.gap,
+    CurriculumNodeStatus.locked => _NodeStatus.locked,
+  };
+}
+
 const _mathKnowledgeGraph = _KnowledgeGraph(
   title: 'Mathematics Prerequisite Map',
   width: 2260,
   height: 600,
-  topDown: true,
+  topDown: false,
   groups: [
     _MapGroup(label: 'Primary Math', x: 28),
     _MapGroup(label: 'Lower Secondary', x: 330),
