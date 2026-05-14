@@ -15,7 +15,7 @@ class MockAuthRepository implements AuthRepository {
 
     return AuthSession(
       userId: 'mock-learner-001',
-      displayName: request.emailOrPhone.trim(),
+      displayName: 'Aisyah Putri',
       role: request.role,
       token: 'mock-session-token',
     );
@@ -32,4 +32,7 @@ class MockAuthRepository implements AuthRepository {
       token: 'mock-google-session-token',
     );
   }
+
+  @override
+  Future<void> signOut() async {}
 }

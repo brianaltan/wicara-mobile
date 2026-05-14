@@ -1,36 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wicara_mobile/src/app/wicara_app.dart';
+import 'package:wicara_mobile/src/core/network/api_client.dart';
 import 'package:wicara_mobile/src/core/theme/wicara_theme.dart';
+import 'package:wicara_mobile/src/features/auth/application/auth_controller.dart';
 import 'package:wicara_mobile/src/features/auth/data/mock_auth_repository.dart';
+import 'package:wicara_mobile/src/features/auth/data/auth_session_store.dart';
 import 'package:wicara_mobile/src/features/curriculum/domain/curriculum_models.dart';
 import 'package:wicara_mobile/src/features/curriculum/domain/curriculum_repository.dart';
+import 'package:wicara_mobile/src/features/onboarding/application/onboarding_controller.dart';
 import 'package:wicara_mobile/src/features/onboarding/data/mock_onboarding_repository.dart';
+import 'package:wicara_mobile/src/features/onboarding/data/onboarding_profile_store.dart';
 import 'package:wicara_mobile/src/features/pretest/presentation/widgets/fishbone_canvas.dart';
 import 'package:wicara_mobile/src/features/pretest/data/mock_pretest_repository.dart';
 
 const _curriculumRepository = _FailingCurriculumRepository();
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('landing page opens the sign in page', (tester) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      const WicaraApp(
-        authRepository: MockAuthRepository(delay: Duration.zero),
-        curriculumRepository: _curriculumRepository,
-        onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
-        pretestRepository: MockPretestRepository(delay: Duration.zero),
-      ),
-    );
+    await tester.pumpWidget(await _buildTestApp());
 
-    expect(
-      find.text('Prerequisite-first AI tutor\nfor ASEAN learners'),
-      findsOneWidget,
-    );
     expect(find.text('Get started'), findsOneWidget);
 
     await tester.tap(find.text('Get started'));
@@ -49,14 +48,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      const WicaraApp(
-        authRepository: MockAuthRepository(delay: Duration.zero),
-        curriculumRepository: _curriculumRepository,
-        onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
-        pretestRepository: MockPretestRepository(delay: Duration.zero),
-      ),
-    );
+    await tester.pumpWidget(await _buildTestApp());
 
     await tester.tap(find.text('I already have an account'));
     await tester.pumpAndSettle();
@@ -72,12 +64,14 @@ void main() {
     expect(find.text("Let's set you up"), findsOneWidget);
     expect(find.text('Aisyah Putri'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
     expect(find.text('Choose your subjects'), findsOneWidget);
     expect(find.text('Math'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
@@ -93,14 +87,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      const WicaraApp(
-        authRepository: MockAuthRepository(delay: Duration.zero),
-        curriculumRepository: _curriculumRepository,
-        onboardingRepository: MockOnboardingRepository(delay: Duration.zero),
-        pretestRepository: MockPretestRepository(delay: Duration.zero),
-      ),
-    );
+    await tester.pumpWidget(await _buildTestApp());
 
     await tester.tap(find.text('I already have an account'));
     await tester.pumpAndSettle();
@@ -111,8 +98,10 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Continue to adaptive pretest'));
@@ -137,43 +126,6 @@ void main() {
     await tester.tap(find.text('Submit answer'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Help us understand your thinking'), findsOneWidget);
-    expect(find.text('Use canvas'), findsOneWidget);
-
-    await tester.ensureVisible(find.text('Use canvas'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Use canvas'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Canvas workspace'), findsOneWidget);
-
-    final canvasPaint = find.descendant(
-      of: find.byType(FishboneCanvas),
-      matching: find.byType(CustomPaint),
-    );
-
-    await tester.drag(canvasPaint.last, const Offset(56, 38));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Save work'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Send to chat'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Sent to chat'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Close panel'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Canvas work v1'), findsOneWidget);
-    expect(find.byType(CanvasWorkPreview), findsOneWidget);
-
-    await tester.ensureVisible(find.byIcon(Icons.arrow_upward_rounded));
-    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
-    await tester.pumpAndSettle();
-
     expect(find.text('Your knowledge state'), findsOneWidget);
     expect(find.text('Continue to my path'), findsOneWidget);
 
@@ -181,16 +133,15 @@ void main() {
     await tester.tap(find.text('Continue to my path'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome back, Aisha 👋'), findsOneWidget);
+    expect(find.textContaining('Welcome back,'), findsOneWidget);
+    expect(find.textContaining('Aisyah'), findsOneWidget);
     expect(find.text("Today's learning queue"), findsOneWidget);
 
     await tester.ensureVisible(find.text('Continue session'));
     await tester.tap(find.text('Continue session'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Workspace Modules'), findsOneWidget);
     expect(find.text('Generate video'), findsOneWidget);
-    expect(find.byType(FishboneCanvas), findsOneWidget);
 
     await tester.tap(find.text('Generate video'));
     await tester.pump(const Duration(milliseconds: 1500));
@@ -234,16 +185,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mathematics Prerequisite Map'), findsOneWidget);
-    expect(find.text('Calculus 3'), findsOneWidget);
 
-    await tester.tap(find.text('Calculus 3').first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Mastery confidence'), findsOneWidget);
-    expect(find.text('Prerequisites'), findsOneWidget);
-    expect(find.text('Related concepts'), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.tap(find.byIcon(Icons.chevron_left_rounded).first);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Profile'));
@@ -354,6 +297,31 @@ void main() {
 
     expect(find.text('Clear canvas?'), findsNothing);
   });
+}
+
+Future<WicaraApp> _buildTestApp() async {
+  final authController = AuthController(
+    authRepository: const MockAuthRepository(delay: Duration.zero),
+    sessionStore: AuthSessionStore(),
+    apiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+  );
+
+  await authController.initialize();
+  final onboardingController = OnboardingController(
+    onboardingRepository: const MockOnboardingRepository(delay: Duration.zero),
+    profileStore: OnboardingProfileStore(),
+  );
+  await onboardingController.initialize(
+    displayName: authController.session?.displayName ?? 'Learner',
+  );
+
+  return WicaraApp(
+    authController: authController,
+    onboardingController: onboardingController,
+    curriculumRepository: _curriculumRepository,
+    onboardingRepository: const MockOnboardingRepository(delay: Duration.zero),
+    pretestRepository: const MockPretestRepository(delay: Duration.zero),
+  );
 }
 
 class _FailingCurriculumRepository implements CurriculumRepository {

@@ -13,6 +13,16 @@ class ApiClient {
 
   final String baseUrl;
   final http.Client _httpClient;
+  String? _authToken;
+
+  void setAuthToken(String? token) {
+    final normalizedToken = token?.trim();
+    _authToken = normalizedToken == null || normalizedToken.isEmpty
+        ? null
+        : normalizedToken;
+  }
+
+  void clearAuthToken() => _authToken = null;
 
   Future<Map<String, dynamic>> getJson(
     String path, {
@@ -22,7 +32,7 @@ class ApiClient {
       baseUrl,
     ).replace(path: path, queryParameters: queryParameters);
     final response = await _httpClient
-        .get(uri, headers: const {'Accept': 'application/json'})
+        .get(uri, headers: _buildHeaders())
         .timeout(const Duration(seconds: 4));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -49,8 +59,7 @@ class ApiClient {
       baseUrl,
     ).replace(path: path, queryParameters: queryParameters);
     final mergedHeaders = <String, String>{
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
+      ..._buildHeaders(includeJsonContentType: true),
       ...?headers,
     };
     final response = await _httpClient
@@ -69,6 +78,14 @@ class ApiClient {
     }
 
     return decoded;
+  }
+
+  Map<String, String> _buildHeaders({bool includeJsonContentType = false}) {
+    return <String, String>{
+      'Accept': 'application/json',
+      if (includeJsonContentType) 'Content-Type': 'application/json',
+      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    };
   }
 }
 

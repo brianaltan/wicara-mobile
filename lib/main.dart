@@ -2,24 +2,47 @@ import 'package:flutter/material.dart';
 
 import 'src/app/wicara_app.dart';
 import 'src/core/network/api_client.dart';
+import 'src/features/auth/application/auth_controller.dart';
 import 'src/features/auth/data/api_auth_repository.dart';
+import 'src/features/auth/data/auth_session_store.dart';
+import 'src/features/auth/data/google_web_client_id.dart';
+import 'src/features/onboarding/application/onboarding_controller.dart';
 import 'src/features/curriculum/data/api_curriculum_repository.dart';
 import 'src/features/onboarding/data/mock_onboarding_repository.dart';
+import 'src/features/onboarding/data/onboarding_profile_store.dart';
 import 'src/features/pretest/data/mock_pretest_repository.dart';
 
 const _googleWebClientId = String.fromEnvironment(
   'WICARA_GOOGLE_WEB_CLIENT_ID',
 );
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   final apiClient = ApiClient(baseUrl: ApiClient.defaultBaseUrl);
+  final googleWebClientId = resolveGoogleWebClientId(_googleWebClientId);
+  final authController = AuthController(
+    authRepository: ApiAuthRepository(
+      apiClient: apiClient,
+      googleWebClientId: googleWebClientId,
+    ),
+    sessionStore: AuthSessionStore(),
+    apiClient: apiClient,
+  );
+
+  await authController.initialize();
+  final onboardingController = OnboardingController(
+    onboardingRepository: const MockOnboardingRepository(),
+    profileStore: OnboardingProfileStore(),
+  );
+  await onboardingController.initialize(
+    displayName: authController.session?.displayName ?? 'Learner',
+  );
 
   runApp(
     WicaraApp(
-      authRepository: ApiAuthRepository(
-        apiClient: apiClient,
-        googleWebClientId: _googleWebClientId,
-      ),
+      authController: authController,
+      onboardingController: onboardingController,
       curriculumRepository: ApiCurriculumRepository(apiClient: apiClient),
       onboardingRepository: MockOnboardingRepository(),
       pretestRepository: MockPretestRepository(),

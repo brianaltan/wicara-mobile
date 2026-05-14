@@ -1,19 +1,28 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/security_note.dart';
+import '../application/auth_controller.dart';
 import '../domain/auth_repository.dart';
+import '../../onboarding/application/onboarding_controller.dart';
+import '../../onboarding/domain/onboarding_copy.dart';
 import 'widgets/role_pill.dart';
 import 'widgets/wicara_text_field.dart';
 
 class SignInPage extends StatefulWidget {
-  const SignInPage({required this.authRepository, super.key});
+  const SignInPage({
+    required this.authController,
+    required this.onboardingController,
+    super.key,
+  });
 
-  final AuthRepository authRepository;
+  final AuthController authController;
+  final OnboardingController onboardingController;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -27,6 +36,8 @@ class _SignInPageState extends State<SignInPage> {
 
   bool _isPasswordHidden = true;
   bool _isSubmitting = false;
+
+  bool get _showDevelopmentBypass => kDebugMode && kIsWeb;
 
   @override
   void dispose() {
@@ -43,13 +54,14 @@ class _SignInPageState extends State<SignInPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      await widget.authRepository.signIn(
+      final session = await widget.authController.signIn(
         SignInRequest(
           emailOrPhone: _emailController.text,
           password: _passwordController.text,
           role: _role,
         ),
       );
+      widget.onboardingController.syncDisplayName(session.displayName);
       if (!mounted) {
         return;
       }
@@ -69,7 +81,8 @@ class _SignInPageState extends State<SignInPage> {
   Future<void> _continueWithGoogle() async {
     setState(() => _isSubmitting = true);
     try {
-      await widget.authRepository.signInWithGoogle(role: _role);
+      final session = await widget.authController.signInWithGoogle(role: _role);
+      widget.onboardingController.syncDisplayName(session.displayName);
       if (!mounted) {
         return;
       }
@@ -79,6 +92,25 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
       _showMessage(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  Future<void> _continueWithDevelopmentBypass() async {
+    setState(() => _isSubmitting = true);
+    try {
+      final session = await widget.authController.startDevelopmentSession(
+        role: _role,
+        displayName: _emailController.text,
+      );
+      widget.onboardingController.syncDisplayName(session.displayName);
+      if (!mounted) {
+        return;
+      }
+      _openOnboarding();
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -111,25 +143,32 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final pageWidth = math.min(constraints.maxWidth, 430.0);
+    return AnimatedBuilder(
+      animation: widget.onboardingController,
+      builder: (context, _) {
+        final copy = OnboardingCopy.forLanguage(
+          widget.onboardingController.profile.preferredLanguage,
+        );
 
-            return Center(
-              child: SizedBox(
-                width: pageWidth,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(28, 14, 28, 20),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 34,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+        return Scaffold(
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final pageWidth = math.min(constraints.maxWidth, 430.0);
+
+                return Center(
+                  child: SizedBox(
+                    width: pageWidth,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(28, 14, 28, 20),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight - 34,
+                        ),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -154,14 +193,14 @@ class _SignInPageState extends State<SignInPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Welcome back',
+                                  copy.signInTitle,
                                   style: Theme.of(
                                     context,
                                   ).textTheme.headlineMedium,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Sign in to continue your learning',
+                                  copy.signInSubtitle,
                                   style: Theme.of(context).textTheme.bodyLarge
                                       ?.copyWith(
                                         color: WicaraColors.muted,
@@ -169,7 +208,7 @@ class _SignInPageState extends State<SignInPage> {
                                       ),
                                 ),
                                 const SizedBox(height: 28),
-                                RolePill(role: _role),
+                                RolePill(role: _role, copy: copy),
                                 const SizedBox(height: 30),
                                 Form(
                                   key: _formKey,
@@ -177,11 +216,11 @@ class _SignInPageState extends State<SignInPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      const _FieldLabel('Email or phone'),
+                                      _FieldLabel(copy.emailOrPhoneLabel),
                                       const SizedBox(height: 10),
                                       WicaraTextField(
                                         controller: _emailController,
-                                        hintText: 'Enter your email or phone',
+                                        hintText: copy.emailOrPhoneHint,
                                         icon: Icons.mail_outline_rounded,
                                         keyboardType:
                                             TextInputType.emailAddress,
@@ -189,23 +228,23 @@ class _SignInPageState extends State<SignInPage> {
                                         validator: (value) {
                                           if (value == null ||
                                               value.trim().isEmpty) {
-                                            return 'Enter your email or phone';
+                                            return copy.emailOrPhoneHint;
                                           }
                                           return null;
                                         },
                                       ),
                                       const SizedBox(height: 22),
-                                      const _FieldLabel('Password'),
+                                      _FieldLabel(copy.passwordLabel),
                                       const SizedBox(height: 10),
                                       WicaraTextField(
                                         controller: _passwordController,
-                                        hintText: 'Enter your password',
+                                        hintText: copy.passwordHint,
                                         icon: Icons.lock_outline_rounded,
                                         obscureText: _isPasswordHidden,
                                         textInputAction: TextInputAction.done,
                                         validator: (value) {
                                           if (value == null || value.isEmpty) {
-                                            return 'Enter your password';
+                                            return copy.passwordHint;
                                           }
                                           return null;
                                         },
@@ -233,7 +272,7 @@ class _SignInPageState extends State<SignInPage> {
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
                                     onPressed: () => _showMessage(
-                                      'Password reset is mocked for now.',
+                                      copy.passwordResetMockedMessage,
                                     ),
                                     style: TextButton.styleFrom(
                                       foregroundColor: WicaraColors.secondary,
@@ -243,7 +282,7 @@ class _SignInPageState extends State<SignInPage> {
                                           MaterialTapTargetSize.shrinkWrap,
                                     ),
                                     child: Text(
-                                      'Forgot password?',
+                                      copy.forgotPasswordLabel,
                                       style: Theme.of(context)
                                           .textTheme
                                           .labelLarge
@@ -256,33 +295,44 @@ class _SignInPageState extends State<SignInPage> {
                                 ),
                                 const SizedBox(height: 32),
                                 GradientButton(
-                                  label: 'Sign in',
+                                  label: copy.signInLabel,
                                   onPressed: _submit,
                                   isLoading: _isSubmitting,
                                 ),
                                 const SizedBox(height: 30),
-                                const _DividerText(),
+                                _DividerText(label: copy.orContinueWithLabel),
                                 const SizedBox(height: 18),
                                 _GoogleButton(
                                   onPressed: _isSubmitting
                                       ? null
                                       : _continueWithGoogle,
                                 ),
+                                if (_showDevelopmentBypass) ...[
+                                  const SizedBox(height: 14),
+                                  _DevelopmentBypassButton(
+                                    label: copy.bypassForWebDevLabel,
+                                    onPressed: _isSubmitting
+                                        ? null
+                                        : _continueWithDevelopmentBypass,
+                                  ),
+                                ],
                                 const SizedBox(height: 40),
-                                const SecurityNote(),
+                                SecurityNote(message: copy.securityNoteLabel),
                               ],
                             ),
                           ),
-                        ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -305,7 +355,9 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class _DividerText extends StatelessWidget {
-  const _DividerText();
+  const _DividerText({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +367,7 @@ class _DividerText extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
-            'or continue with',
+            label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w400,
@@ -379,6 +431,41 @@ class _GoogleGlyph extends StatelessWidget {
         fontSize: 18,
         fontWeight: FontWeight.w600,
         height: 1,
+      ),
+    );
+  }
+}
+
+class _DevelopmentBypassButton extends StatelessWidget {
+  const _DevelopmentBypassButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 47,
+      child: TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: WicaraColors.secondaryDeep,
+          backgroundColor: WicaraColors.secondarySoft,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(11),
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: WicaraColors.secondaryDeep,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

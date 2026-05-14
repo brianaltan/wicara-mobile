@@ -8,4 +8,12 @@ class AppRoutes {
   static const pretest = '/pretest';
   static const home = '/home';
   static const workspaceModules = '/workspace-modules';
+
+  static const protectedRoutes = <String>{
+    onboarding,
+    learningGoal,
+    pretest,
+    home,
+    workspaceModules,
+  };
 }
