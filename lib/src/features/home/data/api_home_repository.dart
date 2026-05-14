@@ -1,5 +1,6 @@
 import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
+import '../../pretest/data/api_pretest_repository.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
 
@@ -49,6 +50,44 @@ class ApiHomeRepository implements HomeRepository {
     );
   }
 
+  @override
+  Future<DailyEvaluationSession> fetchDailyEvaluation() async {
+    final token = _requireToken();
+    final json = await _apiClient.getJson(
+      '/api/v1/daily-evaluations/today',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final questions = json['questions'];
+    return DailyEvaluationSession(
+      sessionId: _string(json['session_id']),
+      questions: questions is List
+          ? questions
+                .whereType<Map<String, dynamic>>()
+                .map(questionFromJson)
+                .toList(growable: false)
+          : const [],
+    );
+  }
+
+  @override
+  Future<void> submitDailyEvaluationAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) async {
+    final token = _requireToken();
+    await _apiClient.postJson(
+      '/api/v1/daily-evaluations/$sessionId/answers',
+      headers: {'Authorization': 'Bearer $token'},
+      body: {
+        'question_id': questionId,
+        'option_id': optionId,
+        'confidence': confidence,
+      },
+    );
+  }
+
   Map<String, String> _subjectNamesByCode(Map<String, dynamic> json) {
     final items = json['items'];
     if (items is! List) {
@@ -73,6 +112,14 @@ class ApiHomeRepository implements HomeRepository {
   }
 
   String _string(Object? value) => (value ?? '').toString().trim();
+
+  String _requireToken() {
+    final token = _sessionStore.accessToken;
+    if (token == null || token.isEmpty) {
+      throw const ApiClientException('Please log in before opening dashboard.');
+    }
+    return token;
+  }
 
   String _educationLabel(String code) {
     return switch (code) {

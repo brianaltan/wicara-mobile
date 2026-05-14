@@ -6,9 +6,12 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../domain/learning_goal_repository.dart';
 
 class LearningGoalPage extends StatefulWidget {
-  const LearningGoalPage({super.key});
+  const LearningGoalPage({required this.learningGoalRepository, super.key});
+
+  final LearningGoalRepository learningGoalRepository;
 
   @override
   State<LearningGoalPage> createState() => _LearningGoalPageState();
@@ -42,22 +45,39 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     }
 
     setState(() => _isGenerating = true);
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-    if (!mounted) {
-      return;
+    try {
+      await widget.learningGoalRepository.createLearningGoal(
+        rawTopic: _controller.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isGenerating = false;
+        _isComplete = true;
+      });
+
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+    } on LearningGoalException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isGenerating = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
     }
-
-    setState(() {
-      _isGenerating = false;
-      _isComplete = true;
-    });
-
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-    if (!mounted) {
-      return;
-    }
-
-    Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
   }
 
   void _goBack() {

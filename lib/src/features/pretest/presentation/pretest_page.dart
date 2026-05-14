@@ -30,38 +30,53 @@ class _PretestPageState extends State<PretestPage> {
   );
 
   _PretestStage _stage = _PretestStage.question;
-  String _selectedOptionId = 'B';
+  PretestQuestion? _question;
+  String _selectedOptionId = '';
   int _confidence = 6;
   bool _isSubmitting = false;
+  bool _isLoadingQuestion = true;
+  String? _questionError;
   KnowledgeState? _knowledgeState;
   final List<CanvasWorkSnapshot> _canvasSnapshots = [];
 
-  static const _question = PretestQuestion(
-    stepLabel: '2 / 12',
-    topic: 'Knowledge Space Theory',
-    prompt:
-        'A company introduces a new\nprocess that reduces cycle\ntime but increases defect rate.\nWhat should they evaluate first?',
-    helper: 'Select the best next step to guide\nimprovement.',
-    options: [
-      PretestOption(
-        id: 'A',
-        label: 'A',
-        text: 'Increase automation\nto reduce variability',
-      ),
-      PretestOption(
-        id: 'B',
-        label: 'B',
-        text: 'Run a root cause analysis\non defect drivers',
-      ),
-      PretestOption(id: 'C', label: 'C', text: 'Set tighter production quotas'),
-      PretestOption(id: 'D', label: 'D', text: 'Reduce inspection frequency'),
-    ],
-  );
+  @override
+  void initState() {
+    super.initState();
+    _loadQuestion();
+  }
 
   @override
   void dispose() {
     _reasoningController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadQuestion() async {
+    setState(() {
+      _isLoadingQuestion = true;
+      _questionError = null;
+    });
+    try {
+      final question = await widget.pretestRepository.fetchCurrentQuestion();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _question = question;
+        _selectedOptionId = question.options.isEmpty
+            ? ''
+            : question.options.first.id;
+        _isLoadingQuestion = false;
+      });
+    } on PretestException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _questionError = error.message;
+        _isLoadingQuestion = false;
+      });
+    }
   }
 
   Future<void> _submitAnswer() async {
@@ -125,14 +140,14 @@ class _PretestPageState extends State<PretestPage> {
 
   PretestAnswer get _answer {
     return PretestAnswer(
-      questionId: 'root-cause-analysis-001',
+      questionId: _question?.id ?? '',
       optionId: _selectedOptionId,
       confidence: _confidence,
     );
   }
 
   PretestOption get _selectedOption =>
-      _question.options.firstWhere((option) => option.id == _selectedOptionId);
+      _question!.options.firstWhere((option) => option.id == _selectedOptionId);
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
@@ -241,10 +256,28 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Widget _stageView(BoxConstraints constraints) {
+    if (_isLoadingQuestion) {
+      return _PretestStateView(
+        constraints: constraints,
+        title: 'Loading pretest',
+        message: 'Fetching seeded questions from backend.',
+      );
+    }
+    if (_questionError != null || _question == null) {
+      return _PretestStateView(
+        constraints: constraints,
+        title: 'Pretest unavailable',
+        message: _questionError ?? 'Backend returned no question.',
+        actionLabel: 'Try again',
+        onAction: _loadQuestion,
+      );
+    }
+    final question = _question!;
+
     return switch (_stage) {
       _PretestStage.question => _QuestionStage(
         constraints: constraints,
-        question: _question,
+        question: question,
         selectedOptionId: _selectedOptionId,
         confidence: _confidence,
         isSubmitting: _isSubmitting,
@@ -255,7 +288,7 @@ class _PretestPageState extends State<PretestPage> {
       ),
       _PretestStage.reasoning => _ReasoningStage(
         constraints: constraints,
-        question: _question,
+        question: question,
         selectedOption: _selectedOption,
         controller: _reasoningController,
         canvasSnapshots: _canvasSnapshots,
@@ -270,6 +303,69 @@ class _PretestPageState extends State<PretestPage> {
         onContinue: _goHome,
       ),
     };
+  }
+}
+
+class _PretestStateView extends StatelessWidget {
+  const _PretestStateView({
+    required this.constraints,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final BoxConstraints constraints;
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Image.asset(
+                'lib/src/assets/pretestIcon.png',
+                width: 84,
+                height: 84,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 24, height: 1.12),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 22),
+              GradientButton(label: actionLabel!, onPressed: onAction!),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

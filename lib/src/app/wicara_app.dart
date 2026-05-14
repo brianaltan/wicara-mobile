@@ -8,6 +8,7 @@ import '../features/home/domain/home_repository.dart';
 import '../features/home/domain/home_snapshot.dart';
 import '../features/home/presentation/app_home_page.dart';
 import '../features/landing/presentation/landing_page.dart';
+import '../features/learning_goal/domain/learning_goal_repository.dart';
 import '../features/learning_goal/presentation/learning_goal_page.dart';
 import '../features/onboarding/domain/onboarding_repository.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
@@ -20,6 +21,7 @@ class WicaraApp extends StatefulWidget {
   const WicaraApp({
     required this.authRepository,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.onboardingRepository,
     required this.pretestRepository,
     this.homeRepository,
@@ -29,6 +31,7 @@ class WicaraApp extends StatefulWidget {
 
   final AuthRepository authRepository;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final HomeRepository? homeRepository;
   final OnboardingRepository onboardingRepository;
   final PretestRepository pretestRepository;
@@ -85,7 +88,9 @@ class _WicaraAppState extends State<WicaraApp> {
             SignInPage(authRepository: widget.authRepository),
         AppRoutes.onboarding: (_) =>
             OnboardingPage(onboardingRepository: widget.onboardingRepository),
-        AppRoutes.learningGoal: (_) => const LearningGoalPage(),
+        AppRoutes.learningGoal: (_) => LearningGoalPage(
+          learningGoalRepository: widget.learningGoalRepository,
+        ),
         AppRoutes.pretest: (_) =>
             PretestPage(pretestRepository: widget.pretestRepository),
         AppRoutes.home: (_) => AppHomePage(
@@ -104,6 +109,21 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<HomeSnapshot> fetchSnapshot() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationSession> fetchDailyEvaluation() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<void> submitDailyEvaluationAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 }

@@ -43,6 +43,11 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _showKnowledgeMap = false;
   int _dailyEvaluationIndex = 0;
   final Map<int, String> _dailyEvaluationAnswers = {};
+  String? _dailyEvaluationSessionId;
+  List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
+  bool _isLoadingDailyEvaluation = false;
+  bool _isSubmittingDailyEvaluation = false;
+  String? _dailyEvaluationError;
   late Future<HomeSnapshot> _homeSnapshotFuture;
 
   @override
@@ -80,7 +85,7 @@ class _AppHomePageState extends State<AppHomePage> {
     });
   }
 
-  void _openDailyEvaluation() {
+  Future<void> _openDailyEvaluation() async {
     setState(() {
       _selectedTab = _HomeTab.home;
       _showGalleryDetail = false;
@@ -90,23 +95,84 @@ class _AppHomePageState extends State<AppHomePage> {
       _showKnowledgeMap = false;
       _dailyEvaluationIndex = 0;
       _dailyEvaluationAnswers.clear();
+      _dailyEvaluationSessionId = null;
+      _backendDailyEvaluationQuestions = const [];
+      _dailyEvaluationError = null;
+      _isLoadingDailyEvaluation = true;
     });
+
+    try {
+      final session = await widget.homeRepository.fetchDailyEvaluation();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _dailyEvaluationSessionId = session.sessionId;
+        _backendDailyEvaluationQuestions = session.questions;
+        _isLoadingDailyEvaluation = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _dailyEvaluationError = error.toString();
+        _isLoadingDailyEvaluation = false;
+      });
+    }
   }
 
   void _selectDailyEvaluationAnswer(String optionId) {
     setState(() => _dailyEvaluationAnswers[_dailyEvaluationIndex] = optionId);
   }
 
-  void _nextDailyEvaluationQuestion() {
-    setState(() {
-      if (_dailyEvaluationIndex < _dailyEvaluationQuestions.length - 1) {
-        _dailyEvaluationIndex += 1;
+  Future<void> _nextDailyEvaluationQuestion() async {
+    final sessionId = _dailyEvaluationSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    final question = _backendDailyEvaluationQuestions[_dailyEvaluationIndex];
+    final optionId = _dailyEvaluationAnswers[_dailyEvaluationIndex];
+    if (optionId == null || optionId.isEmpty || _isSubmittingDailyEvaluation) {
+      return;
+    }
+
+    setState(() => _isSubmittingDailyEvaluation = true);
+    try {
+      await widget.homeRepository.submitDailyEvaluationAnswer(
+        sessionId: sessionId,
+        questionId: question.id,
+        optionId: optionId,
+        confidence: 6,
+      );
+      if (!mounted) {
         return;
       }
+      setState(() {
+        _isSubmittingDailyEvaluation = false;
+        if (_dailyEvaluationIndex <
+            _backendDailyEvaluationQuestions.length - 1) {
+          _dailyEvaluationIndex += 1;
+          return;
+        }
 
-      _showDailyEvaluation = false;
-      _showEvaluationResult = true;
-    });
+        _showDailyEvaluation = false;
+        _showEvaluationResult = true;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isSubmittingDailyEvaluation = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
   }
 
   void _previousDailyEvaluationQuestion() {
@@ -231,15 +297,38 @@ class _AppHomePageState extends State<AppHomePage> {
 
   Widget _tabView(BoxConstraints constraints) {
     if (_showDailyEvaluation) {
+      if (_isLoadingDailyEvaluation) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: 'Loading Daily Evals',
+          message: 'Fetching spaced-review questions from backend.',
+        );
+      }
+      if (_dailyEvaluationError != null ||
+          _backendDailyEvaluationQuestions.isEmpty) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: 'Daily Evals unavailable',
+          message:
+              _dailyEvaluationError ?? 'Backend returned no review questions.',
+          actionLabel: 'Try again',
+          onAction: () {
+            _openDailyEvaluation();
+          },
+        );
+      }
       return _DailyEvaluationQuestionPage(
         constraints: constraints,
-        question: _dailyEvaluationQuestions[_dailyEvaluationIndex],
+        question: _backendDailyEvaluationQuestions[_dailyEvaluationIndex],
         questionIndex: _dailyEvaluationIndex,
-        totalQuestions: _dailyEvaluationQuestions.length,
+        totalQuestions: _backendDailyEvaluationQuestions.length,
         selectedOptionId: _dailyEvaluationAnswers[_dailyEvaluationIndex],
         onBack: _previousDailyEvaluationQuestion,
         onSelected: _selectDailyEvaluationAnswer,
-        onSubmit: _nextDailyEvaluationQuestion,
+        isSubmitting: _isSubmittingDailyEvaluation,
+        onSubmit: () {
+          _nextDailyEvaluationQuestion();
+        },
       );
     }
 
@@ -257,6 +346,9 @@ class _AppHomePageState extends State<AppHomePage> {
         onRetrySnapshot: _retryHomeSnapshot,
         onOpenQueue: () => _openQueue(),
         onOpenTracks: () => _openQueue(_QueueTab.tracks),
+        onTakeDailyEvaluation: () {
+          _openDailyEvaluation();
+        },
         onContinueSession: _openWorkspaceModules,
       ),
       _HomeTab.queue => _HomeSnapshotBuilder(
@@ -395,6 +487,7 @@ class _HomeDashboard extends StatelessWidget {
     required this.onRetrySnapshot,
     required this.onOpenQueue,
     required this.onOpenTracks,
+    required this.onTakeDailyEvaluation,
     required this.onContinueSession,
   });
 
@@ -403,6 +496,7 @@ class _HomeDashboard extends StatelessWidget {
   final VoidCallback onRetrySnapshot;
   final VoidCallback onOpenQueue;
   final VoidCallback onOpenTracks;
+  final VoidCallback onTakeDailyEvaluation;
   final VoidCallback onContinueSession;
 
   @override
@@ -416,6 +510,7 @@ class _HomeDashboard extends StatelessWidget {
         snapshot: snapshot,
         onOpenQueue: onOpenQueue,
         onOpenTracks: onOpenTracks,
+        onTakeDailyEvaluation: onTakeDailyEvaluation,
         onContinueSession: onContinueSession,
       ),
     );
@@ -428,6 +523,7 @@ class _HomeDashboardContent extends StatelessWidget {
     required this.snapshot,
     required this.onOpenQueue,
     required this.onOpenTracks,
+    required this.onTakeDailyEvaluation,
     required this.onContinueSession,
   });
 
@@ -435,6 +531,7 @@ class _HomeDashboardContent extends StatelessWidget {
   final HomeSnapshot snapshot;
   final VoidCallback onOpenQueue;
   final VoidCallback onOpenTracks;
+  final VoidCallback onTakeDailyEvaluation;
   final VoidCallback onContinueSession;
 
   @override
@@ -474,7 +571,7 @@ class _HomeDashboardContent extends StatelessWidget {
             const SizedBox(height: 25),
             _LearningSetupStatusCard(snapshot: snapshot),
             const SizedBox(height: 24),
-            const _DailyEvaluationUnavailableCard(),
+            _DailyEvaluationCard(onTakeEvaluation: onTakeDailyEvaluation),
           ],
         ),
       ),
@@ -1124,96 +1221,6 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
   }
 }
 
-const _dailyEvaluationQuestions = [
-  PretestQuestion(
-    stepLabel: 'Daily Evals',
-    topic: 'Calculus I',
-    prompt:
-        'A graph approaches y = 3 as x gets closer to 2 from both sides. What does this suggest?',
-    helper: 'Choose the strongest interpretation.',
-    options: [
-      PretestOption(
-        id: 'A',
-        label: 'A',
-        text: 'The function must equal 3 when x is 2',
-      ),
-      PretestOption(
-        id: 'B',
-        label: 'B',
-        text: 'The limit is likely 3 as x approaches 2',
-      ),
-      PretestOption(
-        id: 'C',
-        label: 'C',
-        text: 'The graph has no meaningful behavior near x = 2',
-      ),
-      PretestOption(
-        id: 'D',
-        label: 'D',
-        text: 'The slope is always 3 around x = 2',
-      ),
-    ],
-  ),
-  PretestQuestion(
-    stepLabel: 'Daily Evals',
-    topic: 'Application',
-    prompt:
-        'A student can solve derivative rules but misses word problems. What should they review next?',
-    helper: 'Pick the next learning action.',
-    options: [
-      PretestOption(
-        id: 'A',
-        label: 'A',
-        text: 'Repeat only memorized derivative formulas',
-      ),
-      PretestOption(
-        id: 'B',
-        label: 'B',
-        text: 'Practice translating situations into equations',
-      ),
-      PretestOption(
-        id: 'C',
-        label: 'C',
-        text: 'Skip application questions until later',
-      ),
-      PretestOption(
-        id: 'D',
-        label: 'D',
-        text: 'Review unrelated algebra identities',
-      ),
-    ],
-  ),
-  PretestQuestion(
-    stepLabel: 'Daily Evals',
-    topic: 'Spaced Review',
-    prompt:
-        'You answered a concept correctly today after struggling yesterday. What is the best next step?',
-    helper: 'Use memory strength to decide.',
-    options: [
-      PretestOption(
-        id: 'A',
-        label: 'A',
-        text: 'Review it again after a short delay',
-      ),
-      PretestOption(
-        id: 'B',
-        label: 'B',
-        text: 'Mark it mastered forever immediately',
-      ),
-      PretestOption(
-        id: 'C',
-        label: 'C',
-        text: 'Remove it from all future practice',
-      ),
-      PretestOption(
-        id: 'D',
-        label: 'D',
-        text: 'Only study brand new concepts now',
-      ),
-    ],
-  ),
-];
-
 class _DailyEvaluationQuestionPage extends StatelessWidget {
   const _DailyEvaluationQuestionPage({
     required this.constraints,
@@ -1223,6 +1230,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
     required this.selectedOptionId,
     required this.onBack,
     required this.onSelected,
+    required this.isSubmitting,
     required this.onSubmit,
   });
 
@@ -1233,6 +1241,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
   final String? selectedOptionId;
   final VoidCallback onBack;
   final ValueChanged<String> onSelected;
+  final bool isSubmitting;
   final VoidCallback onSubmit;
 
   @override
@@ -1341,6 +1350,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
                         ? 'Finish Daily Evals'
                         : 'Next question',
                     onPressed: selectedOptionId == null ? null : onSubmit,
+                    isLoading: isSubmitting,
                   ),
                 ],
               ),
@@ -6847,11 +6857,15 @@ class _SectionWordmark extends StatelessWidget {
           filterQuality: FilterQuality.high,
         ),
         const SizedBox(width: 12),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-            fontSize: titleFontSize,
-            height: 1.1,
+        Expanded(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: title.contains('\n') ? 2 : 1,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontSize: titleFontSize,
+              height: 1.1,
+            ),
           ),
         ),
       ],

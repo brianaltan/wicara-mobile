@@ -1,3 +1,5 @@
+import '../../pretest/domain/pretest_models.dart';
+
 class HomeSnapshot {
   const HomeSnapshot({
     required this.displayName,
@@ -57,4 +59,14 @@ class HomeSnapshot {
     ].where((part) => part.trim().isNotEmpty).toList();
     return parts.isEmpty ? 'Not set' : parts.join(' - ');
   }
+}
+
+class DailyEvaluationSession {
+  const DailyEvaluationSession({
+    required this.sessionId,
+    required this.questions,
+  });
+
+  final String sessionId;
+  final List<PretestQuestion> questions;
 }
