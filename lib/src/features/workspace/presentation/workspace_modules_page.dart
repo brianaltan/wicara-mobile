@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
@@ -42,8 +43,16 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   WorkspaceSession? _workspace;
   bool _isLoadingWorkspace = true;
   bool _isAppendingEvent = false;
+  bool _moduleCompleted = false;
   String? _workspaceError;
   Timer? _videoTimer;
+
+  HardcodedAssessmentPack get _assessmentPack {
+    return HardcodedAssessmentBank.packForEducation(
+      educationLevel: widget.onboardingController.profile.educationLevel,
+      gradeLevel: widget.onboardingController.profile.gradeLevel,
+    );
+  }
 
   @override
   void initState() {
@@ -137,7 +146,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   Future<void> _answerQuiz(String answer) async {
-    final isCorrect = answer == '3';
+    final assessmentPack = _assessmentPack;
+    final isCorrect = answer == assessmentPack.workspaceQuizCorrectAnswer;
     setState(() {
       _selectedQuizAnswer = answer;
       _quizState = isCorrect
@@ -149,7 +159,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       textPayload: answer,
       metadata: {
         'selected_answer': answer,
-        'correct_answer': '3',
+        'correct_answer': assessmentPack.workspaceQuizCorrectAnswer,
         'is_correct': isCorrect,
         'confidence': isCorrect ? 8 : 4,
       },
@@ -162,7 +172,22 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         status: 'completed',
       );
     }
+    if (isCorrect && mounted) {
+      setState(() => _moduleCompleted = true);
+    }
     _scrollToBottom();
+  }
+
+  void _finishModuleAndOpenPosttest() {
+    final arguments = widget.routeArguments;
+    final assessmentPack = _assessmentPack;
+    Navigator.of(context).pop(
+      WorkspaceCompletionResult(
+        trackId: arguments?.trackId ?? _workspace?.trackId ?? '',
+        moduleId: arguments?.moduleId ?? _workspace?.moduleId ?? '',
+        moduleTitle: assessmentPack.topicTitle,
+      ),
+    );
   }
 
   Future<void> _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) async {
@@ -407,12 +432,15 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 selectedQuizAnswer: _selectedQuizAnswer,
                                 chatEntries: _chatEntries,
                                 canvasSnapshots: _canvasSnapshots,
+                                assessmentPack: _assessmentPack,
                                 isLoadingWorkspace: _isLoadingWorkspace,
                                 isAppendingEvent: _isAppendingEvent,
+                                moduleCompleted: _moduleCompleted,
                                 workspaceError: _workspaceError,
                                 onChooseExplanation: _chooseExplanation,
                                 onGenerateVideo: _generateVideo,
                                 onAnswerQuiz: _answerQuiz,
+                                onStartPosttest: _finishModuleAndOpenPosttest,
                                 onOpenCanvas: _openCanvas,
                               ),
                             ),
@@ -456,12 +484,15 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.selectedQuizAnswer,
     required this.chatEntries,
     required this.canvasSnapshots,
+    required this.assessmentPack,
     required this.isLoadingWorkspace,
     required this.isAppendingEvent,
+    required this.moduleCompleted,
     required this.workspaceError,
     required this.onChooseExplanation,
     required this.onGenerateVideo,
     required this.onAnswerQuiz,
+    required this.onStartPosttest,
     required this.onOpenCanvas,
   });
 
@@ -470,12 +501,15 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final String? selectedQuizAnswer;
   final List<_WorkspaceChatEntry> chatEntries;
   final List<CanvasWorkSnapshot> canvasSnapshots;
+  final HardcodedAssessmentPack assessmentPack;
   final bool isLoadingWorkspace;
   final bool isAppendingEvent;
+  final bool moduleCompleted;
   final String? workspaceError;
   final VoidCallback onChooseExplanation;
   final VoidCallback onGenerateVideo;
   final ValueChanged<String> onAnswerQuiz;
+  final VoidCallback onStartPosttest;
   final VoidCallback onOpenCanvas;
 
   @override
@@ -485,19 +519,17 @@ class _WorkspaceChatPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _AssistantMessageFrame(
+          _AssistantMessageFrame(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _WorkspaceBubble(
-                  text:
-                      'Okay, before we start learning limits from graphs, what do you prefer?',
+                  text: assessmentPack.workspaceIntroLine1,
                   isUser: false,
                 ),
-                SizedBox(height: 9),
+                const SizedBox(height: 9),
                 _WorkspaceBubble(
-                  text:
-                      'I can write a clear long-form explanation, or I can generate a short visual video and save it here for you.',
+                  text: assessmentPack.workspaceIntroLine2,
                   isUser: false,
                 ),
               ],
@@ -536,7 +568,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
               isUser: true,
             ),
             const SizedBox(height: 9),
-            const _ConceptExplanationBubble(),
+            _ConceptExplanationBubble(
+              explanationText: assessmentPack.workspaceExplanation,
+            ),
           ] else if (contentMode == _WorkspaceContentMode.videoLoading) ...[
             const SizedBox(height: 14),
             const _WorkspaceBubble(text: 'Generate a video.', isUser: true),
@@ -546,7 +580,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
             const SizedBox(height: 14),
             const _WorkspaceBubble(text: 'Generate a video.', isUser: true),
             const SizedBox(height: 10),
-            const _GeneratedWorkspaceVideoCard(),
+            _GeneratedWorkspaceVideoCard(
+              title: assessmentPack.workspaceVideoTitle,
+            ),
           ],
           if (contentMode == _WorkspaceContentMode.explanation ||
               contentMode == _WorkspaceContentMode.videoReady) ...[
@@ -555,6 +591,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
               quizState: quizState,
               selectedAnswer: selectedQuizAnswer,
               onAnswer: onAnswerQuiz,
+              assessmentPack: assessmentPack,
+              moduleCompleted: moduleCompleted,
+              onStartPosttest: onStartPosttest,
             ),
           ],
           const SizedBox(height: 14),
@@ -1049,7 +1088,9 @@ class _WorkspaceCanvasQuickActionButton extends StatelessWidget {
 }
 
 class _ConceptExplanationBubble extends StatelessWidget {
-  const _ConceptExplanationBubble();
+  const _ConceptExplanationBubble({required this.explanationText});
+
+  final String explanationText;
 
   @override
   Widget build(BuildContext context) {
@@ -1057,7 +1098,7 @@ class _ConceptExplanationBubble extends StatelessWidget {
       icon: Icons.lightbulb_outline_rounded,
       title: 'Concept explanation',
       child: Text(
-        'A limit is the value a function is moving toward, not always the value it reaches. On a graph, trace the curve from the left and from the right. If both sides approach the same height, that height is the limit. The filled or open dot at the exact x-value matters for the function value, but the limit cares about the nearby behavior.',
+        explanationText,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: WicaraColors.text,
           fontWeight: FontWeight.w600,
@@ -1089,7 +1130,7 @@ class _WorkspaceVideoLoadingCard extends StatelessWidget {
           ),
           const SizedBox(height: 11),
           Text(
-            'Building scenes, narration, and a quick graph animation...',
+            'Building scenes, narration, and quick concept visuals...',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
@@ -1102,7 +1143,9 @@ class _WorkspaceVideoLoadingCard extends StatelessWidget {
 }
 
 class _GeneratedWorkspaceVideoCard extends StatelessWidget {
-  const _GeneratedWorkspaceVideoCard();
+  const _GeneratedWorkspaceVideoCard({required this.title});
+
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -1162,7 +1205,7 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Limits from graphs in 5 minutes',
+                    title,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: WicaraColors.ink,
                       fontWeight: FontWeight.w700,
@@ -1225,11 +1268,17 @@ class _WorkspaceQuizCard extends StatelessWidget {
     required this.quizState,
     required this.selectedAnswer,
     required this.onAnswer,
+    required this.assessmentPack,
+    required this.moduleCompleted,
+    required this.onStartPosttest,
   });
 
   final _WorkspaceQuizState quizState;
   final String? selectedAnswer;
   final ValueChanged<String> onAnswer;
+  final HardcodedAssessmentPack assessmentPack;
+  final bool moduleCompleted;
+  final VoidCallback onStartPosttest;
 
   @override
   Widget build(BuildContext context) {
@@ -1240,7 +1289,7 @@ class _WorkspaceQuizCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'If the graph approaches y = 3 from both sides as x approaches 2, what is the limit?',
+            assessmentPack.workspaceQuizQuestion,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
               fontWeight: FontWeight.w700,
@@ -1248,13 +1297,13 @@ class _WorkspaceQuizCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final answer in const ['2', '3', 'Does not exist'])
+          for (final answer in assessmentPack.workspaceQuizOptions)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _WorkspaceQuizOption(
                 label: answer,
                 isSelected: selectedAnswer == answer,
-                isCorrect: answer == '3',
+                isCorrect: answer == assessmentPack.workspaceQuizCorrectAnswer,
                 hasAnswered: quizState != _WorkspaceQuizState.unanswered,
                 onPressed: () => onAnswer(answer),
               ),
@@ -1263,8 +1312,8 @@ class _WorkspaceQuizCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               quizState == _WorkspaceQuizState.correct
-                  ? 'Correct. The nearby behavior on both sides points to 3.'
-                  : 'Almost. Look at the height the curve approaches, not the x-value.',
+                  ? assessmentPack.workspaceQuizCorrectFeedback
+                  : assessmentPack.workspaceQuizReviewFeedback,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: quizState == _WorkspaceQuizState.correct
                     ? WicaraColors.accentMint
@@ -1273,6 +1322,23 @@ class _WorkspaceQuizCard extends StatelessWidget {
                 height: 1.3,
               ),
             ),
+            if (moduleCompleted) ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: onStartPosttest,
+                icon: const Icon(Icons.assignment_turned_in_outlined),
+                label: const Text('Mulai Posttest'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: WicaraColors.secondary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),

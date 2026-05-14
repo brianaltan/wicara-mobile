@@ -12,6 +12,18 @@ class WorkspaceRouteArguments {
   bool get isValid => trackId.isNotEmpty && moduleId.isNotEmpty;
 }
 
+class WorkspaceCompletionResult {
+  const WorkspaceCompletionResult({
+    required this.trackId,
+    required this.moduleId,
+    required this.moduleTitle,
+  });
+
+  final String trackId;
+  final String moduleId;
+  final String moduleTitle;
+}
+
 class WorkspaceSession {
   const WorkspaceSession({
     required this.id,

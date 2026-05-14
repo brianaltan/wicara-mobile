@@ -18,6 +18,7 @@ import '../../onboarding/domain/onboarding_profile.dart';
 import '../../onboarding/presentation/widgets/subject_tile.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
+import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
 import '../../workspace/domain/workspace_models.dart';
@@ -67,18 +68,31 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _showGalleryDetail = false;
   bool _showDailyEvaluation = false;
   bool _showEvaluationResult = false;
+  bool _showPosttest = false;
+  bool _showPosttestResult = false;
   bool _showLearningReport = false;
   bool _showKnowledgeMap = false;
   int _dailyEvaluationIndex = 0;
+  int _posttestIndex = 0;
   final Map<int, String> _dailyEvaluationAnswers = {};
+  final Map<int, String> _posttestAnswers = {};
   String? _dailyEvaluationSessionId;
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
+  DailyEvaluationResult? _posttestResult;
+  String _posttestModuleTitle = 'Perkalian';
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
   bool _isLoadingDailyEvaluation = false;
   bool _isSubmittingDailyEvaluation = false;
   String? _dailyEvaluationError;
   late Future<HomeSnapshot> _homeSnapshotFuture;
+
+  HardcodedAssessmentPack get _assessmentPack {
+    return HardcodedAssessmentBank.packForEducation(
+      educationLevel: widget.onboardingController.profile.educationLevel,
+      gradeLevel: widget.onboardingController.profile.gradeLevel,
+    );
+  }
 
   @override
   void initState() {
@@ -99,6 +113,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -110,6 +126,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -121,6 +139,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = true;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
       _dailyEvaluationIndex = 0;
@@ -249,6 +269,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = true;
       _showKnowledgeMap = false;
     });
@@ -264,6 +286,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = true;
     });
@@ -278,11 +302,183 @@ class _AppHomePageState extends State<AppHomePage> {
   }
 
   Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
-    await Navigator.of(
+    final result = await Navigator.of(
       context,
     ).pushNamed(AppRoutes.workspaceModules, arguments: arguments);
     if (!mounted) return;
     _retryHomeSnapshot();
+    if (result is WorkspaceCompletionResult) {
+      _openPosttest();
+    }
+  }
+
+  void _openPosttest() {
+    final assessmentPack = _assessmentPack;
+    setState(() {
+      _selectedTab = _HomeTab.home;
+      _showGalleryDetail = false;
+      _showDailyEvaluation = false;
+      _showEvaluationResult = false;
+      _showPosttest = true;
+      _showPosttestResult = false;
+      _showLearningReport = false;
+      _showKnowledgeMap = false;
+      _posttestIndex = 0;
+      _posttestAnswers.clear();
+      _posttestResult = null;
+      _posttestModuleTitle = assessmentPack.topicTitle;
+    });
+  }
+
+  void _selectPosttestAnswer(String optionId) {
+    setState(() => _posttestAnswers[_posttestIndex] = optionId);
+  }
+
+  void _nextPosttestQuestion() {
+    final assessmentPack = _assessmentPack;
+    final questions = assessmentPack.posttestQuestions;
+    final optionId = _posttestAnswers[_posttestIndex];
+    if (optionId == null || optionId.isEmpty) {
+      return;
+    }
+
+    final isLastQuestion = _posttestIndex >= questions.length - 1;
+    if (!isLastQuestion) {
+      setState(() => _posttestIndex += 1);
+      return;
+    }
+
+    final correctCount = assessmentPack.correctCount(
+      kind: HardcodedAssessmentKind.posttest,
+      selectedAnswers: _posttestAnswers,
+    );
+    setState(() {
+      _posttestResult = _buildPosttestResult(correctCount);
+      _showPosttest = false;
+      _showPosttestResult = true;
+    });
+  }
+
+  void _previousPosttestQuestion() {
+    if (_posttestIndex == 0) {
+      _openHome();
+      return;
+    }
+
+    setState(() => _posttestIndex -= 1);
+  }
+
+  DailyEvaluationSession _posttestSession() {
+    final assessmentPack = _assessmentPack;
+    final questions = assessmentPack.posttestQuestions;
+    return DailyEvaluationSession(
+      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
+      title: assessmentPack.posttestTitle,
+      language: 'id',
+      reviewDue: ReviewDueSummary(
+        title: 'Posttest siap',
+        dueCount: questions.length,
+        summary:
+            '${questions.length} soal untuk mengecek pemahaman $_posttestModuleTitle.',
+        actionLabel: 'Mulai',
+      ),
+      progress: DailyEvaluationProgress(
+        current: _posttestIndex + 1,
+        total: questions.length,
+        completed: _posttestIndex,
+        label: '${_posttestIndex + 1} of ${questions.length}',
+      ),
+      currentQuestion: questions[_posttestIndex],
+      questions: questions,
+      retentionForecast: const RetentionForecast(
+        title: 'Target posttest',
+        basis: 'Selesaikan soal untuk melihat nilai akhir.',
+        points: [
+          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
+          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
+        ],
+      ),
+      recommendationCallout: const RecommendationCallout(
+        title: 'Cek pemahaman',
+        message:
+            'Nilai posttest dihitung dari jumlah jawaban benar pada 10 soal.',
+        impactLabel: 'Posttest',
+        actionLabel: 'Jawab',
+      ),
+    );
+  }
+
+  DailyEvaluationResult _buildPosttestResult(int correctCount) {
+    final assessmentPack = _assessmentPack;
+    final totalQuestions = assessmentPack.posttestQuestions.length;
+    final reviewAgainCount = totalQuestions - correctCount;
+    final scorePercent = ((correctCount / totalQuestions) * 100).round();
+    final passed = correctCount >= 7;
+    return DailyEvaluationResult(
+      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
+      title: assessmentPack.posttestTitle,
+      status: 'completed',
+      source: 'hardcoded_mobile',
+      scorePercent: scorePercent,
+      reviewedCount: totalQuestions,
+      correctCount: correctCount,
+      reviewAgainCount: reviewAgainCount,
+      reviewedConcepts: [
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[0].title,
+          statusLabel: passed ? 'Strong' : 'Review',
+          masteryScore: passed ? 0.86 : 0.45,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[1].title,
+          statusLabel: correctCount >= 6 ? 'Good' : 'Review',
+          masteryScore: correctCount >= 6 ? 0.72 : 0.4,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[2].title,
+          statusLabel: correctCount >= 8 ? 'Strong' : 'Review',
+          masteryScore: correctCount >= 8 ? 0.9 : 0.5,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.topicTitle,
+          statusLabel: passed ? 'Good' : 'Review',
+          masteryScore: passed ? 0.76 : 0.42,
+        ),
+      ],
+      spacedRepetitionImpact: SpacedRepetitionImpact(
+        retentionLiftPercent: scorePercent,
+        daysUntilNextReview: passed ? 7 : 1,
+        summary:
+            'Posttest: $correctCount jawaban benar dari $totalQuestions soal.',
+      ),
+      nextReview: DailyEvaluationNextReview(
+        label: passed ? 'Review ringan' : 'Ulangi segera',
+        dueDate: '',
+        intervalDays: passed ? 7 : 1,
+      ),
+      recommendedNextActions: [
+        RecommendedNextAction(
+          title: passed
+              ? 'Lanjut materi berikutnya'
+              : 'Ulangi ${assessmentPack.topicTitle}',
+          actionType: passed ? 'continue_learning' : 'practice',
+          reason: passed
+              ? 'Skor posttest cukup kuat untuk lanjut.'
+              : 'Perkuat lagi fondasi ${assessmentPack.topicTitle}.',
+        ),
+        RecommendedNextAction(
+          title: 'Review: ${assessmentPack.topicTitle}',
+          actionType: 'review',
+          reason:
+              'Simpan konsep ${assessmentPack.topicTitle} ke jadwal review.',
+        ),
+      ],
+      backToHome: const ActionTarget(
+        label: 'Kembali ke Home',
+        actionType: 'navigate',
+        target: '/home',
+      ),
+    );
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -335,7 +531,10 @@ class _AppHomePageState extends State<AppHomePage> {
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
                               child:
-                                  _showEvaluationResult || _showDailyEvaluation
+                                  _showEvaluationResult ||
+                                      _showDailyEvaluation ||
+                                      _showPosttest ||
+                                      _showPosttestResult
                                   ? const SizedBox.shrink()
                                   : _ShortcutBar(
                                       key: const ValueKey('shortcut-bar'),
@@ -344,6 +543,8 @@ class _AppHomePageState extends State<AppHomePage> {
                                         _selectedTab = tab;
                                         _showDailyEvaluation = false;
                                         _showEvaluationResult = false;
+                                        _showPosttest = false;
+                                        _showPosttestResult = false;
                                         _showLearningReport = false;
                                         _showKnowledgeMap = false;
                                       }),
@@ -365,7 +566,7 @@ class _AppHomePageState extends State<AppHomePage> {
 
   Widget _animatedTabView(BoxConstraints constraints) {
     final key = ValueKey(
-      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-report-$_showLearningReport-map-$_showKnowledgeMap',
+      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-post-$_showPosttest-$_posttestIndex-postResult-$_showPosttestResult-report-$_showLearningReport-map-$_showKnowledgeMap',
     );
 
     return AnimatedSwitcher(
@@ -395,6 +596,37 @@ class _AppHomePageState extends State<AppHomePage> {
     final copy = OnboardingCopy.forLanguage(
       widget.onboardingController.profile.preferredLanguage,
     );
+    if (_showPosttest) {
+      final assessmentPack = _assessmentPack;
+      final session = _posttestSession();
+      return _DailyEvaluationQuestionPage(
+        constraints: constraints,
+        session: session,
+        question: session.questions[_posttestIndex],
+        questionIndex: _posttestIndex,
+        totalQuestions: session.questions.length,
+        selectedOptionId: _posttestAnswers[_posttestIndex],
+        onBack: _previousPosttestQuestion,
+        onSelected: _selectPosttestAnswer,
+        isSubmitting: false,
+        sectionLabel: assessmentPack.posttestTitle,
+        subtitle:
+            'Jawab 10 soal untuk melihat berapa banyak jawaban benar setelah belajar.',
+        nextLabel: 'Lanjut',
+        finishLabel: 'Selesai posttest',
+        onSubmit: _nextPosttestQuestion,
+      );
+    }
+
+    if (_showPosttestResult) {
+      return _EvaluationCompletePage(
+        constraints: constraints,
+        result: _posttestResult,
+        onBackHome: _openHome,
+        onActionSelected: _handleRecommendedAction,
+      );
+    }
+
     if (_showDailyEvaluation) {
       if (_isLoadingDailyEvaluation) {
         return _DashboardStatePage(
@@ -1392,6 +1624,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
     required this.onSelected,
     required this.isSubmitting,
     required this.onSubmit,
+    this.sectionLabel = 'Quick check-in',
+    this.subtitle = 'Answer five questions to strengthen your memory.',
+    this.nextLabel = 'Next question',
+    this.finishLabel = 'Finish evaluation',
   });
 
   final BoxConstraints constraints;
@@ -1404,6 +1640,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
   final ValueChanged<String> onSelected;
   final bool isSubmitting;
   final VoidCallback onSubmit;
+  final String sectionLabel;
+  final String subtitle;
+  final String nextLabel;
+  final String finishLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1434,9 +1674,9 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
             _ReviewDueCard(reviewDue: reviewDue),
             const SizedBox(height: 28),
             _DailyEvaluationSectionTitle(
-              label: 'Quick check-in',
+              label: sectionLabel,
               progressLabel: progressLabel,
-              subtitle: 'Answer five questions to strengthen your memory.',
+              subtitle: subtitle,
             ),
             const SizedBox(height: 12),
             _EvaluationProgressLine(value: progress),
@@ -1501,9 +1741,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
                   ],
                   const SizedBox(height: 22),
                   GradientButton(
-                    label: isLastQuestion
-                        ? 'Finish evaluation'
-                        : 'Next question',
+                    label: isLastQuestion ? finishLabel : nextLabel,
                     onPressed: selectedOptionId == null ? null : onSubmit,
                     isLoading: isSubmitting,
                   ),

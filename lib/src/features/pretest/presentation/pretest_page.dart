@@ -7,6 +7,7 @@ import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../domain/multiplication_assessment_bank.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
@@ -36,12 +37,16 @@ class _PretestPageState extends State<PretestPage> {
         'I chose B because defects are the outcome we need to understand before changing the process.',
   );
 
+  late final HardcodedAssessmentPack _assessmentPack;
+  late final List<PretestQuestion> _questions;
   _PretestStage _stage = _PretestStage.question;
   PretestQuestion? _question;
+  int _questionIndex = 0;
   String _selectedOptionId = '';
+  final Map<int, String> _pretestAnswers = {};
   int _confidence = 6;
   bool _isSubmitting = false;
-  bool _isLoadingQuestion = true;
+  bool _isLoadingQuestion = false;
   String? _questionError;
   KnowledgeState? _knowledgeState;
   final List<CanvasWorkSnapshot> _canvasSnapshots = [];
@@ -49,6 +54,11 @@ class _PretestPageState extends State<PretestPage> {
   @override
   void initState() {
     super.initState();
+    _assessmentPack = HardcodedAssessmentBank.packForEducation(
+      educationLevel: widget.onboardingController.profile.educationLevel,
+      gradeLevel: widget.onboardingController.profile.gradeLevel,
+    );
+    _questions = _assessmentPack.pretestQuestions;
     _loadQuestion();
   }
 
@@ -58,62 +68,60 @@ class _PretestPageState extends State<PretestPage> {
     super.dispose();
   }
 
-  Future<void> _loadQuestion() async {
+  void _loadQuestion() {
     setState(() {
-      _isLoadingQuestion = true;
+      _stage = _PretestStage.question;
+      _questionIndex = 0;
       _questionError = null;
+      _question = _questions.first;
+      _selectedOptionId = '';
+      _pretestAnswers.clear();
+      _knowledgeState = null;
+      _canvasSnapshots.clear();
+      _isLoadingQuestion = false;
     });
-    try {
-      final question = await widget.pretestRepository.fetchCurrentQuestion();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _question = question;
-        _selectedOptionId = question.options.isEmpty
-            ? ''
-            : question.options.first.id;
-        _isLoadingQuestion = false;
-      });
-    } on PretestException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _questionError = error.message;
-        _isLoadingQuestion = false;
-      });
-    }
   }
 
-  Future<void> _submitAnswer() async {
-    setState(() => _isSubmitting = true);
-    try {
-      await widget.pretestRepository.submitAnswer(_answer);
-      final result = await widget.pretestRepository.submitReasoning(
-        PretestReasoning(
-          answer: _answer,
-          explanation: 'Auto-submitted from direct pretest answer flow.',
-          usedCanvas: false,
-        ),
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _knowledgeState = result;
-        _stage = _PretestStage.result;
-      });
-    } on PretestException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showMessage(error.message);
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+  void _submitAnswer() {
+    if (_selectedOptionId.isEmpty) {
+      _showMessage('Pilih jawaban sebelum lanjut.');
+      return;
     }
+
+    _pretestAnswers[_questionIndex] = _selectedOptionId;
+    if (_questionIndex < _questions.length - 1) {
+      setState(() {
+        _questionIndex += 1;
+        _question = _questions[_questionIndex];
+        _selectedOptionId = _pretestAnswers[_questionIndex] ?? '';
+      });
+      return;
+    }
+
+    final correctCount = _assessmentPack.correctCount(
+      kind: HardcodedAssessmentKind.pretest,
+      selectedAnswers: _pretestAnswers,
+    );
+    final totalQuestions = _questions.length;
+    final isReady = correctCount >= 2;
+
+    setState(() {
+      _knowledgeState = KnowledgeState(
+        skill: isReady
+            ? 'Siap mulai belajar ${_assessmentPack.topicTitle}'
+            : 'Fondasi ${_assessmentPack.topicTitle} perlu dipanaskan',
+        gapLabel: '$correctCount/$totalQuestions',
+        message:
+            'Pretest selesai: $correctCount dari $totalQuestions jawaban benar.',
+        pathTitle: 'Jalur belajar ${_assessmentPack.topicTitle} siap',
+        pathMeta:
+            'Pretest 3 soal   |   ${_assessmentPack.topicTitle} ${_assessmentPack.levelLabel}',
+        pathDescription: isReady
+            ? _assessmentPack.readyPathDescription
+            : _assessmentPack.reviewPathDescription,
+      );
+      _stage = _PretestStage.result;
+    });
   }
 
   Future<void> _submitReasoning() async {
@@ -174,7 +182,15 @@ class _PretestPageState extends State<PretestPage> {
       return;
     }
     if (_stage == _PretestStage.result) {
-      setState(() => _stage = _PretestStage.reasoning);
+      setState(() => _stage = _PretestStage.question);
+      return;
+    }
+    if (_questionIndex > 0) {
+      setState(() {
+        _questionIndex -= 1;
+        _question = _questions[_questionIndex];
+        _selectedOptionId = _pretestAnswers[_questionIndex] ?? '';
+      });
       return;
     }
     Navigator.of(
@@ -289,12 +305,16 @@ class _PretestPageState extends State<PretestPage> {
         constraints: constraints,
         copy: copy,
         question: question,
+        progressValue: (_questionIndex + 1) / _questions.length,
         selectedOptionId: _selectedOptionId,
         confidence: _confidence,
         isSubmitting: _isSubmitting,
         onClose: _goHome,
         onSelected: (id) => setState(() => _selectedOptionId = id),
         onConfidenceChanged: (value) => setState(() => _confidence = value),
+        submitLabel: _questionIndex == _questions.length - 1
+            ? 'Selesai pretest'
+            : 'Lanjut',
         onSubmit: _submitAnswer,
       ),
       _PretestStage.reasoning => _ReasoningStage(
@@ -312,6 +332,7 @@ class _PretestPageState extends State<PretestPage> {
         constraints: constraints,
         copy: copy,
         result: _knowledgeState,
+        focusAreas: _assessmentPack.focusAreas,
         onContinue: _goHome,
       ),
     };
@@ -386,24 +407,28 @@ class _QuestionStage extends StatelessWidget {
     required this.constraints,
     required this.copy,
     required this.question,
+    required this.progressValue,
     required this.selectedOptionId,
     required this.confidence,
     required this.isSubmitting,
     required this.onClose,
     required this.onSelected,
     required this.onConfidenceChanged,
+    required this.submitLabel,
     required this.onSubmit,
   });
 
   final BoxConstraints constraints;
   final OnboardingCopy copy;
   final PretestQuestion question;
+  final double progressValue;
   final String selectedOptionId;
   final int confidence;
   final bool isSubmitting;
   final VoidCallback onClose;
   final ValueChanged<String> onSelected;
   final ValueChanged<int> onConfidenceChanged;
+  final String submitLabel;
   final VoidCallback onSubmit;
 
   @override
@@ -435,7 +460,7 @@ class _QuestionStage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            const _SlimProgress(value: 2 / 12),
+            _SlimProgress(value: progressValue),
             const SizedBox(height: 31),
             Container(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 21),
@@ -515,8 +540,8 @@ class _QuestionStage extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   GradientButton(
-                    label: 'Submit answer',
-                    onPressed: onSubmit,
+                    label: submitLabel,
+                    onPressed: selectedOptionId.isEmpty ? null : onSubmit,
                     isLoading: isSubmitting,
                   ),
                 ],
@@ -711,12 +736,14 @@ class _ResultStage extends StatelessWidget {
     required this.constraints,
     required this.copy,
     required this.result,
+    required this.focusAreas,
     required this.onContinue,
   });
 
   final BoxConstraints constraints;
   final OnboardingCopy copy;
   final KnowledgeState? result;
+  final List<AssessmentFocusArea> focusAreas;
   final VoidCallback onContinue;
 
   @override
@@ -759,7 +786,12 @@ class _ResultStage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 38),
-            _KnowledgeGapDiagnosisCard(gapLabel: state.gapLabel, copy: copy),
+            _KnowledgeGapDiagnosisCard(
+              gapLabel: state.gapLabel,
+              message: state.message,
+              focusAreas: focusAreas,
+              copy: copy,
+            ),
             const SizedBox(height: 37),
             Text(
               copy.whatsNextLabel,
@@ -804,36 +836,22 @@ class _ResultStage extends StatelessWidget {
 class _KnowledgeGapDiagnosisCard extends StatelessWidget {
   const _KnowledgeGapDiagnosisCard({
     required this.gapLabel,
+    required this.message,
+    required this.focusAreas,
     required this.copy,
   });
 
   final String gapLabel;
+  final String message;
+  final List<AssessmentFocusArea> focusAreas;
   final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
-    const gaps = [
-      _GapItem(
-        title: 'Defect driver identification',
-        description:
-            'Name the process variable that may be creating the new defects before choosing a fix.',
-        severity: 'High importance',
-        color: WicaraColors.accentCoral,
-      ),
-      _GapItem(
-        title: 'Evidence before intervention',
-        description:
-            'Compare defect samples, timing, and process changes before increasing automation or quotas.',
-        severity: 'Medium importance',
-        color: WicaraColors.secondary,
-      ),
-      _GapItem(
-        title: 'Cause-chain reasoning',
-        description:
-            'Connect the shorter cycle time to possible failure points instead of treating defects as isolated.',
-        severity: 'Medium importance',
-        color: WicaraColors.primaryDeep,
-      ),
+    const colors = [
+      WicaraColors.accentCoral,
+      WicaraColors.secondary,
+      WicaraColors.primaryDeep,
     ];
 
     return Container(
@@ -910,9 +928,22 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          for (var i = 0; i < gaps.length; i++) ...[
-            _GapDiagnosisRow(index: i + 1, gap: gaps[i]),
-            if (i != gaps.length - 1) const SizedBox(height: 13),
+          Text(
+            message,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 18),
+          for (var i = 0; i < focusAreas.length; i++) ...[
+            _GapDiagnosisRow(
+              index: i + 1,
+              focusArea: focusAreas[i],
+              color: colors[i % colors.length],
+            ),
+            if (i != focusAreas.length - 1) const SizedBox(height: 13),
           ],
         ],
       ),
@@ -921,10 +952,15 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
 }
 
 class _GapDiagnosisRow extends StatelessWidget {
-  const _GapDiagnosisRow({required this.index, required this.gap});
+  const _GapDiagnosisRow({
+    required this.index,
+    required this.focusArea,
+    required this.color,
+  });
 
   final int index;
-  final _GapItem gap;
+  final AssessmentFocusArea focusArea;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -936,13 +972,13 @@ class _GapDiagnosisRow extends StatelessWidget {
           height: 27,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: gap.color.withValues(alpha: 0.12),
+            color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Text(
             '$index',
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: gap.color,
+              color: color,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -953,7 +989,7 @@ class _GapDiagnosisRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                gap.title,
+                focusArea.title,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: WicaraColors.text,
                   fontWeight: FontWeight.w600,
@@ -962,7 +998,7 @@ class _GapDiagnosisRow extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                gap.description,
+                focusArea.description,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: WicaraColors.muted,
                   fontWeight: FontWeight.w600,
@@ -973,13 +1009,13 @@ class _GapDiagnosisRow extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: gap.color.withValues(alpha: 0.10),
+                  color: color.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  gap.severity,
+                  focusArea.severity,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: gap.color,
+                    color: color,
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
@@ -991,20 +1027,6 @@ class _GapDiagnosisRow extends StatelessWidget {
       ],
     );
   }
-}
-
-class _GapItem {
-  const _GapItem({
-    required this.title,
-    required this.description,
-    required this.severity,
-    required this.color,
-  });
-
-  final String title;
-  final String description;
-  final String severity;
-  final Color color;
 }
 
 class _AssessmentHeader extends StatelessWidget {
