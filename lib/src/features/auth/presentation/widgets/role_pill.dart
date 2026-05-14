@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/wicara_colors.dart';
 import '../../domain/auth_repository.dart';
+import '../../../onboarding/domain/onboarding_copy.dart';
 
 class RolePill extends StatelessWidget {
-  const RolePill({required this.role, super.key});
+  const RolePill({required this.role, required this.copy, super.key});
 
   final AuthRole role;
+  final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +31,7 @@ class RolePill extends StatelessWidget {
         ),
         alignment: Alignment.center,
         child: Text(
-          role.label,
+          copy.learnerLabel,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: WicaraColors.text,
             fontWeight: FontWeight.w600,

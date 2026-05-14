@@ -16,13 +16,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final sessionStore = AuthSessionStore();
     await sessionStore.save(
-      const AuthSession(
+      session: const AuthSession(
         userId: 'learner-test',
         displayName: 'Learner Test',
         role: AuthRole.learner,
         onboardingCompleted: true,
         token: 'token-test',
       ),
+      lastProtectedRoute: '/home',
     );
 
     late Uri requestedUri;

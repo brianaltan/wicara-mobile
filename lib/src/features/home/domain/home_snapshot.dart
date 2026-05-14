@@ -3,6 +3,7 @@ import '../../pretest/domain/pretest_models.dart';
 class HomeSnapshot {
   const HomeSnapshot({
     required this.displayName,
+    required this.streakDays,
     required this.country,
     required this.educationLevel,
     required this.gradeLevel,
@@ -15,6 +16,7 @@ class HomeSnapshot {
   });
 
   final String displayName;
+  final int streakDays;
   final String country;
   final String educationLevel;
   final String gradeLevel;

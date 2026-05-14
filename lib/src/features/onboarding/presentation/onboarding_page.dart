@@ -6,8 +6,10 @@ import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/security_note.dart';
-import '../../auth/data/auth_session_store.dart';
-import '../domain/onboarding_profile.dart';
+import '../../auth/application/auth_controller.dart';
+import '../application/onboarding_controller.dart';
+import '../domain/onboarding_copy.dart';
+import '../domain/onboarding_options.dart';
 import '../domain/onboarding_repository.dart';
 import 'widgets/onboarding_progress.dart';
 import 'widgets/onboarding_select_field.dart';
@@ -15,138 +17,38 @@ import 'widgets/preference_callout.dart';
 import 'widgets/subject_tile.dart';
 
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({required this.onboardingRepository, super.key});
+  const OnboardingPage({
+    required this.onboardingController,
+    required this.authController,
+    super.key,
+  });
 
-  final OnboardingRepository onboardingRepository;
+  final OnboardingController onboardingController;
+  final AuthController authController;
 
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  final _profileFormKey = GlobalKey<FormState>();
-  final _preferencesFormKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
-  final _studyGoalController = TextEditingController(
-    text: 'Improve understanding',
-  );
-
-  static const _countryOptions = [
-    'Indonesia',
-    'Malaysia',
-    'Philippines',
-    'Vietnam',
-  ];
-  static const _educationLevels = [
-    'Elementary School',
-    'Junior High School',
-    'Senior High School',
-    'University',
-  ];
-  static const Map<String, List<String>> _gradeOptionsByLevel = {
-    'Elementary School': [
-      'Grade 1',
-      'Grade 2',
-      'Grade 3',
-      'Grade 4',
-      'Grade 5',
-      'Grade 6',
-    ],
-    'Junior High School': ['Grade 7', 'Grade 8', 'Grade 9'],
-    'Senior High School': ['Grade 10', 'Grade 11', 'Grade 12'],
-    'University': ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Graduate'],
-  };
-  static const _languageOptions = [
-    'Bahasa Indonesia',
-    'English',
-    'Bahasa Melayu',
-    'Filipino',
-    'Vietnamese',
-  ];
-  static const _dailyStudyTimeOptions = [
-    '15-30 minutes',
-    '30-60 minutes',
-    '60-90 minutes',
-  ];
-
   int _currentStep = 1;
   bool _isSaving = false;
-  String _country = _countryOptions.first;
-  String _educationLevel = 'Senior High School';
-  String _gradeLevel = 'Grade 11';
-  String _preferredLanguage = _languageOptions.first;
-  String _dailyStudyTime = '30-60 minutes';
 
-  final List<_SubjectChoice> _subjects = [
-    const _SubjectChoice(
-      title: 'Math',
-      description: 'Algebra, Geometry, Calculus',
-      icon: Icons.calculate_outlined,
-      tint: WicaraColors.math,
-      isSelected: true,
-    ),
-    const _SubjectChoice(
-      title: 'Physics',
-      description: 'Mechanics, Waves, Thermo',
-      icon: Icons.bolt_outlined,
-      tint: WicaraColors.physics,
-      isSelected: true,
-    ),
-    const _SubjectChoice(
-      title: 'Chemistry',
-      description: 'Stoichiometry, Reactions',
-      icon: Icons.science_outlined,
-      tint: WicaraColors.chemistry,
-      isSelected: true,
-    ),
-    const _SubjectChoice(
-      title: 'Biology',
-      description: 'Cell, Genetics, Ecology',
-      icon: Icons.eco_outlined,
-      tint: WicaraColors.biology,
-      isSelected: true,
-    ),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    final displayName = authSessionStore.currentSession?.displayName ?? '';
-    if (displayName.trim().isNotEmpty) {
-      _fullNameController.text = displayName.trim();
-    }
-  }
-
-  @override
-  void dispose() {
-    _fullNameController.dispose();
-    _studyGoalController.dispose();
-    super.dispose();
-  }
+  OnboardingCopy get _copy =>
+      OnboardingCopy.forLanguage(widget.onboardingController.profile.preferredLanguage);
 
   Future<void> _nextStep() async {
-    if (_currentStep == 1 &&
-        !(_profileFormKey.currentState?.validate() ?? false)) {
-      return;
-    }
-    if (_currentStep == 3 &&
-        !(_preferencesFormKey.currentState?.validate() ?? false)) {
-      return;
-    }
-    if (_currentStep == 2 && !_subjects.any((subject) => subject.isSelected)) {
-      _showMessage('Select at least one subject.');
-      return;
-    }
-
     if (_currentStep < 3) {
       setState(() => _currentStep += 1);
       return;
     }
 
-    final profile = _profile;
     setState(() => _isSaving = true);
     try {
-      await widget.onboardingRepository.saveProfile(profile);
+      await widget.onboardingController.saveProfile();
+      await widget.authController.markOnboardingCompleted(
+        displayName: widget.onboardingController.profile.fullName,
+      );
       if (!mounted) {
         return;
       }
@@ -169,42 +71,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     }
     setState(() => _currentStep -= 1);
   }
-
-  OnboardingProfile get _profile {
-    return OnboardingProfile(
-      fullName: _fullNameController.text.trim(),
-      country: _country,
-      educationLevel: _educationLevel,
-      gradeLevel: _gradeLevel,
-      preferredLanguage: _preferredLanguage,
-      selectedSubjects: _subjects
-          .where((subject) => subject.isSelected)
-          .map((subject) => subject.title)
-          .toList(),
-      studyGoal: _studyGoalController.text.trim(),
-      dailyStudyTime: _dailyStudyTime,
-    );
-  }
-
-  void _toggleSubject(int index, bool isSelected) {
-    setState(() {
-      _subjects[index] = _subjects[index].copyWith(isSelected: isSelected);
-    });
-  }
-
-  List<String> get _gradeOptions =>
-      _gradeOptionsByLevel[_educationLevel] ?? const ['Grade 11'];
-
-  void _setEducationLevel(String value) {
-    setState(() {
-      _educationLevel = value;
-      final options = _gradeOptionsByLevel[_educationLevel] ?? const <String>[];
-      if (!options.contains(_gradeLevel) && options.isNotEmpty) {
-        _gradeLevel = options.first;
-      }
-    });
-  }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -213,223 +79,358 @@ class _OnboardingPageState extends State<OnboardingPage> {
       );
   }
 
+  Future<void> _selectCountry() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _SearchableOptionSheet(
+        title: _copy.countryLabel,
+        options: onboardingCountryOptions,
+        initialValue: widget.onboardingController.profile.country,
+        searchHint: _copy.searchLabel,
+      ),
+    );
+    if (selected != null) {
+      await widget.onboardingController.updateCountry(selected);
+    }
+  }
+
+  Future<void> _editFullName() async {
+    var draftName = widget.onboardingController.profile.fullName;
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(_copy.fullNameLabel),
+          content: TextFormField(
+            initialValue: draftName,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: _copy.fullNameLabel,
+            ),
+            onChanged: (value) => draftName = value,
+            onFieldSubmitted: (value) =>
+                Navigator.of(context).pop(value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(_copy.cancelLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(draftName.trim()),
+              child: Text(_copy.applyLabel),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (submitted != null && submitted.isNotEmpty) {
+      await widget.onboardingController.updateFullName(submitted);
+    }
+  }
+
+  Future<void> _selectGradeLevel() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _OptionSheet(
+        title: _copy.gradeLevelLabel,
+        options: onboardingGradeLevelOptions,
+        initialValue: widget.onboardingController.profile.gradeLevel,
+        displayFor: _copy.gradeValue,
+      ),
+    );
+    if (selected != null) {
+      await widget.onboardingController.updateGradeLevel(selected);
+    }
+  }
+
+  Future<void> _selectLanguage() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _OptionSheet(
+        title: _copy.preferredLanguageLabel,
+        options: onboardingLanguageOptions,
+        initialValue: widget.onboardingController.profile.preferredLanguage,
+      ),
+    );
+    if (selected != null) {
+      await widget.onboardingController.updatePreferredLanguage(selected);
+    }
+  }
+
+  Future<void> _selectStudyGoal() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _OptionSheet(
+        title: _copy.studyGoalLabel,
+        options: onboardingStudyGoalOptions,
+        initialValue: widget.onboardingController.profile.studyGoal,
+        displayFor: _copy.studyGoalDisplay,
+      ),
+    );
+    if (selected != null) {
+      await widget.onboardingController.updateStudyGoal(selected);
+    }
+  }
+
+  Future<void> _selectDailyStudyTime() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _OptionSheet(
+        title: _copy.dailyStudyTimeLabel,
+        options: onboardingDailyStudyTimeOptions,
+        initialValue: widget.onboardingController.profile.dailyStudyTime,
+        displayFor: _copy.dailyStudyTimeDisplay,
+      ),
+    );
+    if (selected != null) {
+      await widget.onboardingController.updateDailyStudyTime(selected);
+    }
+  }
+
+  Future<void> _toggleSubject(String subjectKey, bool isSelected) async {
+    final subjects = [...widget.onboardingController.profile.selectedSubjects];
+    if (isSelected) {
+      if (!subjects.contains(subjectKey)) {
+        subjects.add(subjectKey);
+      }
+    } else {
+      subjects.remove(subjectKey);
+    }
+    await widget.onboardingController.updateSelectedSubjects(subjects);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final pageWidth = math.min(constraints.maxWidth, 430.0);
+    return AnimatedBuilder(
+      animation: widget.onboardingController,
+      builder: (context, _) {
+        final profile = widget.onboardingController.profile;
+        final copy = _copy;
 
-            return Center(
-              child: SizedBox(
-                width: pageWidth,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(28, 50, 28, 24),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 74,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_currentStep > 1) ...[
-                            _OnboardingBackButton(onPressed: _previousStep),
-                            const SizedBox(height: 16),
-                          ],
-                          OnboardingProgress(currentStep: _currentStep),
-                          const SizedBox(height: 52),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: KeyedSubtree(
-                              key: ValueKey(_currentStep),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: _stepWidgets(context),
+        return Scaffold(
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final pageWidth = math.min(constraints.maxWidth, 430.0);
+
+                return Center(
+                  child: SizedBox(
+                    width: pageWidth,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(28, 50, 28, 24),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight - 74,
+                        ),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (_currentStep > 1) ...[
+                                _OnboardingBackButton(onPressed: _previousStep),
+                                const SizedBox(height: 16),
+                              ],
+                              OnboardingProgress(currentStep: _currentStep),
+                              const SizedBox(height: 52),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                child: KeyedSubtree(
+                                  key: ValueKey(
+                                    '$_currentStep-${profile.preferredLanguage}',
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: switch (_currentStep) {
+                                      1 => [
+                                        _OnboardingTitle(
+                                          title: copy.letsSetYouUpTitle,
+                                          subtitle: copy.letsSetYouUpSubtitle,
+                                        ),
+                                        const SizedBox(height: 37),
+                                        OnboardingSelectField(
+                                          label: copy.fullNameLabel,
+                                          value: profile.fullName,
+                                          showChevron: true,
+                                          leading: const _SoftIcon(
+                                            Icons.person_outline_rounded,
+                                          ),
+                                          onTap: _editFullName,
+                                        ),
+                                        const SizedBox(height: 26),
+                                        OnboardingSelectField(
+                                          label: copy.countryLabel,
+                                          value: profile.country,
+                                          leading: const _SoftIcon(
+                                            Icons.public_rounded,
+                                          ),
+                                          onTap: _selectCountry,
+                                        ),
+                                        const SizedBox(height: 26),
+                                        OnboardingSelectField(
+                                          label: copy.gradeLevelLabel,
+                                          value: copy.gradeValue(
+                                            profile.gradeLevel,
+                                          ),
+                                          leading: const _SoftIcon(
+                                            Icons.school_outlined,
+                                          ),
+                                          onTap: _selectGradeLevel,
+                                        ),
+                                        const SizedBox(height: 26),
+                                        OnboardingSelectField(
+                                          label: copy.preferredLanguageLabel,
+                                          value: copy.languageDisplay(
+                                            profile.preferredLanguage,
+                                          ),
+                                          leading: const _SoftIcon(
+                                            Icons.language_rounded,
+                                          ),
+                                          onTap: _selectLanguage,
+                                        ),
+                                        const SizedBox(height: 34),
+                                        GradientButton(
+                                          label: copy.continueLabel,
+                                          onPressed: _isSaving ? null : _nextStep,
+                                        ),
+                                        const SizedBox(height: 19),
+                                        Text(
+                                          copy.improveExperienceNote,
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: WicaraColors.softMuted,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 42),
+                                        SecurityNote(
+                                          maxWidth: 235,
+                                          message: copy.securityNoteLabel,
+                                        ),
+                                      ],
+                                      2 => [
+                                        _OnboardingTitle(
+                                          title: copy.chooseSubjectsTitle,
+                                          subtitle: copy.chooseSubjectsSubtitle,
+                                        ),
+                                        const SizedBox(height: 31),
+                                        for (final subject in onboardingSubjectOptions) ...[
+                                          SubjectTile(
+                                            title: copy.subjectLabel(subject.key),
+                                            description: copy.subjectDescription(
+                                              subject.key,
+                                            ),
+                                            icon: subject.icon,
+                                            tint: subject.tint,
+                                            isSelected: profile.selectedSubjects
+                                                .contains(subject.key),
+                                            onChanged: (value) => _toggleSubject(
+                                              subject.key,
+                                              value,
+                                            ),
+                                          ),
+                                          if (subject !=
+                                              onboardingSubjectOptions.last)
+                                            const SizedBox(height: 10),
+                                        ],
+                                        const SizedBox(height: 29),
+                                        GradientButton(
+                                          label: copy.continueLabel,
+                                          onPressed: _isSaving ? null : _nextStep,
+                                        ),
+                                        const SizedBox(height: 18),
+                                        Text(
+                                          copy.customizeLaterNote,
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: WicaraColors.softMuted,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
+                                      _ => [
+                                        _OnboardingTitle(
+                                          title: copy.preferencesTitle,
+                                          subtitle: copy.preferencesSubtitle,
+                                        ),
+                                        const SizedBox(height: 23),
+                                        OnboardingSelectField(
+                                          label: copy.studyGoalOptionalLabel,
+                                          value: copy.studyGoalDisplay(
+                                            profile.studyGoal,
+                                          ),
+                                          leading: const _SoftIcon(
+                                            Icons.track_changes_rounded,
+                                          ),
+                                          onTap: _selectStudyGoal,
+                                        ),
+                                        const SizedBox(height: 25),
+                                        OnboardingSelectField(
+                                          label:
+                                              copy.dailyStudyTimeOptionalLabel,
+                                          value: copy.dailyStudyTimeDisplay(
+                                            profile.dailyStudyTime,
+                                          ),
+                                          leading: const _SoftIcon(
+                                            Icons.schedule_rounded,
+                                          ),
+                                          onTap: _selectDailyStudyTime,
+                                        ),
+                                        const SizedBox(height: 18),
+                                        PreferenceCallout(
+                                          message: copy.preferenceCallout,
+                                        ),
+                                        const SizedBox(height: 34),
+                                        GradientButton(
+                                          label: copy.adaptivePretestLabel,
+                                          onPressed: _isSaving ? null : _nextStep,
+                                          isLoading: _isSaving,
+                                        ),
+                                        const SizedBox(height: 19),
+                                        Text(
+                                          copy.personalizePathNote,
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: WicaraColors.softMuted,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
+                                    },
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _stepWidgets(BuildContext context) {
-    return switch (_currentStep) {
-      1 => _profileStep(context),
-      2 => _subjectsStep(context),
-      _ => _preferencesStep(context),
-    };
-  }
-
-  List<Widget> _profileStep(BuildContext context) {
-    return [
-      const _OnboardingTitle(
-        title: "Let's set you up",
-        subtitle: 'Tell us a bit about yourself to personalize\nyour learning.',
-      ),
-      const SizedBox(height: 37),
-      Form(
-        key: _profileFormKey,
-        child: Column(
-          children: [
-            _OnboardingTextField(
-              label: 'Full name',
-              controller: _fullNameController,
-              icon: Icons.person_outline_rounded,
-              hintText: 'Enter your full name',
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Enter your full name';
-                }
-                return null;
+                );
               },
             ),
-            const SizedBox(height: 26),
-            _OnboardingDropdown(
-              label: 'Country',
-              value: _country,
-              options: _countryOptions,
-              leading: const IndonesiaFlag(),
-              onChanged: (value) => setState(() => _country = value),
-            ),
-            const SizedBox(height: 26),
-            _OnboardingDropdown(
-              label: 'Education level',
-              value: _educationLevel,
-              options: _educationLevels,
-              leading: const _SoftIcon(Icons.account_balance_outlined),
-              onChanged: _setEducationLevel,
-            ),
-            const SizedBox(height: 26),
-            _OnboardingDropdown(
-              label: 'Grade level',
-              value: _gradeLevel,
-              options: _gradeOptions,
-              leading: const _SoftIcon(Icons.school_outlined),
-              onChanged: (value) => setState(() => _gradeLevel = value),
-            ),
-            const SizedBox(height: 26),
-            _OnboardingDropdown(
-              label: 'Preferred language',
-              value: _preferredLanguage,
-              options: _languageOptions,
-              leading: const _SoftIcon(Icons.language_rounded),
-              onChanged: (value) => setState(() => _preferredLanguage = value),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 34),
-      GradientButton(
-        label: 'Continue',
-        onPressed: _isSaving ? null : _nextStep,
-      ),
-      const SizedBox(height: 19),
-      Text(
-        "We'll keep improving this experience\njust for you.",
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.softMuted,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      const SizedBox(height: 42),
-      const SecurityNote(maxWidth: 235),
-    ];
-  }
-
-  List<Widget> _subjectsStep(BuildContext context) {
-    return [
-      const _OnboardingTitle(
-        title: 'Choose your subjects',
-        subtitle:
-            'Select the subjects you want to learn.\nYou can adjust these anytime.',
-      ),
-      const SizedBox(height: 31),
-      for (var index = 0; index < _subjects.length; index++) ...[
-        SubjectTile(
-          title: _subjects[index].title,
-          description: _subjects[index].description,
-          icon: _subjects[index].icon,
-          tint: _subjects[index].tint,
-          isSelected: _subjects[index].isSelected,
-          onChanged: (value) => _toggleSubject(index, value),
-        ),
-        if (index < _subjects.length - 1) const SizedBox(height: 10),
-      ],
-      const SizedBox(height: 29),
-      GradientButton(
-        label: 'Continue',
-        onPressed: _isSaving ? null : _nextStep,
-      ),
-      const SizedBox(height: 18),
-      Text(
-        'You can customize more later.',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.softMuted,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _preferencesStep(BuildContext context) {
-    return [
-      const _OnboardingTitle(
-        title: 'How would you like to learn?',
-        subtitle: 'Pick your preferences. You can change\nthem anytime.',
-      ),
-      const SizedBox(height: 23),
-      Form(
-        key: _preferencesFormKey,
-        child: Column(
-          children: [
-            _OnboardingTextField(
-              label: 'Study goal (optional)',
-              controller: _studyGoalController,
-              icon: Icons.track_changes_rounded,
-              hintText: 'What do you want to improve?',
-            ),
-            const SizedBox(height: 25),
-            _OnboardingDropdown(
-              label: 'Daily study time (optional)',
-              value: _dailyStudyTime,
-              options: _dailyStudyTimeOptions,
-              leading: const _SoftIcon(Icons.schedule_rounded),
-              onChanged: (value) => setState(() => _dailyStudyTime = value),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 18),
-      const PreferenceCallout(),
-      const SizedBox(height: 34),
-      GradientButton(
-        label: 'Continue to adaptive pretest',
-        onPressed: _isSaving ? null : _nextStep,
-        isLoading: _isSaving,
-      ),
-      const SizedBox(height: 19),
-      Text(
-        'This helps us personalize your learning path.',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.softMuted,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    ];
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -496,132 +497,6 @@ class _OnboardingTitle extends StatelessWidget {
   }
 }
 
-class _OnboardingTextField extends StatelessWidget {
-  const _OnboardingTextField({
-    required this.label,
-    required this.controller,
-    required this.icon,
-    required this.hintText,
-    this.validator,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final IconData icon;
-  final String hintText;
-  final FormFieldValidator<String>? validator;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: WicaraColors.text,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextFormField(
-          controller: controller,
-          validator: validator,
-          textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            hintText: hintText,
-            prefixIcon: Icon(icon, color: WicaraColors.softMuted, size: 21),
-            filled: true,
-            fillColor: WicaraColors.fieldFill,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 15,
-              vertical: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: WicaraColors.line,
-                width: 1.4,
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: WicaraColors.line,
-                width: 1.4,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: WicaraColors.primaryDeep,
-                width: 1.4,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _OnboardingDropdown extends StatelessWidget {
-  const _OnboardingDropdown({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.leading,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<String> options;
-  final Widget leading;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      items: [
-        for (final option in options)
-          DropdownMenuItem<String>(value: option, child: Text(option)),
-      ],
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: SizedBox(width: 48, child: Center(child: leading)),
-        filled: true,
-        fillColor: WicaraColors.fieldFill,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 15,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: WicaraColors.line, width: 1.4),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: WicaraColors.line, width: 1.4),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: WicaraColors.primaryDeep,
-            width: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SoftIcon extends StatelessWidget {
   const _SoftIcon(this.icon);
 
@@ -633,28 +508,161 @@ class _SoftIcon extends StatelessWidget {
   }
 }
 
-class _SubjectChoice {
-  const _SubjectChoice({
+class _OptionSheet extends StatelessWidget {
+  const _OptionSheet({
     required this.title,
-    required this.description,
-    required this.icon,
-    required this.tint,
-    required this.isSelected,
+    required this.options,
+    required this.initialValue,
+    this.displayFor,
   });
 
   final String title;
-  final String description;
-  final IconData icon;
-  final Color tint;
-  final bool isSelected;
+  final List<String> options;
+  final String initialValue;
+  final String Function(String value)? displayFor;
 
-  _SubjectChoice copyWith({bool? isSelected}) {
-    return _SubjectChoice(
-      title: title,
-      description: description,
-      icon: icon,
-      tint: tint,
-      isSelected: isSelected ?? this.isSelected,
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final option = options[index];
+                  final isSelected = option == initialValue;
+
+                  return ListTile(
+                    title: Text(displayFor?.call(option) ?? option),
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: WicaraColors.secondary,
+                          )
+                        : null,
+                    onTap: () => Navigator.of(context).pop(option),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchableOptionSheet extends StatefulWidget {
+  const _SearchableOptionSheet({
+    required this.title,
+    required this.options,
+    required this.initialValue,
+    required this.searchHint,
+  });
+
+  final String title;
+  final List<String> options;
+  final String initialValue;
+  final String searchHint;
+
+  @override
+  State<_SearchableOptionSheet> createState() => _SearchableOptionSheetState();
+}
+
+class _SearchableOptionSheetState extends State<_SearchableOptionSheet> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _controller.text.trim().toLowerCase();
+    final filteredOptions = widget.options.where((option) {
+      if (query.isEmpty) {
+        return true;
+      }
+      return option.toLowerCase().contains(query);
+    }).toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          4,
+          20,
+          20 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: widget.searchHint,
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: WicaraColors.fieldFill,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: filteredOptions.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final option = filteredOptions[index];
+                  final isSelected = option == widget.initialValue;
+
+                  return ListTile(
+                    title: Text(option),
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: WicaraColors.secondary,
+                          )
+                        : null,
+                    onTap: () => Navigator.of(context).pop(option),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

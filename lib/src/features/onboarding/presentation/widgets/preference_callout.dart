@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/wicara_colors.dart';
 
 class PreferenceCallout extends StatelessWidget {
-  const PreferenceCallout({super.key});
+  const PreferenceCallout({required this.message, super.key});
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +35,7 @@ class PreferenceCallout extends StatelessWidget {
           const SizedBox(width: 11),
           Expanded(
             child: Text(
-              'WICARA adapts to you, your pace, your style,\nand your goals.',
+              message,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.ink,
                 fontWeight: FontWeight.w400,
