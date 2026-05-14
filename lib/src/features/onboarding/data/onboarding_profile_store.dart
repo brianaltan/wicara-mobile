@@ -26,6 +26,7 @@ class OnboardingProfileStore {
     return OnboardingProfile(
       fullName: (decoded['fullName'] ?? '').toString(),
       country: (decoded['country'] ?? '').toString(),
+      educationLevel: (decoded['educationLevel'] ?? '').toString(),
       gradeLevel: (decoded['gradeLevel'] ?? '').toString(),
       preferredLanguage: (decoded['preferredLanguage'] ?? '').toString(),
       selectedSubjects: selectedSubjects,
@@ -39,6 +40,7 @@ class OnboardingProfileStore {
     final encoded = jsonEncode(<String, dynamic>{
       'fullName': profile.fullName,
       'country': profile.country,
+      'educationLevel': profile.educationLevel,
       'gradeLevel': profile.gradeLevel,
       'preferredLanguage': profile.preferredLanguage,
       'selectedSubjects': profile.selectedSubjects,

@@ -7,6 +7,38 @@ class MockPretestRepository implements PretestRepository {
   final Duration delay;
 
   @override
+  Future<PretestQuestion> fetchCurrentQuestion() async {
+    await Future<void>.delayed(delay);
+
+    return const PretestQuestion(
+      id: 'root-cause-analysis-001',
+      stepLabel: '2 / 12',
+      topic: 'Knowledge Space Theory',
+      prompt:
+          'A company introduces a new\nprocess that reduces cycle\ntime but increases defect rate.\nWhat should they evaluate first?',
+      helper: 'Select the best next step to guide\nimprovement.',
+      options: [
+        PretestOption(
+          id: 'A',
+          label: 'A',
+          text: 'Increase automation\nto reduce variability',
+        ),
+        PretestOption(
+          id: 'B',
+          label: 'B',
+          text: 'Run a root cause analysis\non defect drivers',
+        ),
+        PretestOption(
+          id: 'C',
+          label: 'C',
+          text: 'Set tighter production quotas',
+        ),
+        PretestOption(id: 'D', label: 'D', text: 'Reduce inspection frequency'),
+      ],
+    );
+  }
+
+  @override
   Future<void> submitAnswer(PretestAnswer answer) async {
     await Future<void>.delayed(delay);
 

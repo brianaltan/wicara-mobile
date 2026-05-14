@@ -27,6 +27,8 @@ class OnboardingController extends ChangeNotifier {
       _profile = persisted.copyWith(
         fullName: displayName,
         country: persisted.country.isEmpty ? 'United States' : null,
+        educationLevel:
+            persisted.educationLevel.isEmpty ? 'senior_high' : null,
         gradeLevel: persisted.gradeLevel.isEmpty ? '11' : null,
         preferredLanguage: persisted.preferredLanguage.isEmpty ? 'English' : null,
         selectedSubjects: persisted.selectedSubjects.isEmpty
@@ -102,6 +104,7 @@ class OnboardingController extends ChangeNotifier {
     return OnboardingProfile(
       fullName: fullName,
       country: 'United States',
+      educationLevel: 'senior_high',
       gradeLevel: '11',
       preferredLanguage: 'English',
       selectedSubjects: onboardingSubjectOptions.map((subject) => subject.key).toList(),

@@ -17,7 +17,27 @@ class MockAuthRepository implements AuthRepository {
       userId: 'mock-learner-001',
       displayName: 'Aisyah Putri',
       role: request.role,
+      onboardingCompleted: true,
       token: 'mock-session-token',
+    );
+  }
+
+  @override
+  Future<AuthSession> register(RegisterRequest request) async {
+    await Future<void>.delayed(delay);
+
+    if (request.email.trim().isEmpty || request.password.isEmpty) {
+      throw const AuthException('Please enter your email and password.');
+    }
+
+    return AuthSession(
+      userId: 'mock-registered-learner',
+      displayName: request.displayName.trim().isEmpty
+          ? request.email.trim()
+          : request.displayName.trim(),
+      role: request.role,
+      onboardingCompleted: false,
+      token: 'mock-registered-session-token',
     );
   }
 
@@ -29,6 +49,7 @@ class MockAuthRepository implements AuthRepository {
       userId: 'mock-google-learner',
       displayName: 'Google Learner',
       role: role,
+      onboardingCompleted: true,
       token: 'mock-google-session-token',
     );
   }

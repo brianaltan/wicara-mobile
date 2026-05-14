@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../app/app_routes.dart';
-import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
@@ -110,17 +109,17 @@ class _SecondaryButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: WicaraColors.line, width: 1.4),
+          side: const BorderSide(color: Color(0xFFD8DDE8), width: 1.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          foregroundColor: WicaraColors.ink,
+          foregroundColor: const Color(0xFF1F2A44),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: WicaraColors.ink,
+            color: const Color(0xFF1F2A44),
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
           ),

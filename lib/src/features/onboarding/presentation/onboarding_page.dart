@@ -6,6 +6,7 @@ import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/security_note.dart';
+import '../../auth/application/auth_controller.dart';
 import '../application/onboarding_controller.dart';
 import '../domain/onboarding_copy.dart';
 import '../domain/onboarding_options.dart';
@@ -16,9 +17,14 @@ import 'widgets/preference_callout.dart';
 import 'widgets/subject_tile.dart';
 
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({required this.onboardingController, super.key});
+  const OnboardingPage({
+    required this.onboardingController,
+    required this.authController,
+    super.key,
+  });
 
   final OnboardingController onboardingController;
+  final AuthController authController;
 
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
@@ -40,6 +46,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
     setState(() => _isSaving = true);
     try {
       await widget.onboardingController.saveProfile();
+      await widget.authController.markOnboardingCompleted(
+        displayName: widget.onboardingController.profile.fullName,
+      );
       if (!mounted) {
         return;
       }
@@ -62,7 +71,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     }
     setState(() => _currentStep -= 1);
   }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()

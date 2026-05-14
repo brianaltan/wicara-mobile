@@ -25,8 +25,18 @@ class AuthController extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isSignedIn => _session != null;
   AuthSession? get session => _session;
-  String get initialSignedInRoute =>
-      _lastProtectedRoute ?? AppRoutes.onboarding;
+  String get initialSignedInRoute {
+    final session = _session;
+    if (session == null) {
+      return AppRoutes.landing;
+    }
+    if (!session.onboardingCompleted) {
+      return AppRoutes.onboarding;
+    }
+    return _lastProtectedRoute == AppRoutes.onboarding
+        ? AppRoutes.home
+        : (_lastProtectedRoute ?? AppRoutes.home);
+  }
 
   Future<void> initialize() async {
     final persistedState = await _sessionStore.read();
@@ -49,6 +59,12 @@ class AuthController extends ChangeNotifier {
     return session;
   }
 
+  Future<AuthSession> register(RegisterRequest request) async {
+    final session = await _authRepository.register(request);
+    await _setSession(session, lastProtectedRoute: AppRoutes.onboarding);
+    return session;
+  }
+
   Future<AuthSession> startDevelopmentSession({
     required AuthRole role,
     String? displayName,
@@ -57,10 +73,28 @@ class AuthController extends ChangeNotifier {
       userId: 'dev-web-learner',
       displayName: _normalizeDisplayName(displayName),
       role: role,
+      onboardingCompleted: false,
       token: 'dev-session-token',
     );
     await _setSession(session, lastProtectedRoute: AppRoutes.onboarding);
     return session;
+  }
+
+  Future<void> markOnboardingCompleted({String? displayName}) async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+
+    _session = session.copyWith(
+      displayName: displayName?.trim().isNotEmpty == true
+          ? displayName!.trim()
+          : session.displayName,
+      onboardingCompleted: true,
+    );
+    _lastProtectedRoute = AppRoutes.home;
+    await _persistCurrentState();
+    notifyListeners();
   }
 
   Future<void> signOut() async {

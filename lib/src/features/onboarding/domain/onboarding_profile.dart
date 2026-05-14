@@ -2,6 +2,7 @@ class OnboardingProfile {
   const OnboardingProfile({
     required this.fullName,
     required this.country,
+    required this.educationLevel,
     required this.gradeLevel,
     required this.preferredLanguage,
     required this.selectedSubjects,
@@ -11,6 +12,7 @@ class OnboardingProfile {
 
   final String fullName;
   final String country;
+  final String educationLevel;
   final String gradeLevel;
   final String preferredLanguage;
   final List<String> selectedSubjects;
@@ -20,6 +22,7 @@ class OnboardingProfile {
   OnboardingProfile copyWith({
     String? fullName,
     String? country,
+    String? educationLevel,
     String? gradeLevel,
     String? preferredLanguage,
     List<String>? selectedSubjects,
@@ -29,6 +32,7 @@ class OnboardingProfile {
     return OnboardingProfile(
       fullName: fullName ?? this.fullName,
       country: country ?? this.country,
+      educationLevel: educationLevel ?? this.educationLevel,
       gradeLevel: gradeLevel ?? this.gradeLevel,
       preferredLanguage: preferredLanguage ?? this.preferredLanguage,
       selectedSubjects: selectedSubjects ?? this.selectedSubjects,

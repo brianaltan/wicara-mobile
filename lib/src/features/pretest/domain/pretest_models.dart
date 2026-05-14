@@ -1,5 +1,6 @@
 class PretestQuestion {
   const PretestQuestion({
+    this.id = '',
     required this.stepLabel,
     required this.topic,
     required this.prompt,
@@ -7,6 +8,7 @@ class PretestQuestion {
     required this.options,
   });
 
+  final String id;
   final String stepLabel;
   final String topic;
   final String prompt;

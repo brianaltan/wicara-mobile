@@ -8,10 +8,16 @@ import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../domain/learning_goal_repository.dart';
 
 class LearningGoalPage extends StatefulWidget {
-  const LearningGoalPage({required this.onboardingController, super.key});
+  const LearningGoalPage({
+    required this.learningGoalRepository,
+    required this.onboardingController,
+    super.key,
+  });
 
+  final LearningGoalRepository learningGoalRepository;
   final OnboardingController onboardingController;
 
   @override
@@ -46,22 +52,39 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     }
 
     setState(() => _isGenerating = true);
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-    if (!mounted) {
-      return;
+    try {
+      await widget.learningGoalRepository.createLearningGoal(
+        rawTopic: _controller.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isGenerating = false;
+        _isComplete = true;
+      });
+
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+    } on LearningGoalException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isGenerating = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
     }
-
-    setState(() {
-      _isGenerating = false;
-      _isComplete = true;
-    });
-
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-    if (!mounted) {
-      return;
-    }
-
-    Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
   }
 
   void _goBack() {

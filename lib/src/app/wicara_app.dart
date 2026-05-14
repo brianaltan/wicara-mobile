@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/wicara_theme.dart';
 import '../features/auth/application/auth_controller.dart';
-import '../features/curriculum/domain/curriculum_repository.dart';
 import '../features/auth/presentation/sign_in_page.dart';
+import '../features/curriculum/domain/curriculum_repository.dart';
+import '../features/home/domain/home_repository.dart';
+import '../features/home/domain/home_snapshot.dart';
 import '../features/home/presentation/app_home_page.dart';
 import '../features/landing/presentation/landing_page.dart';
+import '../features/learning_goal/domain/learning_goal_repository.dart';
 import '../features/learning_goal/presentation/learning_goal_page.dart';
 import '../features/onboarding/application/onboarding_controller.dart';
 import '../features/onboarding/domain/onboarding_repository.dart';
@@ -20,16 +23,22 @@ class WicaraApp extends StatefulWidget {
     required this.authController,
     required this.onboardingController,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.onboardingRepository,
     required this.pretestRepository,
+    this.homeRepository,
+    this.initialRoute = AppRoutes.landing,
     super.key,
   });
 
   final AuthController authController;
   final OnboardingController onboardingController;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
+  final HomeRepository? homeRepository;
   final OnboardingRepository onboardingRepository;
   final PretestRepository pretestRepository;
+  final String initialRoute;
 
   @override
   State<WicaraApp> createState() => _WicaraAppState();
@@ -113,8 +122,10 @@ class _WicaraAppState extends State<WicaraApp> {
         ),
         AppRoutes.onboarding => OnboardingPage(
           onboardingController: widget.onboardingController,
+          authController: widget.authController,
         ),
         AppRoutes.learningGoal => LearningGoalPage(
+          learningGoalRepository: widget.learningGoalRepository,
           onboardingController: widget.onboardingController,
         ),
         AppRoutes.pretest => PretestPage(
@@ -123,6 +134,8 @@ class _WicaraAppState extends State<WicaraApp> {
         ),
         AppRoutes.home => AppHomePage(
           curriculumRepository: widget.curriculumRepository,
+          homeRepository:
+              widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
           onboardingController: widget.onboardingController,
         ),
@@ -166,5 +179,29 @@ class _AuthRouteObserver extends NavigatorObserver {
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     _authController.markRouteVisited(newRoute?.settings.name);
+  }
+}
+
+class _UnavailableHomeRepository implements HomeRepository {
+  const _UnavailableHomeRepository();
+
+  @override
+  Future<HomeSnapshot> fetchSnapshot() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationSession> fetchDailyEvaluation() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<void> submitDailyEvaluationAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
   }
 }
