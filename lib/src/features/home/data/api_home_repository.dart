@@ -51,6 +51,8 @@ class ApiHomeRepository implements HomeRepository {
       selectedSubjects: selectedSubjects,
       availableSubjects: _subjectKeys(subjectsJson),
       onboardingCompleted: profileJson['onboarding_completed'] == true,
+      nextQueueItem: _queueItemOrNull(homeJson['next_queue_item']),
+      activeTracks: _trackSummaries(homeJson['active_tracks']),
     );
   }
 
@@ -283,6 +285,61 @@ class ApiHomeRepository implements HomeRepository {
         fallbackLabel: 'Back to Home',
       ),
     );
+  }
+
+  LearningQueueItem? _queueItemOrNull(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      return null;
+    }
+    return LearningQueueItem(
+      id: _string(value['id']),
+      trackId: _nullableString(value['track_id']),
+      moduleId: _nullableString(value['module_id']),
+      title: _string(value['title']),
+      subtitle: _string(value['subtitle']),
+      status: _string(value['status']),
+    );
+  }
+
+  List<LearningTrackSummary> _trackSummaries(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (track) => LearningTrackSummary(
+            id: _string(track['id']),
+            title: _string(track['title']),
+            status: _string(track['status']),
+            progressPercent: _int(track['progress_percent']),
+            modules: _moduleSummaries(track['modules']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<LearningTrackModuleSummary> _moduleSummaries(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (module) => LearningTrackModuleSummary(
+            id: _string(module['id']),
+            title: _string(module['title']),
+            description: _string(module['description']),
+            status: _string(module['status']),
+            estimatedMinutes: _int(module['estimated_minutes']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  String? _nullableString(Object? value) {
+    final text = _string(value);
+    return text.isEmpty ? null : text;
   }
 
   List<ReviewedConcept> _reviewedConceptsFromJson(Object? value) {

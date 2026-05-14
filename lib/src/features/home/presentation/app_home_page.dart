@@ -20,6 +20,7 @@ import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
+import '../../workspace/domain/workspace_models.dart';
 
 enum _HomeTab { home, queue, progress, profile }
 
@@ -276,8 +277,12 @@ class _AppHomePageState extends State<AppHomePage> {
     Navigator.of(context).pushNamed(AppRoutes.learningGoal);
   }
 
-  void _openWorkspaceModules() {
-    Navigator.of(context).pushNamed(AppRoutes.workspaceModules);
+  Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
+    await Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.workspaceModules, arguments: arguments);
+    if (!mounted) return;
+    _retryHomeSnapshot();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -292,7 +297,7 @@ class _AppHomePageState extends State<AppHomePage> {
         _openQueue(_QueueTab.tracks);
         return;
       case 'continue_learning':
-        _openWorkspaceModules();
+        _openQueue(_QueueTab.tracks);
         return;
       default:
         _openHome();
@@ -635,7 +640,7 @@ class _HomeDashboard extends StatelessWidget {
   final VoidCallback onOpenQueue;
   final VoidCallback onOpenTracks;
   final VoidCallback onTakeDailyEvaluation;
-  final VoidCallback onContinueSession;
+  final ValueChanged<WorkspaceRouteArguments> onContinueSession;
 
   @override
   Widget build(BuildContext context) {
@@ -670,7 +675,7 @@ class _HomeDashboardContent extends StatelessWidget {
   final VoidCallback onOpenQueue;
   final VoidCallback onOpenTracks;
   final VoidCallback onTakeDailyEvaluation;
-  final VoidCallback onContinueSession;
+  final ValueChanged<WorkspaceRouteArguments> onContinueSession;
 
   @override
   Widget build(BuildContext context) {
@@ -734,7 +739,7 @@ class _LearningQueue extends StatelessWidget {
   final _QueueTab selectedTab;
   final ValueChanged<_QueueTab> onTabChanged;
   final VoidCallback onCreateTrack;
-  final VoidCallback onOpenWorkspace;
+  final ValueChanged<WorkspaceRouteArguments> onOpenWorkspace;
   final VoidCallback onBack;
 
   @override
@@ -799,12 +804,13 @@ class _BackendSubjectQueueContent extends StatelessWidget {
   });
 
   final HomeSnapshot snapshot;
-  final VoidCallback onContinue;
+  final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
     final copy = _HomeCopyScope.of(context);
     final subjects = snapshot.selectedSubjects;
+    final workspaceTarget = snapshot.firstWorkspaceTarget;
     if (subjects.isEmpty) {
       return _BackendEmptyPanel(
         icon: Icons.menu_book_outlined,
@@ -858,7 +864,9 @@ class _BackendSubjectQueueContent extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  onPressed: onContinue,
+                  onPressed: workspaceTarget == null
+                      ? null
+                      : () => onContinue(workspaceTarget),
                   icon: const Icon(Icons.chevron_right_rounded),
                   color: WicaraColors.secondary,
                 ),
@@ -881,7 +889,7 @@ class _BackendTrackQueueContent extends StatelessWidget {
 
   final HomeSnapshot snapshot;
   final VoidCallback onCreateTrack;
-  final VoidCallback onContinue;
+  final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -984,11 +992,12 @@ class _TodayQueueCard extends StatelessWidget {
 
   final HomeSnapshot snapshot;
   final VoidCallback onViewAll;
-  final VoidCallback onContinue;
+  final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
     final copy = _HomeCopyScope.of(context);
+    final workspaceTarget = snapshot.firstWorkspaceTarget;
     final glyphSource = snapshot.selectedSubjects.isEmpty
         ? 'set'
         : snapshot.selectedSubjects.first.trim();
@@ -1075,7 +1084,9 @@ class _TodayQueueCard extends StatelessWidget {
           const SizedBox(height: 24),
           GradientButton(
             label: copy.continueSessionLabel,
-            onPressed: onContinue,
+            onPressed: workspaceTarget == null
+                ? null
+                : () => onContinue(workspaceTarget),
           ),
         ],
       ),

@@ -14,6 +14,8 @@ import 'src/features/onboarding/data/api_onboarding_repository.dart';
 import 'src/features/onboarding/data/onboarding_profile_store.dart';
 import 'src/features/pretest/data/api_pretest_repository.dart';
 import 'src/features/pretest/data/pretest_session_store.dart';
+import 'src/features/workspace/data/api_workspace_repository.dart';
+import 'src/features/workspace/data/workspace_session_store.dart';
 
 const _googleWebClientId = String.fromEnvironment(
   'WICARA_GOOGLE_WEB_CLIENT_ID',
@@ -24,6 +26,7 @@ Future<void> main() async {
 
   final sessionStore = authSessionStore;
   final pretestStore = pretestSessionStore;
+  final workspaceStore = workspaceSessionStore;
   final apiClient = ApiClient(baseUrl: ApiClient.defaultBaseUrl);
   final googleWebClientId = resolveGoogleWebClientId(_googleWebClientId);
   final authController = AuthController(
@@ -37,6 +40,7 @@ Future<void> main() async {
   );
 
   await authController.initialize();
+  await workspaceStore.read();
   final onboardingController = OnboardingController(
     onboardingRepository: ApiOnboardingRepository(
       apiClient: apiClient,
@@ -70,6 +74,11 @@ Future<void> main() async {
         apiClient: apiClient,
         sessionStore: sessionStore,
         pretestSessionStore: pretestStore,
+      ),
+      workspaceRepository: ApiWorkspaceRepository(
+        apiClient: apiClient,
+        sessionStore: sessionStore,
+        workspaceSessionStore: workspaceStore,
       ),
     ),
   );
