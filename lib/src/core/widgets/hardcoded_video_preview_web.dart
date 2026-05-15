@@ -25,10 +25,8 @@ class HardcodedVideoPreview extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => _HardcodedVideoWebPage(
-                videoUrl: videoUrl,
-                title: title,
-              ),
+              builder: (_) =>
+                  _HardcodedVideoWebPage(videoUrl: videoUrl, title: title),
             ),
           );
         },
