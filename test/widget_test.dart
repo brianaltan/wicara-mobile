@@ -186,6 +186,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Posttest Perkalian'), findsWidgets);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('auth.lastProtectedRoute'), '/home');
 
     for (final answer in const [
       '28',
@@ -216,6 +218,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('100%'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Kembali ke Home'));
+    await tester.tap(find.text('Kembali ke Home'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Evaluation Complete'), findsNothing);
+    expect(find.text('Continue session'), findsOneWidget);
+    expect(preferences.getString('auth.lastProtectedRoute'), '/home');
   });
 
   testWidgets('learning report detail renders backend payload', (tester) async {

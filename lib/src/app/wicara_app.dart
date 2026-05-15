@@ -222,6 +222,12 @@ class _AuthRouteObserver extends NavigatorObserver {
   }
 
   @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    _authController.markRouteVisited(previousRoute?.settings.name);
+  }
+
+  @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     _authController.markRouteVisited(newRoute?.settings.name);
