@@ -292,6 +292,18 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
   Future<DailyEvaluationSession> fetchDailyEvaluation() {
     throw UnimplementedError('HomeRepository is not configured.');
   }

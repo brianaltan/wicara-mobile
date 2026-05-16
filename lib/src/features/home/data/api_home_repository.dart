@@ -27,6 +27,15 @@ class ApiHomeRepository implements HomeRepository {
       '/api/v1/home',
       headers: {'Authorization': 'Bearer $token'},
     );
+    Map<String, dynamic> mediaArtifactsJson = const {'items': []};
+    try {
+      mediaArtifactsJson = await _apiClient.getJson(
+        '/api/v1/media-artifacts',
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (_) {
+      mediaArtifactsJson = const {'items': []};
+    }
     final subjectsJson = await _apiClient.getJson('/api/v1/subjects');
     final selectedSubjectCodes = _stringList(profileJson['selected_subjects']);
     final selectedSubjects = selectedSubjectCodes
@@ -53,7 +62,30 @@ class ApiHomeRepository implements HomeRepository {
       onboardingCompleted: profileJson['onboarding_completed'] == true,
       nextQueueItem: _queueItemOrNull(homeJson['next_queue_item']),
       activeTracks: _trackSummaries(homeJson['active_tracks']),
+      mediaArtifacts: _mediaArtifactsFromList(mediaArtifactsJson['items']),
     );
+  }
+
+  @override
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts() async {
+    final token = _requireToken();
+    final json = await _apiClient.getJson(
+      '/api/v1/media-artifacts',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _mediaArtifactsFromList(json['items']);
+  }
+
+  @override
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  }) async {
+    final token = _requireToken();
+    final json = await _apiClient.getJson(
+      '/api/v1/media-artifacts/$artifactId',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _mediaArtifactFromJson(json);
   }
 
   @override
@@ -337,6 +369,39 @@ class ApiHomeRepository implements HomeRepository {
         .toList(growable: false);
   }
 
+  List<HomeMediaArtifact> _mediaArtifactsFromList(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(_mediaArtifactFromJson)
+        .toList(growable: false);
+  }
+
+  HomeMediaArtifact _mediaArtifactFromJson(Map<String, dynamic> json) {
+    final notes = json['notes'];
+    return HomeMediaArtifact(
+      id: _string(json['id']),
+      title: _string(json['title']),
+      subtitle: _string(json['subtitle']),
+      status: _string(json['status']),
+      durationSeconds: _int(json['duration_seconds']),
+      durationLabel: _string(json['duration_label']),
+      transcript: _string(json['transcript']),
+      notes: notes is List
+          ? notes.map((item) => _string(item)).toList(growable: false)
+          : const [],
+      artifactType: _stringWithFallback(json['artifact_type'], 'video'),
+      thumbnailUrl: _resolveMediaUrl(_nullableString(json['thumbnail_url'])),
+      videoUrl: _resolveMediaUrl(_nullableString(json['video_url'])),
+      playbackUrl: _resolveMediaUrl(_nullableString(json['playback_url'])),
+      trackId: _nullableString(json['track_id']),
+      moduleId: _nullableString(json['module_id']),
+      createdAt: _nullableString(json['created_at']),
+    );
+  }
+
   String? _nullableString(Object? value) {
     final text = _string(value);
     return text.isEmpty ? null : text;
@@ -540,6 +605,22 @@ class ApiHomeRepository implements HomeRepository {
       throw const ApiClientException('Please log in before opening dashboard.');
     }
     return token;
+  }
+
+  String? _resolveMediaUrl(String? rawUrl) {
+    if (rawUrl == null || rawUrl.isEmpty) {
+      return null;
+    }
+    final parsed = Uri.tryParse(rawUrl);
+    if (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty) {
+      return rawUrl;
+    }
+
+    final baseUri = Uri.parse(_apiClient.baseUrl);
+    if (rawUrl.startsWith('/')) {
+      return baseUri.resolve(rawUrl).toString();
+    }
+    return baseUri.resolve('/$rawUrl').toString();
   }
 
   String _dateOnly(DateTime value) {

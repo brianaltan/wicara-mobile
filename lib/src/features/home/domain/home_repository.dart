@@ -3,6 +3,12 @@ import 'home_snapshot.dart';
 abstract class HomeRepository {
   Future<HomeSnapshot> fetchSnapshot();
 
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts();
+
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  });
+
   Future<DailyEvaluationSession> fetchDailyEvaluation();
 
   Future<DailyEvaluationAnswerResult> submitDailyEvaluationAnswer({
