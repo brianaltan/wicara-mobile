@@ -151,7 +151,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       return;
     }
 
-    final language = _normalizedLanguageCode();
+    final language = _resolveGenerationLanguageCode();
     final chatTurnCount = _chatEntries
         .where(
           (entry) =>
@@ -453,6 +453,86 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       'english' || 'en' || 'en-us' => 'en',
       _ => 'id',
     };
+  }
+
+  String _resolveGenerationLanguageCode() {
+    return _inferConversationLanguage() ?? _normalizedLanguageCode();
+  }
+
+  String? _inferConversationLanguage() {
+    final learnerTexts = <String>[];
+    for (final event
+        in _workspace?.events.reversed ?? const <WorkspaceEvent>[]) {
+      if (event.actorType != 'learner') {
+        continue;
+      }
+      final text = event.textPayload.trim();
+      if (text.isNotEmpty) {
+        learnerTexts.add(text);
+      }
+      if (learnerTexts.length >= 4) {
+        break;
+      }
+    }
+    if (learnerTexts.isEmpty) {
+      return null;
+    }
+
+    final merged = learnerTexts.join(' ').toLowerCase();
+    final tokens = merged
+        .split(RegExp(r'[^a-z]+'))
+        .where((token) => token.isNotEmpty);
+
+    const idMarkers = {
+      'yang',
+      'dan',
+      'dengan',
+      'untuk',
+      'pada',
+      'garis',
+      'bilangan',
+      'lebih',
+      'kurang',
+      'adalah',
+      'saya',
+      'aku',
+      'tolong',
+      'kenapa',
+      'bagaimana',
+      'jelasin',
+      'contoh',
+    };
+    const enMarkers = {
+      'the',
+      'and',
+      'with',
+      'for',
+      'number',
+      'line',
+      'greater',
+      'less',
+      'is',
+      'please',
+      'why',
+      'how',
+      'explain',
+      'example',
+    };
+
+    var idScore = 0;
+    var enScore = 0;
+    for (final token in tokens) {
+      if (idMarkers.contains(token)) {
+        idScore++;
+      }
+      if (enMarkers.contains(token)) {
+        enScore++;
+      }
+    }
+    if (idScore == 0 && enScore == 0) {
+      return null;
+    }
+    return idScore >= enScore ? 'id' : 'en';
   }
 
   Map<String, dynamic> _graphExplanationSpec({
@@ -1522,6 +1602,14 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                     _WorkspaceFooter(
                       controller: _messageController,
                       onSend: _sendMessage,
+                      onGenerateVideo: () {
+                        unawaited(_generateVideo());
+                      },
+                      isVideoGenerating: _isVideoGenerating,
+                      canGenerateVideo: _canGenerateVideoForCurrentTopic(),
+                      contentMode: _contentMode,
+                      videoStatusMessage: _videoStatusMessage,
+                      videoErrorMessage: _videoErrorMessage,
                       copy: copy,
                     ),
                   ],
@@ -1623,13 +1711,13 @@ class _WorkspaceChatPanel extends StatelessWidget {
               children: [
                 _WorkspaceBubble(
                   text:
-                      'Okay, before we start learning limits from graphs, what do you prefer?',
+                      'Sebelum lanjut, kamu mau belajar lewat penjelasan teks dulu atau langsung lanjut diskusi?',
                   isUser: false,
                 ),
                 SizedBox(height: 9),
                 _WorkspaceBubble(
                   text:
-                      'I can write a clear long-form explanation, or I can generate a short visual video and save it here for you.',
+                      'Kalau mau video, tekan tombol Generate video di bawah composer. Videonya akan menyesuaikan isi chat yang sedang berjalan.',
                   isUser: false,
                 ),
               ],
@@ -1659,9 +1747,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
           _WorkspaceChoiceGrid(
             contentMode: contentMode,
             isVideoGenerating: isVideoGenerating,
-            canGenerateVideo: canGenerateVideo,
             onChooseExplanation: onChooseExplanation,
-            onGenerateVideo: onGenerateVideo,
           ),
           if (videoTemplateHint != null) ...[
             const SizedBox(height: 10),
@@ -1679,44 +1765,6 @@ class _WorkspaceChatPanel extends StatelessWidget {
             ),
             const SizedBox(height: 9),
             const _ConceptExplanationBubble(),
-          ] else if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
-            const SizedBox(height: 14),
-            const _WorkspaceBubble(
-              text: 'Generate a video from this conversation.',
-              isUser: true,
-            ),
-            const SizedBox(height: 10),
-            _WorkspaceVideoLoadingCard(
-              progress: latestVideoStatus?.progress ?? 0,
-              message:
-                  videoStatusMessage ??
-                  'Building scenes, narration, and rendering...',
-            ),
-          ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
-            const SizedBox(height: 14),
-            const _WorkspaceBubble(
-              text: 'Generate a video from this conversation.',
-              isUser: true,
-            ),
-            const SizedBox(height: 10),
-            _GeneratedWorkspaceVideoCard(
-              artifact: latestVideoArtifact,
-              status: latestVideoStatus,
-            ),
-          ] else if (contentMode == _WorkspaceContentMode.videoFailed) ...[
-            const SizedBox(height: 14),
-            const _WorkspaceBubble(
-              text: 'Generate a video from this conversation.',
-              isUser: true,
-            ),
-            const SizedBox(height: 10),
-            _WorkspaceVideoFailedCard(
-              errorMessage:
-                  videoErrorMessage ??
-                  latestVideoStatus?.error ??
-                  'Video generation failed.',
-              onRetry: onGenerateVideo,
-            ),
           ],
           if (contentMode == _WorkspaceContentMode.explanation ||
               contentMode == _WorkspaceContentMode.videoReady) ...[
@@ -1748,6 +1796,30 @@ class _WorkspaceChatPanel extends StatelessWidget {
               _AssistantMessageFrame(
                 child: _WorkspaceBubble(text: entry.text!, isUser: false),
               ),
+          ],
+          if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
+            const SizedBox(height: 14),
+            _WorkspaceVideoLoadingCard(
+              progress: latestVideoStatus?.progress ?? 0,
+              message:
+                  videoStatusMessage ??
+                  'Building scenes, narration, and rendering...',
+            ),
+          ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
+            const SizedBox(height: 14),
+            _GeneratedWorkspaceVideoCard(
+              artifact: latestVideoArtifact,
+              status: latestVideoStatus,
+            ),
+          ] else if (contentMode == _WorkspaceContentMode.videoFailed) ...[
+            const SizedBox(height: 14),
+            _WorkspaceVideoFailedCard(
+              errorMessage:
+                  videoErrorMessage ??
+                  latestVideoStatus?.error ??
+                  'Video generation failed.',
+              onRetry: onGenerateVideo,
+            ),
           ],
         ],
       ),
@@ -1807,44 +1879,21 @@ class _WorkspaceChoiceGrid extends StatelessWidget {
   const _WorkspaceChoiceGrid({
     required this.contentMode,
     required this.isVideoGenerating,
-    required this.canGenerateVideo,
     required this.onChooseExplanation,
-    required this.onGenerateVideo,
   });
 
   final _WorkspaceContentMode contentMode;
   final bool isVideoGenerating;
-  final bool canGenerateVideo;
   final VoidCallback onChooseExplanation;
-  final VoidCallback onGenerateVideo;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _WorkspaceChoiceButton(
-            label: 'Long explanation',
-            icon: Icons.notes_rounded,
-            isSelected: contentMode == _WorkspaceContentMode.explanation,
-            onPressed: onChooseExplanation,
-            isEnabled: !isVideoGenerating,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _WorkspaceChoiceButton(
-            label: 'Generate video',
-            icon: Icons.smart_display_rounded,
-            isSelected:
-                contentMode == _WorkspaceContentMode.videoProcessing ||
-                contentMode == _WorkspaceContentMode.videoReady ||
-                contentMode == _WorkspaceContentMode.videoFailed,
-            onPressed: onGenerateVideo,
-            isEnabled: !isVideoGenerating && canGenerateVideo,
-          ),
-        ),
-      ],
+    return _WorkspaceChoiceButton(
+      label: 'Long explanation',
+      icon: Icons.notes_rounded,
+      isSelected: contentMode == _WorkspaceContentMode.explanation,
+      onPressed: onChooseExplanation,
+      isEnabled: !isVideoGenerating,
     );
   }
 }
@@ -2236,7 +2285,7 @@ class _ConceptExplanationBubble extends StatelessWidget {
       icon: Icons.lightbulb_outline_rounded,
       title: 'Concept explanation',
       child: Text(
-        'A limit is the value a function is moving toward, not always the value it reaches. On a graph, trace the curve from the left and from the right. If both sides approach the same height, that height is the limit. The filled or open dot at the exact x-value matters for the function value, but the limit cares about the nearby behavior.',
+        'Pada garis bilangan, posisi angka menentukan nilainya: semakin ke kanan maka nilainya semakin besar. Bilangan negatif ada di kiri nol, bilangan positif ada di kanan nol. Untuk membandingkan dua angka, lihat mana yang posisinya lebih kanan.',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: WicaraColors.text,
           fontWeight: FontWeight.w600,
@@ -2429,6 +2478,7 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
                                   return _WorkspaceVideoPlayerDialog(
                                     title: title,
                                     videoUrl: playbackUrl,
+                                    durationLabel: durationLabel,
                                   );
                                 },
                               );
@@ -2493,10 +2543,12 @@ class _WorkspaceVideoPlayerDialog extends StatefulWidget {
   const _WorkspaceVideoPlayerDialog({
     required this.title,
     required this.videoUrl,
+    this.durationLabel,
   });
 
   final String title;
   final String videoUrl;
+  final String? durationLabel;
 
   @override
   State<_WorkspaceVideoPlayerDialog> createState() =>
@@ -2508,6 +2560,7 @@ class _WorkspaceVideoPlayerDialogState
   VideoPlayerController? _controller;
   bool _isLoading = true;
   String? _errorMessage;
+  double _zoomScale = 1.0;
 
   @override
   void initState() {
@@ -2545,6 +2598,12 @@ class _WorkspaceVideoPlayerDialogState
     super.dispose();
   }
 
+  void _setZoomScale(double value) {
+    setState(() {
+      _zoomScale = value.clamp(1.0, 3.0);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
@@ -2574,6 +2633,13 @@ class _WorkspaceVideoPlayerDialogState
                 ),
               ],
             ),
+            if ((widget.durationLabel ?? '').isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _GeneratedVideoChip('Duration ${widget.durationLabel}'),
+              ),
+            ],
             const SizedBox(height: 6),
             AspectRatio(
               aspectRatio: controller?.value.isInitialized == true
@@ -2596,7 +2662,18 @@ class _WorkspaceVideoPlayerDialogState
                             ),
                           ),
                         )
-                      : VideoPlayer(controller!),
+                      : InteractiveViewer(
+                          minScale: 1,
+                          maxScale: 3,
+                          panEnabled: true,
+                          scaleEnabled: true,
+                          child: Center(
+                            child: Transform.scale(
+                              scale: _zoomScale,
+                              child: VideoPlayer(controller!),
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -2625,6 +2702,18 @@ class _WorkspaceVideoPlayerDialogState
                       controller,
                       allowScrubbing: true,
                     ),
+                  ),
+                  IconButton(
+                    onPressed: () => _setZoomScale(_zoomScale - 0.25),
+                    icon: const Icon(Icons.zoom_out_rounded),
+                  ),
+                  IconButton(
+                    onPressed: () => _setZoomScale(1.0),
+                    icon: const Icon(Icons.filter_center_focus_rounded),
+                  ),
+                  IconButton(
+                    onPressed: () => _setZoomScale(_zoomScale + 0.25),
+                    icon: const Icon(Icons.zoom_in_rounded),
                   ),
                 ],
               ),
@@ -2683,7 +2772,7 @@ class _WorkspaceQuizCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'If the graph approaches y = 3 from both sides as x approaches 2, what is the limit?',
+            'Pada garis bilangan, mana yang lebih besar?',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
               fontWeight: FontWeight.w700,
@@ -2691,7 +2780,7 @@ class _WorkspaceQuizCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final answer in const ['2', '3', 'Does not exist'])
+          for (final answer in const ['-2', '3', 'Sama besar'])
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _WorkspaceQuizOption(
@@ -2706,8 +2795,8 @@ class _WorkspaceQuizCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               quizState == _WorkspaceQuizState.correct
-                  ? 'Correct. The nearby behavior on both sides points to 3.'
-                  : 'Almost. Look at the height the curve approaches, not the x-value.',
+                  ? 'Benar. Angka 3 berada lebih kanan daripada -2, jadi nilainya lebih besar.'
+                  : 'Coba lagi. Di garis bilangan, angka yang lebih kanan nilainya lebih besar.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: quizState == _WorkspaceQuizState.correct
                     ? WicaraColors.accentMint
@@ -2868,11 +2957,23 @@ class _WorkspaceFooter extends StatelessWidget {
   const _WorkspaceFooter({
     required this.controller,
     required this.onSend,
+    required this.onGenerateVideo,
+    required this.isVideoGenerating,
+    required this.canGenerateVideo,
+    required this.contentMode,
+    required this.videoStatusMessage,
+    required this.videoErrorMessage,
     required this.copy,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+  final VoidCallback onGenerateVideo;
+  final bool isVideoGenerating;
+  final bool canGenerateVideo;
+  final _WorkspaceContentMode contentMode;
+  final String? videoStatusMessage;
+  final String? videoErrorMessage;
   final OnboardingCopy copy;
 
   @override
@@ -2891,10 +2992,55 @@ class _WorkspaceFooter extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(28, 11, 28, 14),
-        child: _WorkspaceComposerInput(
-          controller: controller,
-          onSend: onSend,
-          copy: copy,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
+              onPressed: !isVideoGenerating && canGenerateVideo
+                  ? onGenerateVideo
+                  : null,
+              icon: Icon(
+                isVideoGenerating
+                    ? Icons.hourglass_bottom_rounded
+                    : Icons.smart_display_rounded,
+              ),
+              label: Text(
+                isVideoGenerating
+                    ? 'Generating video...'
+                    : 'Generate video from this chat',
+              ),
+            ),
+            if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
+              const SizedBox(height: 8),
+              _WorkspaceSyncNotice(
+                icon: Icons.movie_creation_outlined,
+                text:
+                    videoStatusMessage ??
+                    'Generating video from your latest conversation context...',
+              ),
+            ] else if (contentMode == _WorkspaceContentMode.videoFailed &&
+                (videoErrorMessage?.isNotEmpty ?? false)) ...[
+              const SizedBox(height: 8),
+              _WorkspaceSyncNotice(
+                icon: Icons.error_outline_rounded,
+                text: videoErrorMessage!,
+                isError: true,
+              ),
+            ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
+              const SizedBox(height: 8),
+              const _WorkspaceSyncNotice(
+                icon: Icons.check_circle_rounded,
+                text: 'Video ready. You can play it from the latest chat card.',
+              ),
+            ],
+            const SizedBox(height: 10),
+            _WorkspaceComposerInput(
+              controller: controller,
+              onSend: onSend,
+              copy: copy,
+            ),
+          ],
         ),
       ),
     );
