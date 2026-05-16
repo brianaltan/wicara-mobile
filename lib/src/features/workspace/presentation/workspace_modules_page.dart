@@ -1681,7 +1681,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
             const _ConceptExplanationBubble(),
           ] else if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
             const SizedBox(height: 14),
-            const _WorkspaceBubble(text: 'Generate a video.', isUser: true),
+            const _WorkspaceBubble(
+              text: 'Generate a video from this conversation.',
+              isUser: true,
+            ),
             const SizedBox(height: 10),
             _WorkspaceVideoLoadingCard(
               progress: latestVideoStatus?.progress ?? 0,
@@ -1691,7 +1694,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
             ),
           ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
             const SizedBox(height: 14),
-            const _WorkspaceBubble(text: 'Generate a video.', isUser: true),
+            const _WorkspaceBubble(
+              text: 'Generate a video from this conversation.',
+              isUser: true,
+            ),
             const SizedBox(height: 10),
             _GeneratedWorkspaceVideoCard(
               artifact: latestVideoArtifact,
@@ -1699,7 +1705,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
             ),
           ] else if (contentMode == _WorkspaceContentMode.videoFailed) ...[
             const SizedBox(height: 14),
-            const _WorkspaceBubble(text: 'Generate a video.', isUser: true),
+            const _WorkspaceBubble(
+              text: 'Generate a video from this conversation.',
+              isUser: true,
+            ),
             const SizedBox(height: 10),
             _WorkspaceVideoFailedCard(
               errorMessage:
