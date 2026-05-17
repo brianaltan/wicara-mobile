@@ -12,6 +12,8 @@ import 'src/features/learning_goal/data/api_learning_goal_repository.dart';
 import 'src/features/onboarding/application/onboarding_controller.dart';
 import 'src/features/onboarding/data/api_onboarding_repository.dart';
 import 'src/features/onboarding/data/onboarding_profile_store.dart';
+import 'src/features/offline_learning/data/local_curriculum_repository.dart';
+import 'src/features/offline_learning/data/local_wicara_database.dart';
 import 'src/features/pretest/data/api_pretest_repository.dart';
 import 'src/features/pretest/data/pretest_session_store.dart';
 import 'src/features/workspace/data/api_workspace_repository.dart';
@@ -35,6 +37,7 @@ const _edgeDebugRouteTrace = bool.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _warmUpOfflinePilotGraph();
 
   final sessionStore = authSessionStore;
   final pretestStore = pretestSessionStore;
@@ -99,4 +102,19 @@ Future<void> main() async {
       edgeDebugRouteTrace: _edgeDebugRouteTrace,
     ),
   );
+}
+
+Future<void> _warmUpOfflinePilotGraph() async {
+  final localDatabase = LocalWicaraDatabase();
+  if (!localDatabase.isPlatformSupported) {
+    return;
+  }
+  final localCurriculum = LocalCurriculumRepository(database: localDatabase);
+  try {
+    await localCurriculum.ensurePilotSliceSeeded();
+  } catch (error) {
+    debugPrint('Offline curriculum warmup skipped: $error');
+  } finally {
+    await localDatabase.close();
+  }
 }
