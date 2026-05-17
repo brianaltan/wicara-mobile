@@ -76,6 +76,12 @@ class KnowledgeState {
     this.pathOptions = const [],
     this.masteryScore,
     this.confidence,
+    this.overallMasteryPercent,
+    this.strengths = const [],
+    this.gaps = const [],
+    this.evidenceNotes = const [],
+    this.recommendedFocus = const [],
+    this.nodeReports = const [],
   });
 
   final String skill;
@@ -88,6 +94,44 @@ class KnowledgeState {
   final List<String> pathOptions;
   final double? masteryScore;
   final double? confidence;
+  final int? overallMasteryPercent;
+  final List<String> strengths;
+  final List<String> gaps;
+  final List<String> evidenceNotes;
+  final List<String> recommendedFocus;
+  final List<PretestNodeReport> nodeReports;
+}
+
+class PretestNodeReport {
+  const PretestNodeReport({
+    required this.title,
+    required this.role,
+    required this.status,
+    required this.difficultyReached,
+    this.masteryScore,
+    this.confidence,
+    this.reasoningQuality = 'not_provided',
+    this.avgReasoningScore,
+    this.attemptCount = 0,
+    this.correctCount = 0,
+    this.diagnosticSignals = const [],
+    this.carelessMistakePossible = false,
+    this.misconceptionDetected = false,
+  });
+
+  final String title;
+  final String role;
+  final String status;
+  final String difficultyReached;
+  final double? masteryScore;
+  final double? confidence;
+  final String reasoningQuality;
+  final double? avgReasoningScore;
+  final int attemptCount;
+  final int correctCount;
+  final List<String> diagnosticSignals;
+  final bool carelessMistakePossible;
+  final bool misconceptionDetected;
 }
 
 class PretestAnswerResult {

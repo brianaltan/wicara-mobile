@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../../../core/theme/wicara_colors.dart';
 
@@ -34,7 +35,7 @@ class RichMathText extends StatelessWidget {
 List<InlineSpan> _spans(String text, TextStyle baseStyle) {
   final spans = <InlineSpan>[];
   final formulaRegex = RegExp(
-    r'(\$\$.*?\$\$|\$.*?\$|\\\(.*?\\\)|\\\[.*?\\\]|\\begin\{(?:bmatrix|pmatrix|matrix)\}.*?\\end\{(?:bmatrix|pmatrix|matrix)\})',
+    r'(\$\$.*?\$\$|\$.*?\$|\\\(.*?\\\)|\\\[.*?\\\]|\\begin\{(?:bmatrix|pmatrix|matrix|vmatrix|Vmatrix)\}.*?\\end\{(?:bmatrix|pmatrix|matrix|vmatrix|Vmatrix)\})',
     dotAll: true,
   );
   var cursor = 0;
@@ -42,7 +43,7 @@ List<InlineSpan> _spans(String text, TextStyle baseStyle) {
     if (match.start > cursor) {
       spans.addAll(_markdownSpans(text.substring(cursor, match.start), baseStyle));
     }
-    spans.addAll(_formulaSpans(match.group(0) ?? '', baseStyle));
+    spans.add(_mathSpan(match.group(0) ?? '', baseStyle));
     cursor = match.end;
   }
   if (cursor < text.length) {
@@ -73,78 +74,35 @@ List<InlineSpan> _markdownSpans(String text, TextStyle baseStyle) {
   return spans;
 }
 
-List<InlineSpan> _formulaSpans(String value, TextStyle baseStyle) {
+InlineSpan _mathSpan(String value, TextStyle baseStyle) {
   final formula = _stripFormulaDelimiters(value);
-  final matrixMatches = _parseMatrices(formula);
-  if (matrixMatches.isEmpty) {
-    return [_plainFormulaSpan(formula, baseStyle)];
-  }
-
-  final spans = <InlineSpan>[];
-  var cursor = 0;
-  for (final matrix in matrixMatches) {
-    if (matrix.start > cursor) {
-      final prefix = formula.substring(cursor, matrix.start).trim();
-      if (prefix.isNotEmpty) {
-        spans.add(_plainFormulaSpan(prefix, baseStyle));
-      }
-    }
-    spans.add(
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-          child: _MatrixExpression(
-            matrix: matrix,
-            style: baseStyle.copyWith(
-              color: WicaraColors.primaryDeep,
-              fontWeight: FontWeight.w800,
-            ),
+  final display = value.trim().startsWith(r'$$') || value.trim().startsWith(r'\[');
+  final mathStyle = display ? MathStyle.display : MathStyle.text;
+  return WidgetSpan(
+    alignment: PlaceholderAlignment.middle,
+    child: Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: display ? 2 : 1,
+        vertical: display ? 5 : 1,
+      ),
+      child: Math.tex(
+        formula,
+        mathStyle: mathStyle,
+        textStyle: baseStyle.copyWith(
+          color: WicaraColors.primaryDeep,
+          fontWeight: FontWeight.w700,
+        ),
+        onErrorFallback: (error) => Text(
+          _fallbackFormulaText(formula),
+          style: baseStyle.copyWith(
+            color: WicaraColors.primaryDeep,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w700,
+            backgroundColor: WicaraColors.primarySoft.withValues(alpha: 0.55),
           ),
         ),
       ),
-    );
-    cursor = matrix.end;
-  }
-  if (cursor < formula.length) {
-    final suffix = formula.substring(cursor).trim();
-    if (suffix.isNotEmpty) {
-      spans.add(_plainFormulaSpan(suffix, baseStyle));
-    }
-  }
-  return spans;
-}
-
-TextSpan _plainFormulaSpan(String formula, TextStyle baseStyle) {
-  return TextSpan(
-    text: _formatFormula(formula),
-    style: baseStyle.copyWith(
-      color: WicaraColors.primaryDeep,
-      fontFamily: 'monospace',
-      fontWeight: FontWeight.w800,
-      backgroundColor: WicaraColors.primarySoft.withValues(alpha: 0.55),
     ),
-  );
-}
-
-String _formatFormula(String value) {
-  var text = value.trim();
-  text = text.replaceAllMapped(
-    RegExp(r'\\frac\{([^{}]+)\}\{([^{}]+)\}'),
-    (match) => '${match.group(1)}/${match.group(2)}',
-  );
-  text = text
-      .replaceAll(r'\to', '→')
-      .replaceAll(r'\times', '×')
-      .replaceAll(r'\cdot', '·')
-      .replaceAll(r'\lim', 'lim')
-      .replaceAll(r'\sqrt', 'sqrt')
-      .replaceAll('{', '')
-      .replaceAll('}', '')
-      .replaceAll('\\', '');
-  return text.replaceAllMapped(
-    RegExp(r'([=+\-×/→,()])'),
-    (match) => '${match.group(1)}\u200B',
   );
 }
 
@@ -165,118 +123,12 @@ String _stripFormulaDelimiters(String value) {
   return text;
 }
 
-List<_ParsedMatrix> _parseMatrices(String formula) {
-  final regex = RegExp(
-    r'\\begin\{(bmatrix|pmatrix|matrix)\}(.+?)\\end\{\1\}',
-    dotAll: true,
-  );
-  final matrices = <_ParsedMatrix>[];
-  for (final match in regex.allMatches(formula)) {
-    final environment = match.group(1) ?? 'matrix';
-    final body = match.group(2) ?? '';
-    final rows = body
-        .split(RegExp(r'\\\\'))
-        .map(
-          (row) => row
-              .split('&')
-              .map((cell) => _formatFormula(cell.trim()))
-              .where((cell) => cell.isNotEmpty)
-              .toList(growable: false),
-        )
-        .where((row) => row.isNotEmpty)
-        .toList(growable: false);
-    if (rows.isEmpty) {
-      continue;
-    }
-    matrices.add(
-      _ParsedMatrix(
-        environment: environment,
-        rows: rows,
-        start: match.start,
-        end: match.end,
-      ),
-    );
-  }
-  return matrices;
-}
-
-class _ParsedMatrix {
-  const _ParsedMatrix({
-    required this.environment,
-    required this.rows,
-    required this.start,
-    required this.end,
-  });
-
-  final String environment;
-  final List<List<String>> rows;
-  final int start;
-  final int end;
-}
-
-class _MatrixExpression extends StatelessWidget {
-  const _MatrixExpression({required this.matrix, required this.style});
-
-  final _ParsedMatrix matrix;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final bracketStyle = style.copyWith(
-      fontSize: (style.fontSize ?? 14) * 1.7,
-      height: 1,
-      fontWeight: FontWeight.w500,
-    );
-    final cellStyle = style.copyWith(
-      fontFamily: 'monospace',
-      fontSize: (style.fontSize ?? 14) * 0.92,
-      height: 1.15,
-    );
-    final bracketPair = switch (matrix.environment) {
-      'pmatrix' => ('(', ')'),
-      'bmatrix' => ('[', ']'),
-      _ => ('', ''),
-    };
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: WicaraColors.primarySoft.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (bracketPair.$1.isNotEmpty)
-              Text(bracketPair.$1, style: bracketStyle),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final row in matrix.rows)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 1),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < row.length; i++) ...[
-                            if (i > 0) const SizedBox(width: 9),
-                            Text(row[i], style: cellStyle),
-                          ],
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (bracketPair.$2.isNotEmpty)
-              Text(bracketPair.$2, style: bracketStyle),
-          ],
-        ),
-      ),
-    );
-  }
+String _fallbackFormulaText(String value) {
+  return value
+      .replaceAll(r'\to', '->')
+      .replaceAll(r'\times', 'x')
+      .replaceAll(r'\cdot', '*')
+      .replaceAll(r'\frac', 'frac')
+      .replaceAll('{', '')
+      .replaceAll('}', '');
 }

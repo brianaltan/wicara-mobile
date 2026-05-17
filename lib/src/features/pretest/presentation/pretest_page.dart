@@ -7,7 +7,6 @@ import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
-import '../domain/multiplication_assessment_bank.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
@@ -356,7 +355,6 @@ class _PretestPageState extends State<PretestPage> {
         constraints: constraints,
         copy: copy,
         result: _knowledgeState,
-        focusAreas: const <AssessmentFocusArea>[],
         onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
       ),
     };
@@ -819,14 +817,12 @@ class _ResultStage extends StatelessWidget {
     required this.constraints,
     required this.copy,
     required this.result,
-    required this.focusAreas,
     required this.onContinue,
   });
 
   final BoxConstraints constraints;
   final OnboardingCopy copy;
   final KnowledgeState? result;
-  final List<AssessmentFocusArea> focusAreas;
   final VoidCallback onContinue;
 
   @override
@@ -875,6 +871,7 @@ class _ResultStage extends StatelessWidget {
               _ScoreSummaryCard(
                 masteryScore: state.masteryScore,
                 confidence: state.confidence,
+                overallMasteryPercent: state.overallMasteryPercent,
                 copy: copy,
               ),
             ],
@@ -882,10 +879,20 @@ class _ResultStage extends StatelessWidget {
             _KnowledgeGapDiagnosisCard(
               gapLabel: state.gapLabel,
               message: state.message,
-              focusAreas: focusAreas,
+              strengths: state.strengths,
+              gaps: state.gaps,
+              evidenceNotes: state.evidenceNotes,
               copy: copy,
             ),
-            const SizedBox(height: 37),
+            if (state.nodeReports.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _NodeBreakdownCard(nodes: state.nodeReports, copy: copy),
+            ],
+            if (state.recommendedFocus.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _RecommendedFocusCard(items: state.recommendedFocus, copy: copy),
+            ],
+            const SizedBox(height: 34),
             Text(
               copy.whatsNextLabel,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -930,11 +937,13 @@ class _ScoreSummaryCard extends StatelessWidget {
   const _ScoreSummaryCard({
     required this.masteryScore,
     required this.confidence,
+    required this.overallMasteryPercent,
     required this.copy,
   });
 
   final double? masteryScore;
   final double? confidence;
+  final int? overallMasteryPercent;
   final OnboardingCopy copy;
 
   @override
@@ -990,9 +999,14 @@ class _ScoreSummaryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  confidencePercent == null
-                      ? 'Mastery estimate from adaptive pretest'
-                      : 'Confidence $confidencePercent% from answer evidence',
+                  [
+                    if (overallMasteryPercent != null)
+                      '${copy.isIndonesian ? 'Keseluruhan' : 'Overall'} $overallMasteryPercent%',
+                    if (confidencePercent != null)
+                      '${copy.isIndonesian ? 'Keyakinan' : 'Confidence'} $confidencePercent%',
+                    if (overallMasteryPercent == null && confidencePercent == null)
+                      'Mastery estimate from adaptive pretest',
+                  ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.muted,
                     fontWeight: FontWeight.w600,
@@ -1012,23 +1026,21 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
   const _KnowledgeGapDiagnosisCard({
     required this.gapLabel,
     required this.message,
-    required this.focusAreas,
+    required this.strengths,
+    required this.gaps,
+    required this.evidenceNotes,
     required this.copy,
   });
 
   final String gapLabel;
   final String message;
-  final List<AssessmentFocusArea> focusAreas;
+  final List<String> strengths;
+  final List<String> gaps;
+  final List<String> evidenceNotes;
   final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
-    const colors = [
-      WicaraColors.accentCoral,
-      WicaraColors.secondary,
-      WicaraColors.primaryDeep,
-    ];
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1111,14 +1123,32 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
               height: 1.35,
             ),
           ),
-          const SizedBox(height: 18),
-          for (var i = 0; i < focusAreas.length; i++) ...[
-            _GapDiagnosisRow(
-              index: i + 1,
-              focusArea: focusAreas[i],
-              color: colors[i % colors.length],
+          if (strengths.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _ReportInsightList(
+              title: copy.isIndonesian ? 'Yang sudah kuat' : 'What looks strong',
+              icon: Icons.check_circle_outline_rounded,
+              color: WicaraColors.secondary,
+              items: strengths,
             ),
-            if (i != focusAreas.length - 1) const SizedBox(height: 13),
+          ],
+          if (gaps.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _ReportInsightList(
+              title: copy.isIndonesian ? 'Yang perlu diperbaiki' : 'What needs work',
+              icon: Icons.warning_amber_rounded,
+              color: WicaraColors.accentCoral,
+              items: gaps,
+            ),
+          ],
+          if (evidenceNotes.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _ReportInsightList(
+              title: copy.isIndonesian ? 'Catatan evidence' : 'Evidence notes',
+              icon: Icons.fact_check_outlined,
+              color: WicaraColors.primaryDeep,
+              items: evidenceNotes,
+            ),
           ],
         ],
       ),
@@ -1126,82 +1156,348 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
   }
 }
 
-class _GapDiagnosisRow extends StatelessWidget {
-  const _GapDiagnosisRow({
-    required this.index,
-    required this.focusArea,
+class _ReportInsightList extends StatelessWidget {
+  const _ReportInsightList({
+    required this.title,
+    required this.icon,
     required this.color,
+    required this.items,
   });
 
-  final int index;
-  final AssessmentFocusArea focusArea;
+  final String title;
+  final IconData icon;
   final Color color;
+  final List<String> items;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final visibleItems = items.take(3).toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          width: 27,
-          height: 27,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Text(
-            '$index',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
+        Row(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        for (var i = 0; i < visibleItems.length; i++) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: color.withValues(alpha: 0.15)),
+            ),
+            child: Text(
+              visibleItems[i],
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          if (i != visibleItems.length - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _NodeBreakdownCard extends StatelessWidget {
+  const _NodeBreakdownCard({required this.nodes, required this.copy});
+
+  final List<PretestNodeReport> nodes;
+  final OnboardingCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: WicaraColors.line, width: 1.25),
+        boxShadow: [
+          BoxShadow(
+            color: WicaraColors.shadowBlue.withValues(alpha: 0.11),
+            blurRadius: 16,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            copy.isIndonesian ? 'Node yang dicek' : 'Checked nodes',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: WicaraColors.text,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < nodes.length; i++) ...[
+            _NodeBreakdownRow(node: nodes[i], copy: copy),
+            if (i != nodes.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _NodeBreakdownRow extends StatelessWidget {
+  const _NodeBreakdownRow({required this.node, required this.copy});
+
+  final PretestNodeReport node;
+  final OnboardingCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _statusColor(node.status);
+    final masteryText = node.masteryScore == null
+        ? null
+        : '${(node.masteryScore!.clamp(0.0, 1.0) * 100).round()}%';
+    final reasoningText = _reasoningText(node, copy);
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                focusArea.title,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: WicaraColors.text,
-                  fontWeight: FontWeight.w600,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                focusArea.description,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              Expanded(
                 child: Text(
-                  focusArea.severity,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
+                  node.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _TinyBadge(
+                label: node.status.toUpperCase(),
+                color: statusColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (masteryText != null)
+                _MetricPill(
+                  label: copy.isIndonesian ? 'Mastery' : 'Mastery',
+                  value: masteryText,
+                ),
+              _MetricPill(
+                label: copy.isIndonesian ? 'Benar' : 'Correct',
+                value: '${node.correctCount}/${node.attemptCount}',
+              ),
+              if (node.difficultyReached.isNotEmpty)
+                _MetricPill(
+                  label: copy.isIndonesian ? 'Level' : 'Level',
+                  value: node.difficultyReached,
+                ),
+            ],
+          ),
+          if (reasoningText.isNotEmpty) ...[
+            const SizedBox(height: 9),
+            Text(
+              reasoningText,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RecommendedFocusCard extends StatelessWidget {
+  const _RecommendedFocusCard({required this.items, required this.copy});
+
+  final List<String> items;
+  final OnboardingCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: WicaraColors.secondarySoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: WicaraColors.secondaryLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.route_outlined,
+                color: WicaraColors.secondaryDeep,
+                size: 20,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  copy.isIndonesian ? 'Fokus path berikutnya' : 'Next path focus',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          for (var i = 0; i < items.length; i++) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${i + 1}.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.secondaryDeep,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    items[i],
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: WicaraColors.text,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (i != items.length - 1) const SizedBox(height: 8),
+          ],
+        ],
+      ),
     );
   }
+}
+
+class _MetricPill extends StatelessWidget {
+  const _MetricPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Text(
+        '$label $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _TinyBadge extends StatelessWidget {
+  const _TinyBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+Color _statusColor(String status) {
+  return switch (status) {
+    'ready' || 'probably_ready' => WicaraColors.secondary,
+    'partial' || 'fragile' => const Color(0xFFC28A35),
+    'gap' || 'probably_gap' => WicaraColors.accentCoral,
+    _ => WicaraColors.primaryDeep,
+  };
+}
+
+String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
+  if (node.misconceptionDetected) {
+    return copy.isIndonesian
+        ? 'Reasoning menunjukkan miskonsepsi pada node ini.'
+        : 'Reasoning suggests a misconception on this node.';
+  }
+  if (node.carelessMistakePossible) {
+    return copy.isIndonesian
+        ? 'Ada indikasi salah pilih walau langkah cukup masuk akal.'
+        : 'There is a possible careless choice despite reasonable reasoning.';
+  }
+  if (node.reasoningQuality == 'not_provided') {
+    return copy.isIndonesian
+        ? 'Tidak ada langkah tertulis, jadi confidence evidence lebih terbatas.'
+        : 'No written steps were provided, so evidence confidence is limited.';
+  }
+  final score = node.avgReasoningScore == null
+      ? ''
+      : ' ${(node.avgReasoningScore!.clamp(0.0, 1.0) * 100).round()}%';
+  return copy.isIndonesian
+      ? 'Kualitas reasoning: ${node.reasoningQuality}$score.'
+      : 'Reasoning quality: ${node.reasoningQuality}$score.';
 }
 
 class _AssessmentHeader extends StatelessWidget {
