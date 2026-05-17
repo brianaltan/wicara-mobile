@@ -8,6 +8,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
@@ -53,6 +54,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   WorkspaceSession? _workspace;
   bool _isLoadingWorkspace = true;
   bool _isAppendingEvent = false;
+  bool _moduleCompleted = false;
   String? _workspaceError;
   bool _isVideoGenerating = false;
   bool _stopVideoPolling = false;
@@ -60,6 +62,13 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   WorkspaceMediaArtifact? _latestVideoArtifact;
   String? _videoStatusMessage;
   String? _videoErrorMessage;
+
+  HardcodedAssessmentPack get _assessmentPack {
+    return HardcodedAssessmentBank.packForEducation(
+      educationLevel: widget.onboardingController.profile.educationLevel,
+      gradeLevel: widget.onboardingController.profile.gradeLevel,
+    );
+  }
 
   @override
   void initState() {
@@ -1306,7 +1315,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   Future<void> _answerQuiz(String answer) async {
-    final isCorrect = answer == '3';
+    final assessmentPack = _assessmentPack;
+    final isCorrect = answer == assessmentPack.workspaceQuizCorrectAnswer;
     setState(() {
       _selectedQuizAnswer = answer;
       _quizState = isCorrect
@@ -1318,7 +1328,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       textPayload: answer,
       metadata: {
         'selected_answer': answer,
-        'correct_answer': '3',
+        'correct_answer': assessmentPack.workspaceQuizCorrectAnswer,
         'is_correct': isCorrect,
         'confidence': isCorrect ? 8 : 4,
       },
@@ -1331,7 +1341,22 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         status: 'completed',
       );
     }
+    if (isCorrect && mounted) {
+      setState(() => _moduleCompleted = true);
+    }
     _scrollToBottom();
+  }
+
+  void _finishModuleAndOpenPosttest() {
+    final arguments = widget.routeArguments;
+    final assessmentPack = _assessmentPack;
+    Navigator.of(context).pop(
+      WorkspaceCompletionResult(
+        trackId: arguments?.trackId ?? _workspace?.trackId ?? '',
+        moduleId: arguments?.moduleId ?? _workspace?.moduleId ?? '',
+        moduleTitle: assessmentPack.topicTitle,
+      ),
+    );
   }
 
   Future<void> _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) async {
@@ -1576,8 +1601,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 selectedQuizAnswer: _selectedQuizAnswer,
                                 chatEntries: _chatEntries,
                                 canvasSnapshots: _canvasSnapshots,
+                                assessmentPack: _assessmentPack,
                                 isLoadingWorkspace: _isLoadingWorkspace,
                                 isAppendingEvent: _isAppendingEvent,
+                                moduleCompleted: _moduleCompleted,
                                 isVideoGenerating: _isVideoGenerating,
                                 workspaceError: _workspaceError,
                                 latestVideoStatus: _latestVideoStatus,
@@ -1592,6 +1619,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                   unawaited(_generateVideo());
                                 },
                                 onAnswerQuiz: _answerQuiz,
+                                onStartPosttest: _finishModuleAndOpenPosttest,
                                 onOpenCanvas: _openCanvas,
                               ),
                             ),
@@ -1662,8 +1690,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.selectedQuizAnswer,
     required this.chatEntries,
     required this.canvasSnapshots,
+    required this.assessmentPack,
     required this.isLoadingWorkspace,
     required this.isAppendingEvent,
+    required this.moduleCompleted,
     required this.isVideoGenerating,
     required this.workspaceError,
     required this.latestVideoStatus,
@@ -1675,6 +1705,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.onChooseExplanation,
     required this.onGenerateVideo,
     required this.onAnswerQuiz,
+    required this.onStartPosttest,
     required this.onOpenCanvas,
   });
 
@@ -1683,8 +1714,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final String? selectedQuizAnswer;
   final List<_WorkspaceChatEntry> chatEntries;
   final List<CanvasWorkSnapshot> canvasSnapshots;
+  final HardcodedAssessmentPack assessmentPack;
   final bool isLoadingWorkspace;
   final bool isAppendingEvent;
+  final bool moduleCompleted;
   final bool isVideoGenerating;
   final String? workspaceError;
   final WorkspaceAnimationJobStatus? latestVideoStatus;
@@ -1696,6 +1729,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final VoidCallback onChooseExplanation;
   final VoidCallback onGenerateVideo;
   final ValueChanged<String> onAnswerQuiz;
+  final VoidCallback onStartPosttest;
   final VoidCallback onOpenCanvas;
 
   @override
@@ -1705,19 +1739,17 @@ class _WorkspaceChatPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _AssistantMessageFrame(
+          _AssistantMessageFrame(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _WorkspaceBubble(
-                  text:
-                      'Sebelum lanjut, kamu mau belajar lewat penjelasan teks dulu atau langsung lanjut diskusi?',
+                  text: assessmentPack.workspaceIntroLine1,
                   isUser: false,
                 ),
-                SizedBox(height: 9),
+                const SizedBox(height: 9),
                 _WorkspaceBubble(
-                  text:
-                      'Kalau mau video, tekan tombol Generate video di bawah composer. Videonya akan menyesuaikan isi chat yang sedang berjalan.',
+                  text: assessmentPack.workspaceIntroLine2,
                   isUser: false,
                 ),
               ],
@@ -1764,7 +1796,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
               isUser: true,
             ),
             const SizedBox(height: 9),
-            const _ConceptExplanationBubble(),
+            _ConceptExplanationBubble(
+              explanationText: assessmentPack.workspaceExplanation,
+            ),
           ],
           if (contentMode == _WorkspaceContentMode.explanation ||
               contentMode == _WorkspaceContentMode.videoReady) ...[
@@ -1773,6 +1807,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
               quizState: quizState,
               selectedAnswer: selectedQuizAnswer,
               onAnswer: onAnswerQuiz,
+              assessmentPack: assessmentPack,
+              moduleCompleted: moduleCompleted,
+              onStartPosttest: onStartPosttest,
             ),
           ],
           const SizedBox(height: 14),
@@ -2277,7 +2314,9 @@ class _WorkspaceCanvasQuickActionButton extends StatelessWidget {
 }
 
 class _ConceptExplanationBubble extends StatelessWidget {
-  const _ConceptExplanationBubble();
+  const _ConceptExplanationBubble({required this.explanationText});
+
+  final String explanationText;
 
   @override
   Widget build(BuildContext context) {
@@ -2285,7 +2324,7 @@ class _ConceptExplanationBubble extends StatelessWidget {
       icon: Icons.lightbulb_outline_rounded,
       title: 'Concept explanation',
       child: Text(
-        'Pada garis bilangan, posisi angka menentukan nilainya: semakin ke kanan maka nilainya semakin besar. Bilangan negatif ada di kiri nol, bilangan positif ada di kanan nol. Untuk membandingkan dua angka, lihat mana yang posisinya lebih kanan.',
+        explanationText,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: WicaraColors.text,
           fontWeight: FontWeight.w600,
@@ -2998,11 +3037,17 @@ class _WorkspaceQuizCard extends StatelessWidget {
     required this.quizState,
     required this.selectedAnswer,
     required this.onAnswer,
+    required this.assessmentPack,
+    required this.moduleCompleted,
+    required this.onStartPosttest,
   });
 
   final _WorkspaceQuizState quizState;
   final String? selectedAnswer;
   final ValueChanged<String> onAnswer;
+  final HardcodedAssessmentPack assessmentPack;
+  final bool moduleCompleted;
+  final VoidCallback onStartPosttest;
 
   @override
   Widget build(BuildContext context) {
@@ -3013,7 +3058,7 @@ class _WorkspaceQuizCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Pada garis bilangan, mana yang lebih besar?',
+            assessmentPack.workspaceQuizQuestion,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
               fontWeight: FontWeight.w700,
@@ -3021,13 +3066,13 @@ class _WorkspaceQuizCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final answer in const ['-2', '3', 'Sama besar'])
+          for (final answer in assessmentPack.workspaceQuizOptions)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _WorkspaceQuizOption(
                 label: answer,
                 isSelected: selectedAnswer == answer,
-                isCorrect: answer == '3',
+                isCorrect: answer == assessmentPack.workspaceQuizCorrectAnswer,
                 hasAnswered: quizState != _WorkspaceQuizState.unanswered,
                 onPressed: () => onAnswer(answer),
               ),
@@ -3036,8 +3081,8 @@ class _WorkspaceQuizCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               quizState == _WorkspaceQuizState.correct
-                  ? 'Benar. Angka 3 berada lebih kanan daripada -2, jadi nilainya lebih besar.'
-                  : 'Coba lagi. Di garis bilangan, angka yang lebih kanan nilainya lebih besar.',
+                  ? assessmentPack.workspaceQuizCorrectFeedback
+                  : assessmentPack.workspaceQuizReviewFeedback,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: quizState == _WorkspaceQuizState.correct
                     ? WicaraColors.accentMint
@@ -3046,6 +3091,23 @@ class _WorkspaceQuizCard extends StatelessWidget {
                 height: 1.3,
               ),
             ),
+            if (moduleCompleted) ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: onStartPosttest,
+                icon: const Icon(Icons.assignment_turned_in_outlined),
+                label: const Text('Mulai Posttest'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: WicaraColors.secondary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -3440,100 +3502,4 @@ class _WorkspacePanel extends StatelessWidget {
       child: child,
     );
   }
-}
-
-class _WorkspaceVideoPreviewPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final background = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFEEF6FF), Color(0xFFF7F2FF)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, background);
-
-    final axisPaint = Paint()
-      ..color = WicaraColors.primaryDeep.withValues(alpha: 0.45)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final graphRect = Rect.fromLTWH(
-      size.width * 0.13,
-      size.height * 0.18,
-      size.width * 0.74,
-      size.height * 0.62,
-    );
-    canvas.drawLine(
-      Offset(graphRect.left, graphRect.center.dy),
-      Offset(graphRect.right, graphRect.center.dy),
-      axisPaint,
-    );
-    canvas.drawLine(
-      Offset(graphRect.left + graphRect.width * 0.32, graphRect.top),
-      Offset(graphRect.left + graphRect.width * 0.32, graphRect.bottom),
-      axisPaint,
-    );
-
-    final curvePaint = Paint()
-      ..color = WicaraColors.secondary
-      ..strokeWidth = 5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final curve = Path()
-      ..moveTo(graphRect.left + 8, graphRect.bottom - 8)
-      ..cubicTo(
-        graphRect.left + graphRect.width * 0.27,
-        graphRect.top + 14,
-        graphRect.left + graphRect.width * 0.48,
-        graphRect.top + 12,
-        graphRect.left + graphRect.width * 0.62,
-        graphRect.center.dy,
-      )
-      ..cubicTo(
-        graphRect.left + graphRect.width * 0.73,
-        graphRect.bottom - 5,
-        graphRect.right - 18,
-        graphRect.bottom - 20,
-        graphRect.right - 8,
-        graphRect.top + 18,
-      );
-    canvas.drawPath(curve, curvePaint);
-
-    final dotPaint = Paint()..color = WicaraColors.accentCoral;
-    canvas.drawCircle(
-      Offset(graphRect.left + graphRect.width * 0.61, graphRect.center.dy),
-      6,
-      dotPaint,
-    );
-
-    final tagPaint = Paint()..color = Colors.white.withValues(alpha: 0.86);
-    final tagRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.08, size.height * 0.08, 86, 27),
-      const Radius.circular(999),
-    );
-    canvas.drawRRect(tagRect, tagPaint);
-
-    final textPainter = TextPainter(
-      text: const TextSpan(
-        text: 'limit = 3',
-        style: TextStyle(
-          color: WicaraColors.primaryDeep,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        tagRect.outerRect.left + 13,
-        tagRect.outerRect.top +
-            (tagRect.outerRect.height - textPainter.height) / 2,
-      ),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

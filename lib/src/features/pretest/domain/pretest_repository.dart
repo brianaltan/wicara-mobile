@@ -12,7 +12,7 @@ class PretestException implements Exception {
 abstract class PretestRepository {
   Future<PretestQuestion> fetchCurrentQuestion();
 
-  Future<void> submitAnswer(PretestAnswer answer);
+  Future<PretestAnswerResult> submitAnswer(PretestAnswer answer);
 
-  Future<KnowledgeState> submitReasoning(PretestReasoning reasoning);
+  Future<KnowledgeState> selectPath(String pathOption);
 }

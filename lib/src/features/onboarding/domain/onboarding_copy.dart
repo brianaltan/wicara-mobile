@@ -299,8 +299,8 @@ class OnboardingCopy {
       ? 'Apa yang ingin kamu pelajari?'
       : 'What would you like to learn?';
   String get learningGoalSubtitle => isIndonesian
-      ? 'Beritahu WICARA topiknya. Kami akan membuat pretest adaptif singkat sebelum menyusun track belajarmu.'
-      : 'Tell WICARA the topic. We will generate a short adaptive pretest before building your track.';
+      ? 'Tulis tujuanmu dulu. WICARA akan mencari node materi yang cocok, lalu pretest baru mulai setelah kamu setuju.'
+      : 'Type your goal first. WICARA will find the matching material node, then the pretest starts after you confirm it.';
   String get learningTopicLabel =>
       isIndonesian ? 'Topik belajar' : 'Learning topic';
   String get generatePretestLabel =>

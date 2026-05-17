@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/utils/learning_level_resolver.dart';
 import '../data/onboarding_profile_store.dart';
 import '../domain/onboarding_options.dart';
 import '../domain/onboarding_profile.dart';
@@ -24,11 +25,17 @@ class OnboardingController extends ChangeNotifier {
     if (persisted == null) {
       _profile = _defaultProfile(fullName: displayName);
     } else {
+      final persistedGrade = persisted.gradeLevel.isEmpty
+          ? '11'
+          : persisted.gradeLevel;
       _profile = persisted.copyWith(
         fullName: displayName,
         country: persisted.country.isEmpty ? 'United States' : null,
-        educationLevel: persisted.educationLevel.isEmpty ? 'senior_high' : null,
-        gradeLevel: persisted.gradeLevel.isEmpty ? '11' : null,
+        educationLevel: normalizeEducationLevel(
+          educationLevel: persisted.educationLevel,
+          gradeLevel: persistedGrade,
+        ),
+        gradeLevel: persistedGrade,
         preferredLanguage: persisted.preferredLanguage.isEmpty
             ? 'English'
             : null,
@@ -78,7 +85,15 @@ class OnboardingController extends ChangeNotifier {
   }
 
   Future<void> updateGradeLevel(String gradeLevel) async {
-    await _updateProfile(_profile.copyWith(gradeLevel: gradeLevel));
+    await _updateProfile(
+      _profile.copyWith(
+        gradeLevel: gradeLevel,
+        educationLevel: normalizeEducationLevel(
+          educationLevel: _profile.educationLevel,
+          gradeLevel: gradeLevel,
+        ),
+      ),
+    );
   }
 
   Future<void> updatePreferredLanguage(String preferredLanguage) async {
@@ -104,9 +119,22 @@ class OnboardingController extends ChangeNotifier {
   }
 
   Future<void> _updateProfile(OnboardingProfile profile) async {
-    _profile = profile;
+    _profile = _normalizeProfile(profile);
     await _profileStore.save(_profile);
     notifyListeners();
+  }
+
+  OnboardingProfile _normalizeProfile(OnboardingProfile profile) {
+    final normalizedGrade = profile.gradeLevel.trim().isEmpty
+        ? _profile.gradeLevel
+        : profile.gradeLevel;
+    return profile.copyWith(
+      gradeLevel: normalizedGrade,
+      educationLevel: normalizeEducationLevel(
+        educationLevel: profile.educationLevel,
+        gradeLevel: normalizedGrade,
+      ),
+    );
   }
 
   static OnboardingProfile _defaultProfile({String fullName = 'Learner'}) {

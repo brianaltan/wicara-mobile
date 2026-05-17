@@ -39,6 +39,7 @@ dependencies:
   google_identity_services_web: ^0.3.3+1
   google_sign_in: ^6.3.0
   google_sign_in_web: ^0.12.4+4
+  flutter_math_fork: ^0.7.4
   http: ^1.5.0
   shared_preferences: ^2.3.5
   video_player: ^2.10.0

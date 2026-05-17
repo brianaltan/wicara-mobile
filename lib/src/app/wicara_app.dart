@@ -177,6 +177,7 @@ class _WicaraAppState extends State<WicaraApp> {
               widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
           onboardingController: widget.onboardingController,
+          routeArguments: settings.arguments,
         ),
         AppRoutes.workspaceModules => WorkspaceModulesPage(
           onboardingController: widget.onboardingController,
@@ -275,6 +276,12 @@ class _AuthRouteObserver extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
     _authController.markRouteVisited(route.settings.name);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    _authController.markRouteVisited(previousRoute?.settings.name);
   }
 
   @override

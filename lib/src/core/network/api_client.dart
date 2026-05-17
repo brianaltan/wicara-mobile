@@ -6,9 +6,11 @@ class ApiClient {
   ApiClient({required this.baseUrl, http.Client? httpClient})
     : _httpClient = httpClient ?? http.Client();
 
+  static const deployedBaseUrl = 'http://16.78.247.45';
+
   static const defaultBaseUrl = String.fromEnvironment(
     'WICARA_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: deployedBaseUrl,
   );
 
   final String baseUrl;
@@ -165,6 +167,16 @@ String _errorMessage(
       final detail = decoded['detail'];
       if (detail is String && detail.trim().isNotEmpty) {
         return detail;
+      }
+      if (detail is Map<String, dynamic>) {
+        final detailMessage = detail['message'];
+        if (detailMessage is String && detailMessage.trim().isNotEmpty) {
+          return detailMessage;
+        }
+        final detailError = detail['error'];
+        if (detailError is String && detailError.trim().isNotEmpty) {
+          return detailError;
+        }
       }
       final error = decoded['error'];
       if (error is String && error.trim().isNotEmpty) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/wicara_colors.dart';
 import '../../domain/pretest_models.dart';
+import 'rich_math_text.dart';
 
 class AssessmentOptionTile extends StatelessWidget {
   const AssessmentOptionTile({
@@ -57,9 +58,9 @@ class AssessmentOptionTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
+                child: RichMathText(
                   option.text,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.text,

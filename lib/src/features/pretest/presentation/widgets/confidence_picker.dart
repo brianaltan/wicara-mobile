@@ -31,13 +31,18 @@ class ConfidencePicker extends StatelessWidget {
         const SizedBox(height: 15),
         Row(
           children: [
-            Text(
-              copy.lowLabel,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.secondaryLight,
-                fontWeight: FontWeight.w400,
+            Flexible(
+              child: Text(
+                copy.lowLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.secondaryLight,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
+            const SizedBox(width: 10),
             Expanded(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -60,11 +65,17 @@ class ConfidencePicker extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              copy.highLabel,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.secondary,
-                fontWeight: FontWeight.w500,
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                copy.highLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.secondary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],

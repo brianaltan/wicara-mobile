@@ -20,6 +20,8 @@ import 'package:wicara_mobile/src/features/pretest/data/mock_pretest_repository.
 import 'package:wicara_mobile/src/features/pretest/domain/pretest_models.dart';
 import 'package:wicara_mobile/src/features/pretest/presentation/pretest_page.dart';
 import 'package:wicara_mobile/src/features/pretest/presentation/widgets/fishbone_canvas.dart';
+import 'package:wicara_mobile/src/features/workspace/domain/workspace_models.dart';
+import 'package:wicara_mobile/src/features/workspace/domain/workspace_repository.dart';
 
 const _curriculumRepository = _FailingCurriculumRepository();
 const _learningGoalRepository = _FakeLearningGoalRepository();
@@ -150,6 +152,82 @@ void main() {
     },
   );
 
+  testWidgets('workspace completion opens hardcoded multiplication posttest', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      await _buildSignedInTestApp(
+        homeRepository: const _WorkspaceReadyHomeRepository(),
+        workspaceRepository: const _FakeWorkspaceRepository(),
+        educationLevel: 'elementary',
+        gradeLevel: '4',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Continue session'));
+    await tester.tap(find.text('Continue session'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Long explanation'));
+    await tester.tap(find.text('Long explanation'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('12'));
+    await tester.tap(find.text('12'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Mulai Posttest'));
+    await tester.tap(find.text('Mulai Posttest'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Posttest Perkalian'), findsWidgets);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('auth.lastProtectedRoute'), '/home');
+
+    for (final answer in const [
+      '28',
+      '54',
+      '7 + 7 + 7',
+      '26',
+      '48',
+      '42',
+      '6 x 7',
+      '32',
+      '24',
+      '40',
+    ]) {
+      await tester.ensureVisible(find.text(answer));
+      await tester.tap(find.text(answer));
+      await tester.pumpAndSettle();
+      final isLastAnswer = answer == '40';
+      await tester.ensureVisible(
+        find.text(isLastAnswer ? 'Selesai posttest' : 'Lanjut'),
+      );
+      await tester.tap(find.text(isLastAnswer ? 'Selesai posttest' : 'Lanjut'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('Evaluation Complete'), findsWidgets);
+    expect(
+      find.text('Posttest: 10 jawaban benar dari 10 soal.'),
+      findsOneWidget,
+    );
+    expect(find.text('100%'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Kembali ke Home'));
+    await tester.tap(find.text('Kembali ke Home'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Evaluation Complete'), findsNothing);
+    expect(find.text('Continue session'), findsOneWidget);
+    expect(preferences.getString('auth.lastProtectedRoute'), '/home');
+  });
+
   testWidgets('learning report detail renders backend payload', (tester) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1;
@@ -192,7 +270,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final onboardingController = await _buildOnboardingController();
+    final onboardingController = await _buildOnboardingController(
+      educationLevel: 'elementary',
+      gradeLevel: '4',
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -205,14 +286,41 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Knowledge Space Theory'), findsWidgets);
-    expect(find.text('Submit answer'), findsOneWidget);
+    expect(find.text('Perkalian'), findsWidgets);
+    expect(find.text('Lanjut'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Submit answer'));
-    await tester.tap(find.text('Submit answer'));
+    await tester.ensureVisible(find.text('12'));
+    await tester.tap(find.text('12'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Lanjut'));
+    await tester.tap(find.text('Lanjut'));
+    await tester.pumpAndSettle();
+    expect(find.text('Help us understand your thinking'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, '4 groups of 3 is 12');
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('22'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('22'));
+    await tester.tap(find.text('22'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Lanjut'));
+    await tester.tap(find.text('Lanjut'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      '6 x 4 is 24, minus 2 is 22',
+    );
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
     await tester.pumpAndSettle();
 
     expect(find.text('Your knowledge state'), findsOneWidget);
+    expect(
+      find.text('Kamu sudah siap di Perkalian; cukup review singkat.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('whiteboard canvas exposes drawing controls', (tester) async {
@@ -262,6 +370,9 @@ Future<WicaraApp> _buildTestApp() async {
 
 Future<WicaraApp> _buildSignedInTestApp({
   HomeRepository homeRepository = _homeRepository,
+  WorkspaceRepository? workspaceRepository,
+  String educationLevel = 'senior_high',
+  String gradeLevel = '11',
 }) async {
   final authController = AuthController(
     authRepository: const MockAuthRepository(delay: Duration.zero),
@@ -277,6 +388,8 @@ Future<WicaraApp> _buildSignedInTestApp({
 
   final onboardingController = await _buildOnboardingController(
     displayName: authController.session?.displayName ?? 'Learner',
+    educationLevel: educationLevel,
+    gradeLevel: gradeLevel,
   );
 
   return WicaraApp(
@@ -287,17 +400,26 @@ Future<WicaraApp> _buildSignedInTestApp({
     homeRepository: homeRepository,
     onboardingRepository: const MockOnboardingRepository(delay: Duration.zero),
     pretestRepository: const MockPretestRepository(delay: Duration.zero),
+    workspaceRepository: workspaceRepository,
   );
 }
 
 Future<OnboardingController> _buildOnboardingController({
   String displayName = 'Learner',
+  String educationLevel = 'senior_high',
+  String gradeLevel = '11',
 }) async {
   final onboardingController = OnboardingController(
     onboardingRepository: const MockOnboardingRepository(delay: Duration.zero),
     profileStore: OnboardingProfileStore(),
   );
   await onboardingController.initialize(displayName: displayName);
+  await onboardingController.replaceProfile(
+    onboardingController.profile.copyWith(
+      educationLevel: educationLevel,
+      gradeLevel: gradeLevel,
+    ),
+  );
   return onboardingController;
 }
 
@@ -329,6 +451,53 @@ class _FakeLearningGoalRepository implements LearningGoalRepository {
   const _FakeLearningGoalRepository();
 
   @override
+  Future<ActiveLearningGoal?> fetchActiveGoal() async => null;
+
+  @override
+  Future<LearningGoalResolution> resolveLearningGoal({
+    required String rawQuery,
+    String? subjectCode,
+    String? educationLevel,
+    String? gradeLevel,
+    String? language,
+  }) async {
+    return const LearningGoalResolution(
+      resolutionId: 'resolution-1',
+      status: 'needs_confirmation',
+      confidence: 0.91,
+      suggestedConcept: LearningConceptSuggestion(
+        conceptId: 'concept-1',
+        conceptCode: 'math.multiplication',
+        title: 'Perkalian',
+        subject: 'Matematika',
+        description: 'Memahami perkalian sebagai kelompok sama banyak.',
+        subjectCode: 'math',
+        gradeBand: 'primary',
+        gradeRelation: 'below_current_level',
+        levelNote:
+            'This is a foundational concept below your current grade. It is still useful for review or prerequisite repair.',
+        confidence: 0.91,
+      ),
+      clarificationQuestion: 'Benar kamu mau belajar Perkalian?',
+    );
+  }
+
+  @override
+  Future<LearningGoalBootstrap> confirmResolvedGoal({
+    required String resolutionId,
+  }) async {
+    return const LearningGoalBootstrap(learningGoalId: 'goal-1');
+  }
+
+  @override
+  Future<LearningGoalResolution> selectResolvedConcept({
+    required String resolutionId,
+    required String conceptId,
+  }) async {
+    return resolveLearningGoal(rawQuery: 'Perkalian');
+  }
+
+  @override
   Future<LearningGoalBootstrap> createLearningGoal({
     required String rawTopic,
   }) async {
@@ -338,6 +507,27 @@ class _FakeLearningGoalRepository implements LearningGoalRepository {
       trackId: 'track-1',
     );
   }
+
+  @override
+  Future<List<LearningConceptSuggestion>> searchMaterials({
+    required String query,
+    String? subjectCode,
+  }) async {
+    return const [
+      LearningConceptSuggestion(
+        conceptId: 'concept-1',
+        conceptCode: 'math.multiplication',
+        title: 'Perkalian',
+        subject: 'Matematika',
+        description: 'Memahami perkalian sebagai kelompok sama banyak.',
+        subjectCode: 'math',
+        gradeBand: 'primary',
+      ),
+    ];
+  }
+
+  @override
+  Future<void> cancelGoal({required String learningGoalId}) async {}
 }
 
 class _FakeHomeRepository implements HomeRepository {
@@ -530,6 +720,105 @@ class _FakeHomeRepository implements HomeRepository {
       ),
     );
   }
+}
+
+class _WorkspaceReadyHomeRepository extends _FakeHomeRepository {
+  const _WorkspaceReadyHomeRepository();
+
+  @override
+  Future<HomeSnapshot> fetchSnapshot() async {
+    return const HomeSnapshot(
+      displayName: 'Aisyah Putri',
+      streakDays: 7,
+      country: 'Indonesia',
+      educationLevel: 'Elementary school',
+      gradeLevel: 'Grade 4',
+      preferredLanguage: 'English',
+      studyGoal: 'Improve understanding',
+      dailyStudyTime: '30-45 minutes',
+      selectedSubjects: ['Math'],
+      availableSubjects: ['Math', 'Physics', 'Chemistry'],
+      onboardingCompleted: true,
+      nextQueueItem: LearningQueueItem(
+        id: 'queue-perkalian',
+        trackId: 'track-perkalian',
+        moduleId: 'module-perkalian',
+        title: 'Perkalian',
+        subtitle: 'Latihan perkalian untuk SD',
+        status: 'ready',
+      ),
+    );
+  }
+}
+
+class _FakeWorkspaceRepository implements WorkspaceRepository {
+  const _FakeWorkspaceRepository();
+
+  @override
+  Future<WorkspaceSession> createOrResumeWorkspace({
+    required String trackId,
+    required String moduleId,
+  }) async {
+    return WorkspaceSession(
+      id: 'workspace-perkalian',
+      trackId: trackId,
+      moduleId: moduleId,
+      currentTopic: 'Perkalian',
+      contentMode: 'chat',
+      status: 'active',
+      events: const [],
+    );
+  }
+
+  @override
+  Future<WorkspaceSession> fetchWorkspace(String workspaceId) async {
+    return const WorkspaceSession(
+      id: 'workspace-perkalian',
+      trackId: 'track-perkalian',
+      moduleId: 'module-perkalian',
+      currentTopic: 'Perkalian',
+      contentMode: 'chat',
+      status: 'active',
+      events: [],
+    );
+  }
+
+  @override
+  Future<WorkspaceAppendResult> appendEvent({
+    required String workspaceId,
+    required String eventType,
+    String textPayload = '',
+    Map<String, dynamic> metadata = const {},
+  }) async {
+    final event = WorkspaceEvent(
+      id: 'event-$eventType',
+      workspaceId: workspaceId,
+      eventIndex: 1,
+      eventType: eventType,
+      actorType: 'learner',
+      textPayload: textPayload,
+      metadata: metadata,
+    );
+    return WorkspaceAppendResult(
+      event: event,
+      workspace: WorkspaceSession(
+        id: workspaceId,
+        trackId: 'track-perkalian',
+        moduleId: 'module-perkalian',
+        currentTopic: 'Perkalian',
+        contentMode: 'chat',
+        status: 'active',
+        events: [event],
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateModuleState({
+    required String trackId,
+    required String moduleId,
+    required String status,
+  }) async {}
 }
 
 class _PrematureCompletedDailyRepository extends _FakeHomeRepository {

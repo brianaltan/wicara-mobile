@@ -7,7 +7,9 @@ import 'package:video_player/video_player.dart';
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
+import '../../../core/utils/learning_level_resolver.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../../core/widgets/hardcoded_video_preview.dart';
 import '../../../core/widgets/language_chip.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
@@ -19,6 +21,7 @@ import '../../onboarding/domain/onboarding_profile.dart';
 import '../../onboarding/presentation/widgets/subject_tile.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
+import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
 import '../../workspace/domain/workspace_models.dart';
@@ -44,12 +47,25 @@ class _HomeCopyScope extends InheritedWidget {
   bool updateShouldNotify(_HomeCopyScope oldWidget) => copy != oldWidget.copy;
 }
 
+bool _shouldOpenKnowledgeMap(Object? arguments) {
+  if (arguments is! Map) {
+    return false;
+  }
+  final focusCodes = arguments['focus_concept_codes'];
+  final subjectCode = arguments['subject_code'];
+  if (focusCodes is List && focusCodes.isNotEmpty) {
+    return true;
+  }
+  return subjectCode is String && subjectCode.trim().isNotEmpty;
+}
+
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
     required this.homeRepository,
     required this.authController,
     required this.onboardingController,
+    this.routeArguments,
     super.key,
   });
 
@@ -57,6 +73,7 @@ class AppHomePage extends StatefulWidget {
   final HomeRepository homeRepository;
   final AuthController authController;
   final OnboardingController onboardingController;
+  final Object? routeArguments;
 
   @override
   State<AppHomePage> createState() => _AppHomePageState();
@@ -68,29 +85,88 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _showGalleryDetail = false;
   bool _showDailyEvaluation = false;
   bool _showEvaluationResult = false;
+  bool _showPosttest = false;
+  bool _showPosttestResult = false;
   bool _showLearningReport = false;
   bool _showKnowledgeMap = false;
   int _dailyEvaluationIndex = 0;
+  int _posttestIndex = 0;
   final Map<int, String> _dailyEvaluationAnswers = {};
+  final Map<int, String> _posttestAnswers = {};
   String? _dailyEvaluationSessionId;
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
+  DailyEvaluationResult? _posttestResult;
+  String _posttestModuleTitle = 'Perkalian';
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
   bool _isLoadingDailyEvaluation = false;
   bool _isSubmittingDailyEvaluation = false;
   String? _dailyEvaluationError;
+  String? _lastSyncedProfileFingerprint;
   late Future<HomeSnapshot> _homeSnapshotFuture;
+
+  HardcodedAssessmentPack get _assessmentPack {
+    return HardcodedAssessmentBank.packForEducation(
+      educationLevel: widget.onboardingController.profile.educationLevel,
+      gradeLevel: widget.onboardingController.profile.gradeLevel,
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
+    if (_shouldOpenKnowledgeMap(widget.routeArguments)) {
+      _selectedTab = _HomeTab.progress;
+      _showKnowledgeMap = true;
+    }
   }
 
   void _retryHomeSnapshot() {
     setState(() {
       _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
     });
+  }
+
+  Future<void> _syncOnboardingProfileFromSnapshot(HomeSnapshot snapshot) async {
+    final targetProfile = _buildOnboardingProfileFromSnapshot(snapshot);
+    final fingerprint = _profileFingerprint(targetProfile);
+    if (_lastSyncedProfileFingerprint == fingerprint) {
+      return;
+    }
+    _lastSyncedProfileFingerprint = fingerprint;
+    await widget.onboardingController.replaceProfile(targetProfile);
+  }
+
+  OnboardingProfile _buildOnboardingProfileFromSnapshot(HomeSnapshot snapshot) {
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    final normalizedGrade = parsedGrade?.toString() ?? snapshot.gradeLevel;
+    return OnboardingProfile(
+      fullName: snapshot.displayName,
+      country: snapshot.country,
+      educationLevel: normalizeEducationLevel(
+        educationLevel: snapshot.educationLevel,
+        gradeLevel: normalizedGrade,
+      ),
+      gradeLevel: normalizedGrade,
+      preferredLanguage: snapshot.preferredLanguage,
+      selectedSubjects: snapshot.selectedSubjects,
+      studyGoal: snapshot.studyGoal,
+      dailyStudyTime: snapshot.dailyStudyTime,
+    );
+  }
+
+  String _profileFingerprint(OnboardingProfile profile) {
+    return [
+      profile.fullName,
+      profile.country,
+      profile.educationLevel,
+      profile.gradeLevel,
+      profile.preferredLanguage,
+      profile.selectedSubjects.join('|'),
+      profile.studyGoal,
+      profile.dailyStudyTime,
+    ].join('||');
   }
 
   void _openQueue([_QueueTab tab = _QueueTab.recommended]) {
@@ -100,6 +176,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -111,6 +189,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -122,6 +202,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = true;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
       _dailyEvaluationIndex = 0;
@@ -250,6 +332,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = true;
       _showKnowledgeMap = false;
     });
@@ -265,6 +349,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = true;
     });
@@ -279,11 +365,183 @@ class _AppHomePageState extends State<AppHomePage> {
   }
 
   Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
-    await Navigator.of(
+    final result = await Navigator.of(
       context,
     ).pushNamed(AppRoutes.workspaceModules, arguments: arguments);
     if (!mounted) return;
     _retryHomeSnapshot();
+    if (result is WorkspaceCompletionResult) {
+      _openPosttest();
+    }
+  }
+
+  void _openPosttest() {
+    final assessmentPack = _assessmentPack;
+    setState(() {
+      _selectedTab = _HomeTab.home;
+      _showGalleryDetail = false;
+      _showDailyEvaluation = false;
+      _showEvaluationResult = false;
+      _showPosttest = true;
+      _showPosttestResult = false;
+      _showLearningReport = false;
+      _showKnowledgeMap = false;
+      _posttestIndex = 0;
+      _posttestAnswers.clear();
+      _posttestResult = null;
+      _posttestModuleTitle = assessmentPack.topicTitle;
+    });
+  }
+
+  void _selectPosttestAnswer(String optionId) {
+    setState(() => _posttestAnswers[_posttestIndex] = optionId);
+  }
+
+  void _nextPosttestQuestion() {
+    final assessmentPack = _assessmentPack;
+    final questions = assessmentPack.posttestQuestions;
+    final optionId = _posttestAnswers[_posttestIndex];
+    if (optionId == null || optionId.isEmpty) {
+      return;
+    }
+
+    final isLastQuestion = _posttestIndex >= questions.length - 1;
+    if (!isLastQuestion) {
+      setState(() => _posttestIndex += 1);
+      return;
+    }
+
+    final correctCount = assessmentPack.correctCount(
+      kind: HardcodedAssessmentKind.posttest,
+      selectedAnswers: _posttestAnswers,
+    );
+    setState(() {
+      _posttestResult = _buildPosttestResult(correctCount);
+      _showPosttest = false;
+      _showPosttestResult = true;
+    });
+  }
+
+  void _previousPosttestQuestion() {
+    if (_posttestIndex == 0) {
+      _openHome();
+      return;
+    }
+
+    setState(() => _posttestIndex -= 1);
+  }
+
+  DailyEvaluationSession _posttestSession() {
+    final assessmentPack = _assessmentPack;
+    final questions = assessmentPack.posttestQuestions;
+    return DailyEvaluationSession(
+      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
+      title: assessmentPack.posttestTitle,
+      language: 'id',
+      reviewDue: ReviewDueSummary(
+        title: 'Posttest siap',
+        dueCount: questions.length,
+        summary:
+            '${questions.length} soal untuk mengecek pemahaman $_posttestModuleTitle.',
+        actionLabel: 'Mulai',
+      ),
+      progress: DailyEvaluationProgress(
+        current: _posttestIndex + 1,
+        total: questions.length,
+        completed: _posttestIndex,
+        label: '${_posttestIndex + 1} of ${questions.length}',
+      ),
+      currentQuestion: questions[_posttestIndex],
+      questions: questions,
+      retentionForecast: const RetentionForecast(
+        title: 'Target posttest',
+        basis: 'Selesaikan soal untuk melihat nilai akhir.',
+        points: [
+          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
+          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
+        ],
+      ),
+      recommendationCallout: const RecommendationCallout(
+        title: 'Cek pemahaman',
+        message:
+            'Nilai posttest dihitung dari jumlah jawaban benar pada 10 soal.',
+        impactLabel: 'Posttest',
+        actionLabel: 'Jawab',
+      ),
+    );
+  }
+
+  DailyEvaluationResult _buildPosttestResult(int correctCount) {
+    final assessmentPack = _assessmentPack;
+    final totalQuestions = assessmentPack.posttestQuestions.length;
+    final reviewAgainCount = totalQuestions - correctCount;
+    final scorePercent = ((correctCount / totalQuestions) * 100).round();
+    final passed = correctCount >= 7;
+    return DailyEvaluationResult(
+      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
+      title: assessmentPack.posttestTitle,
+      status: 'completed',
+      source: 'hardcoded_mobile',
+      scorePercent: scorePercent,
+      reviewedCount: totalQuestions,
+      correctCount: correctCount,
+      reviewAgainCount: reviewAgainCount,
+      reviewedConcepts: [
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[0].title,
+          statusLabel: passed ? 'Strong' : 'Review',
+          masteryScore: passed ? 0.86 : 0.45,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[1].title,
+          statusLabel: correctCount >= 6 ? 'Good' : 'Review',
+          masteryScore: correctCount >= 6 ? 0.72 : 0.4,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.focusAreas[2].title,
+          statusLabel: correctCount >= 8 ? 'Strong' : 'Review',
+          masteryScore: correctCount >= 8 ? 0.9 : 0.5,
+        ),
+        ReviewedConcept(
+          title: assessmentPack.topicTitle,
+          statusLabel: passed ? 'Good' : 'Review',
+          masteryScore: passed ? 0.76 : 0.42,
+        ),
+      ],
+      spacedRepetitionImpact: SpacedRepetitionImpact(
+        retentionLiftPercent: scorePercent,
+        daysUntilNextReview: passed ? 7 : 1,
+        summary:
+            'Posttest: $correctCount jawaban benar dari $totalQuestions soal.',
+      ),
+      nextReview: DailyEvaluationNextReview(
+        label: passed ? 'Review ringan' : 'Ulangi segera',
+        dueDate: '',
+        intervalDays: passed ? 7 : 1,
+      ),
+      recommendedNextActions: [
+        RecommendedNextAction(
+          title: passed
+              ? 'Lanjut materi berikutnya'
+              : 'Ulangi ${assessmentPack.topicTitle}',
+          actionType: passed ? 'continue_learning' : 'practice',
+          reason: passed
+              ? 'Skor posttest cukup kuat untuk lanjut.'
+              : 'Perkuat lagi fondasi ${assessmentPack.topicTitle}.',
+        ),
+        RecommendedNextAction(
+          title: 'Review: ${assessmentPack.topicTitle}',
+          actionType: 'review',
+          reason:
+              'Simpan konsep ${assessmentPack.topicTitle} ke jadwal review.',
+        ),
+      ],
+      backToHome: const ActionTarget(
+        label: 'Kembali ke Home',
+        actionType: 'navigate',
+        target: '/home',
+      ),
+    );
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -336,7 +594,10 @@ class _AppHomePageState extends State<AppHomePage> {
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
                               child:
-                                  _showEvaluationResult || _showDailyEvaluation
+                                  _showEvaluationResult ||
+                                      _showDailyEvaluation ||
+                                      _showPosttest ||
+                                      _showPosttestResult
                                   ? const SizedBox.shrink()
                                   : _ShortcutBar(
                                       key: const ValueKey('shortcut-bar'),
@@ -345,6 +606,8 @@ class _AppHomePageState extends State<AppHomePage> {
                                         _selectedTab = tab;
                                         _showDailyEvaluation = false;
                                         _showEvaluationResult = false;
+                                        _showPosttest = false;
+                                        _showPosttestResult = false;
                                         _showLearningReport = false;
                                         _showKnowledgeMap = false;
                                       }),
@@ -366,7 +629,7 @@ class _AppHomePageState extends State<AppHomePage> {
 
   Widget _animatedTabView(BoxConstraints constraints) {
     final key = ValueKey(
-      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-report-$_showLearningReport-map-$_showKnowledgeMap',
+      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-post-$_showPosttest-$_posttestIndex-postResult-$_showPosttestResult-report-$_showLearningReport-map-$_showKnowledgeMap',
     );
 
     return AnimatedSwitcher(
@@ -396,6 +659,37 @@ class _AppHomePageState extends State<AppHomePage> {
     final copy = OnboardingCopy.forLanguage(
       widget.onboardingController.profile.preferredLanguage,
     );
+    if (_showPosttest) {
+      final assessmentPack = _assessmentPack;
+      final session = _posttestSession();
+      return _DailyEvaluationQuestionPage(
+        constraints: constraints,
+        session: session,
+        question: session.questions[_posttestIndex],
+        questionIndex: _posttestIndex,
+        totalQuestions: session.questions.length,
+        selectedOptionId: _posttestAnswers[_posttestIndex],
+        onBack: _previousPosttestQuestion,
+        onSelected: _selectPosttestAnswer,
+        isSubmitting: false,
+        sectionLabel: assessmentPack.posttestTitle,
+        subtitle:
+            'Jawab 10 soal untuk melihat berapa banyak jawaban benar setelah belajar.',
+        nextLabel: 'Lanjut',
+        finishLabel: 'Selesai posttest',
+        onSubmit: _nextPosttestQuestion,
+      );
+    }
+
+    if (_showPosttestResult) {
+      return _EvaluationCompletePage(
+        constraints: constraints,
+        result: _posttestResult,
+        onBackHome: _openHome,
+        onActionSelected: _handleRecommendedAction,
+      );
+    }
+
     if (_showDailyEvaluation) {
       if (_isLoadingDailyEvaluation) {
         return _DashboardStatePage(
@@ -461,21 +755,36 @@ class _AppHomePageState extends State<AppHomePage> {
         onTakeDailyEvaluation: () {
           _openDailyEvaluation();
         },
-        onContinueSession: _openWorkspaceModules,
+        onContinueSession: (arguments) async {
+          try {
+            final snapshot = await _homeSnapshotFuture;
+            await _syncOnboardingProfileFromSnapshot(snapshot);
+          } catch (_) {}
+          await _openWorkspaceModules(arguments);
+        },
       ),
       _HomeTab.queue => _HomeSnapshotBuilder(
         constraints: constraints,
         snapshotFuture: _homeSnapshotFuture,
         onRetry: _retryHomeSnapshot,
-        builder: (snapshot) => _LearningQueue(
-          constraints: constraints,
-          snapshot: snapshot,
-          selectedTab: _queueTab,
-          onTabChanged: (tab) => setState(() => _queueTab = tab),
-          onCreateTrack: _openLearningGoal,
-          onOpenWorkspace: _openWorkspaceModules,
-          onBack: _openHome,
-        ),
+        builder: (snapshot) {
+          _syncOnboardingProfileFromSnapshot(snapshot);
+          return _LearningQueue(
+            constraints: constraints,
+            snapshot: snapshot,
+            selectedTab: _queueTab,
+            onTabChanged: (tab) => setState(() => _queueTab = tab),
+            onCreateTrack: () {
+              _syncOnboardingProfileFromSnapshot(snapshot);
+              _openLearningGoal();
+            },
+            onOpenWorkspace: (arguments) async {
+              await _syncOnboardingProfileFromSnapshot(snapshot);
+              await _openWorkspaceModules(arguments);
+            },
+            onBack: _openHome,
+          );
+        },
       ),
       _HomeTab.progress => _ProgressHub(
         constraints: constraints,
@@ -494,14 +803,17 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         snapshotFuture: _homeSnapshotFuture,
         onRetry: _retryHomeSnapshot,
-        builder: (snapshot) => _ProfilePage(
-          constraints: constraints,
-          snapshot: snapshot,
-          onBack: _openHome,
-          authController: widget.authController,
-          onboardingController: widget.onboardingController,
-          onProfileSaved: _retryHomeSnapshot,
-        ),
+        builder: (snapshot) {
+          _syncOnboardingProfileFromSnapshot(snapshot);
+          return _ProfilePage(
+            constraints: constraints,
+            snapshot: snapshot,
+            onBack: _openHome,
+            authController: widget.authController,
+            onboardingController: widget.onboardingController,
+            onProfileSaved: _retryHomeSnapshot,
+          );
+        },
       ),
     };
   }
@@ -553,12 +865,17 @@ class _HomeSnapshotBuilder extends StatelessWidget {
 }
 
 String _displayGradeSummary(HomeSnapshot snapshot, OnboardingCopy copy) {
+  final normalizedEducation = normalizeEducationLevel(
+    educationLevel: snapshot.educationLevel,
+    gradeLevel: snapshot.gradeLevel,
+  );
   final parts = <String>[];
-  if (snapshot.educationLevel.trim().isNotEmpty) {
-    parts.add(_educationLabel(snapshot.educationLevel, copy));
+  if (normalizedEducation.isNotEmpty) {
+    parts.add(_educationLabel(normalizedEducation, copy));
   }
   if (snapshot.gradeLevel.trim().isNotEmpty) {
-    parts.add(copy.gradeValue(snapshot.gradeLevel));
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    parts.add(copy.gradeValue((parsedGrade ?? snapshot.gradeLevel).toString()));
   }
   return parts.join(' - ');
 }
@@ -566,8 +883,11 @@ String _displayGradeSummary(HomeSnapshot snapshot, OnboardingCopy copy) {
 String _educationLabel(String value, OnboardingCopy copy) {
   final normalized = value.trim().toLowerCase();
   return switch (normalized) {
+    'sd' => copy.isIndonesian ? 'Sekolah dasar' : 'Elementary school',
     'elementary' => copy.isIndonesian ? 'Sekolah dasar' : 'Elementary school',
+    'smp' => copy.isIndonesian ? 'SMP' : 'Junior high school',
     'junior_high' => copy.isIndonesian ? 'SMP' : 'Junior high school',
+    'sma' => copy.isIndonesian ? 'SMA' : 'Senior high school',
     'senior_high' => copy.isIndonesian ? 'SMA' : 'Senior high school',
     'university' => copy.isIndonesian ? 'Universitas' : 'University',
     _ => value,
@@ -790,7 +1110,10 @@ class _LearningQueue extends StatelessWidget {
                 onContinue: onOpenWorkspace,
               )
             else if (selectedTab == _QueueTab.gallery)
-              _BackendGalleryContent(snapshot: snapshot),
+              _BackendGalleryContent(
+                snapshot: snapshot,
+                onContinue: onOpenWorkspace,
+              ),
           ],
         ),
       ),
@@ -906,32 +1229,247 @@ class _BackendTrackQueueContent extends StatelessWidget {
 }
 
 class _BackendGalleryContent extends StatelessWidget {
-  const _BackendGalleryContent({required this.snapshot});
+  const _BackendGalleryContent({
+    required this.snapshot,
+    required this.onContinue,
+  });
 
   final HomeSnapshot snapshot;
+  final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final videos = _galleryVideosForSnapshot(snapshot);
     final items = snapshot.mediaArtifacts
         .where((item) => item.isReady)
         .toList(growable: false);
-    if (items.isEmpty) {
-      return const _BackendEmptyPanel(
-        icon: Icons.video_library_outlined,
-        title: 'No saved gallery items',
-        message:
-            'Generated videos will appear here after a backend job saves them.',
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _Panel(
+          padding: const EdgeInsets.fromLTRB(19, 18, 19, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: WicaraColors.secondarySoft,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.video_library_outlined,
+                      color: WicaraColors.secondary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Text(
+                      copy.contentGalleryLabel,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 13),
+              Text(
+                items.isEmpty
+                    ? 'Video demo sudah dipasang langsung dari Supabase untuk kebutuhan presentasi.'
+                    : 'Generated videos from backend jobs are saved here. Demo videos remain available for presentation flows.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
         for (var index = 0; index < items.length; index++) ...[
           _BackendGalleryArtifactCard(artifact: items[index]),
-          if (index < items.length - 1) const SizedBox(height: 12),
+          const SizedBox(height: 14),
+        ],
+        for (var index = 0; index < videos.length; index++) ...[
+          _BackendGalleryVideoCard(
+            video: videos[index],
+            onOpenChat: () => onContinue(videos[index].workspaceTarget),
+          ),
+          if (index < videos.length - 1) const SizedBox(height: 14),
         ],
       ],
+    );
+  }
+}
+
+class _HardcodedGalleryVideo {
+  const _HardcodedGalleryVideo({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.durationLabel,
+    required this.videoUrl,
+    required this.workspaceTarget,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String durationLabel;
+  final String videoUrl;
+  final WorkspaceRouteArguments workspaceTarget;
+}
+
+const _hardcodedMultiplicationVideo = _HardcodedGalleryVideo(
+  id: 'perkalian',
+  title: 'Perkalian',
+  subtitle: 'Penjelasan perkalian untuk siswa SD',
+  durationLabel: '04:52',
+  videoUrl:
+      'https://gwbqhirtkgkghnpahtgt.supabase.co/storage/v1/object/public/video/perkalian.mp4',
+  workspaceTarget: WorkspaceRouteArguments(
+    trackId: 'demo-track-sd',
+    moduleId: 'demo-module-perkalian',
+    moduleTitle: 'Perkalian',
+  ),
+);
+
+const _hardcodedAlgebraVideo = _HardcodedGalleryVideo(
+  id: 'aljabar',
+  title: 'Aljabar dan pembuktian Al-Khawarizmi',
+  subtitle: 'Penjelasan aljabar untuk siswa SMP',
+  durationLabel: '06:45',
+  videoUrl:
+      'https://gwbqhirtkgkghnpahtgt.supabase.co/storage/v1/object/public/video/aljabar.mp4',
+  workspaceTarget: WorkspaceRouteArguments(
+    trackId: 'demo-track-smp',
+    moduleId: 'demo-module-aljabar',
+    moduleTitle: 'Aljabar dan pembuktian Al-Khawarizmi',
+  ),
+);
+
+List<_HardcodedGalleryVideo> _galleryVideosForSnapshot(HomeSnapshot snapshot) {
+  final isElementary = _isElementaryProfile(
+    educationLevel: snapshot.educationLevel,
+    gradeLevel: snapshot.gradeLevel,
+  );
+  if (isElementary) {
+    return const [_hardcodedMultiplicationVideo, _hardcodedAlgebraVideo];
+  }
+  return const [_hardcodedAlgebraVideo, _hardcodedMultiplicationVideo];
+}
+
+bool _isElementaryProfile({
+  required String educationLevel,
+  required String gradeLevel,
+}) {
+  return isElementaryLevel(
+    educationLevel: educationLevel,
+    gradeLevel: gradeLevel,
+  );
+}
+
+class _BackendGalleryVideoCard extends StatelessWidget {
+  const _BackendGalleryVideoCard({
+    required this.video,
+    required this.onOpenChat,
+  });
+
+  final _HardcodedGalleryVideo video;
+  final VoidCallback onOpenChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: HardcodedVideoPreview(
+              videoUrl: video.videoUrl,
+              title: video.title,
+            ),
+          ),
+          const SizedBox(height: 11),
+          Text(
+            video.title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: WicaraColors.ink,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            video.subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              _GalleryMetaChip(video.durationLabel),
+              const SizedBox(width: 7),
+              const _GalleryMetaChip('Supabase video'),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onOpenChat,
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: const Text('Open chat'),
+                style: TextButton.styleFrom(
+                  foregroundColor: WicaraColors.secondary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GalleryMetaChip extends StatelessWidget {
+  const _GalleryMetaChip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
@@ -1980,6 +2518,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
     required this.onSelected,
     required this.isSubmitting,
     required this.onSubmit,
+    this.sectionLabel = 'Quick check-in',
+    this.subtitle = 'Answer five questions to strengthen your memory.',
+    this.nextLabel = 'Next question',
+    this.finishLabel = 'Finish evaluation',
   });
 
   final BoxConstraints constraints;
@@ -1992,6 +2534,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
   final ValueChanged<String> onSelected;
   final bool isSubmitting;
   final VoidCallback onSubmit;
+  final String sectionLabel;
+  final String subtitle;
+  final String nextLabel;
+  final String finishLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2022,9 +2568,9 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
             _ReviewDueCard(reviewDue: reviewDue),
             const SizedBox(height: 28),
             _DailyEvaluationSectionTitle(
-              label: 'Quick check-in',
+              label: sectionLabel,
               progressLabel: progressLabel,
-              subtitle: 'Answer five questions to strengthen your memory.',
+              subtitle: subtitle,
             ),
             const SizedBox(height: 12),
             _EvaluationProgressLine(value: progress),
@@ -2089,9 +2635,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
                   ],
                   const SizedBox(height: 22),
                   GradientButton(
-                    label: isLastQuestion
-                        ? 'Finish evaluation'
-                        : 'Next question',
+                    label: isLastQuestion ? finishLabel : nextLabel,
                     onPressed: selectedOptionId == null ? null : onSubmit,
                     isLoading: isSubmitting,
                   ),
@@ -5122,11 +5666,16 @@ class _ProfilePage extends StatelessWidget {
   }
 
   OnboardingProfile _profileFromSnapshot() {
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    final normalizedGrade = parsedGrade?.toString() ?? snapshot.gradeLevel;
     return OnboardingProfile(
       fullName: snapshot.displayName,
       country: snapshot.country,
-      educationLevel: snapshot.educationLevel,
-      gradeLevel: snapshot.gradeLevel,
+      educationLevel: normalizeEducationLevel(
+        educationLevel: snapshot.educationLevel,
+        gradeLevel: normalizedGrade,
+      ),
+      gradeLevel: normalizedGrade,
       preferredLanguage: snapshot.preferredLanguage,
       selectedSubjects: snapshot.selectedSubjects,
       studyGoal: snapshot.studyGoal,
