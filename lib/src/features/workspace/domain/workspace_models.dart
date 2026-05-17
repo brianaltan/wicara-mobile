@@ -21,6 +21,7 @@ class WorkspaceSession {
     required this.contentMode,
     required this.status,
     required this.events,
+    this.latestMedia,
   });
 
   final String id;
@@ -30,6 +31,7 @@ class WorkspaceSession {
   final String contentMode;
   final String status;
   final List<WorkspaceEvent> events;
+  final WorkspaceMediaArtifact? latestMedia;
 }
 
 class WorkspaceEvent {
@@ -98,4 +100,92 @@ class WorkspaceAppendResult {
   final WorkspaceTutorResponse? tutorResponse;
   final WorkspaceMasteryUpdate? masteryUpdate;
   final WorkspaceSession workspace;
+}
+
+class WorkspaceMediaArtifact {
+  const WorkspaceMediaArtifact({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.durationSeconds,
+    required this.durationLabel,
+    required this.transcript,
+    required this.notes,
+    this.thumbnailUrl,
+    this.videoUrl,
+    this.playbackUrl,
+    this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String status;
+  final int durationSeconds;
+  final String durationLabel;
+  final String transcript;
+  final List<String> notes;
+  final String? thumbnailUrl;
+  final String? videoUrl;
+  final String? playbackUrl;
+  final String? createdAt;
+
+  bool get isReady => status.toLowerCase() == 'ready';
+}
+
+class WorkspaceAnimationQueue {
+  const WorkspaceAnimationQueue({
+    required this.jobId,
+    required this.artifactId,
+    required this.status,
+    this.errorDetails,
+  });
+
+  final String jobId;
+  final String artifactId;
+  final String status;
+  final Map<String, dynamic>? errorDetails;
+}
+
+class WorkspaceGenerateVideoResult {
+  const WorkspaceGenerateVideoResult({
+    required this.queue,
+    required this.event,
+    required this.workspace,
+  });
+
+  final WorkspaceAnimationQueue queue;
+  final WorkspaceEvent event;
+  final WorkspaceSession workspace;
+}
+
+class WorkspaceAnimationJobStatus {
+  const WorkspaceAnimationJobStatus({
+    required this.jobId,
+    required this.status,
+    required this.progress,
+    required this.message,
+    required this.artifactId,
+    this.videoUrl,
+    this.thumbnailUrl,
+    this.error,
+    this.errorDetails,
+  });
+
+  final String jobId;
+  final String status;
+  final int progress;
+  final String message;
+  final String artifactId;
+  final String? videoUrl;
+  final String? thumbnailUrl;
+  final String? error;
+  final Map<String, dynamic>? errorDetails;
+
+  bool get isQueued => status == 'queued';
+  bool get isProcessing => status == 'processing' || isQueued;
+  bool get isReady => status == 'ready';
+  bool get isFailed => status == 'failed';
+  bool get isFinal => isReady || isFailed;
 }

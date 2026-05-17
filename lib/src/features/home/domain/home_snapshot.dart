@@ -16,6 +16,7 @@ class HomeSnapshot {
     required this.onboardingCompleted,
     this.nextQueueItem,
     this.activeTracks = const [],
+    this.mediaArtifacts = const [],
   });
 
   final String displayName;
@@ -31,6 +32,7 @@ class HomeSnapshot {
   final bool onboardingCompleted;
   final LearningQueueItem? nextQueueItem;
   final List<LearningTrackSummary> activeTracks;
+  final List<HomeMediaArtifact> mediaArtifacts;
 
   String get firstName {
     final trimmed = displayName.trim();
@@ -90,6 +92,46 @@ class HomeSnapshot {
     }
     return null;
   }
+}
+
+class HomeMediaArtifact {
+  const HomeMediaArtifact({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.durationSeconds,
+    required this.durationLabel,
+    required this.transcript,
+    required this.notes,
+    required this.artifactType,
+    this.thumbnailUrl,
+    this.videoUrl,
+    this.playbackUrl,
+    this.trackId,
+    this.moduleId,
+    this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String status;
+  final int durationSeconds;
+  final String durationLabel;
+  final String transcript;
+  final List<String> notes;
+  final String artifactType;
+  final String? thumbnailUrl;
+  final String? videoUrl;
+  final String? playbackUrl;
+  final String? trackId;
+  final String? moduleId;
+  final String? createdAt;
+
+  String get effectiveVideoUrl => videoUrl ?? playbackUrl ?? '';
+
+  bool get isReady => status.toLowerCase() == 'ready';
 }
 
 class LearningQueueItem {

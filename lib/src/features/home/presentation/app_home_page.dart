@@ -3,6 +3,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
@@ -789,7 +790,7 @@ class _LearningQueue extends StatelessWidget {
                 onContinue: onOpenWorkspace,
               )
             else if (selectedTab == _QueueTab.gallery)
-              const _BackendGalleryEmptyContent(),
+              _BackendGalleryContent(snapshot: snapshot),
           ],
         ),
       ),
@@ -904,17 +905,604 @@ class _BackendTrackQueueContent extends StatelessWidget {
   }
 }
 
-class _BackendGalleryEmptyContent extends StatelessWidget {
-  const _BackendGalleryEmptyContent();
+class _BackendGalleryContent extends StatelessWidget {
+  const _BackendGalleryContent({required this.snapshot});
+
+  final HomeSnapshot snapshot;
 
   @override
   Widget build(BuildContext context) {
-    return const _BackendEmptyPanel(
-      icon: Icons.video_library_outlined,
-      title: 'No saved gallery items',
-      message:
-          'Generated videos will appear here after a backend job saves them.',
+    final items = snapshot.mediaArtifacts
+        .where((item) => item.isReady)
+        .toList(growable: false);
+    if (items.isEmpty) {
+      return const _BackendEmptyPanel(
+        icon: Icons.video_library_outlined,
+        title: 'No saved gallery items',
+        message:
+            'Generated videos will appear here after a backend job saves them.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < items.length; index++) ...[
+          _BackendGalleryArtifactCard(artifact: items[index]),
+          if (index < items.length - 1) const SizedBox(height: 12),
+        ],
+      ],
     );
+  }
+}
+
+class _BackendGalleryArtifactCard extends StatelessWidget {
+  const _BackendGalleryArtifactCard({required this.artifact});
+
+  final HomeMediaArtifact artifact;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewUrl = artifact.thumbnailUrl;
+    final duration = artifact.durationLabel.isNotEmpty
+        ? artifact.durationLabel
+        : '--:--';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: () {
+          showDialog<void>(
+            context: context,
+            builder: (context) {
+              return _GalleryArtifactDetailDialog(artifact: artifact);
+            },
+          );
+        },
+        child: _Panel(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 92,
+                  height: 70,
+                  child: previewUrl != null && previewUrl.isNotEmpty
+                      ? Image.network(
+                          previewUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const ColoredBox(
+                              color: Color(0xFF181D27),
+                              child: Icon(
+                                Icons.movie_creation_outlined,
+                                color: Colors.white70,
+                              ),
+                            );
+                          },
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF181D27),
+                          child: Icon(
+                            Icons.movie_creation_outlined,
+                            color: Colors.white70,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      artifact.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      artifact.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                children: [
+                  const Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: WicaraColors.secondary,
+                    size: 31,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    duration,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: WicaraColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GalleryArtifactDetailDialog extends StatefulWidget {
+  const _GalleryArtifactDetailDialog({
+    required this.artifact,
+    this.isFullscreen = false,
+    this.initialPosition,
+  });
+
+  final HomeMediaArtifact artifact;
+  final bool isFullscreen;
+  final Duration? initialPosition;
+
+  @override
+  State<_GalleryArtifactDetailDialog> createState() =>
+      _GalleryArtifactDetailDialogState();
+}
+
+class _GalleryArtifactDetailDialogState
+    extends State<_GalleryArtifactDetailDialog> {
+  VideoPlayerController? _controller;
+  bool _isLoading = true;
+  String? _errorMessage;
+  double _zoomScale = 1.0;
+  double? _timelineHoverFraction;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    final videoUrl = widget.artifact.effectiveVideoUrl;
+    if (videoUrl.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Video URL is missing for this artifact.';
+      });
+      return;
+    }
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      await controller.initialize();
+      final requestedPosition = widget.initialPosition;
+      if (requestedPosition != null && requestedPosition > Duration.zero) {
+        final maxPosition = controller.value.duration;
+        final clampedPosition = requestedPosition > maxPosition
+            ? maxPosition
+            : requestedPosition;
+        await controller.seekTo(clampedPosition);
+      }
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _isLoading = false;
+      });
+      await controller.play();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load this video.';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _setZoomScale(double value) {
+    setState(() {
+      _zoomScale = value.clamp(1.0, 3.0);
+    });
+  }
+
+  Future<void> _openFullscreenPlayer(VideoPlayerController controller) async {
+    final currentPosition = controller.value.position;
+    final wasPlaying = controller.value.isPlaying;
+    await controller.pause();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.88),
+      builder: (_) {
+        return _GalleryArtifactDetailDialog(
+          artifact: widget.artifact,
+          isFullscreen: true,
+          initialPosition: currentPosition,
+        );
+      },
+    );
+
+    if (!mounted || !wasPlaying) return;
+    await controller.play();
+  }
+
+  void _updateTimelineHover({
+    required double localDx,
+    required double trackWidth,
+  }) {
+    if (trackWidth <= 0) return;
+    final fraction = (localDx / trackWidth).clamp(0.0, 1.0);
+    if (_timelineHoverFraction == fraction) return;
+    setState(() {
+      _timelineHoverFraction = fraction;
+    });
+  }
+
+  void _clearTimelineHover() {
+    if (_timelineHoverFraction == null) return;
+    setState(() {
+      _timelineHoverFraction = null;
+    });
+  }
+
+  String _formatTimelineTime(Duration duration) {
+    final totalSeconds = duration.inSeconds.clamp(0, 359999);
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Widget _metaChip(String label) {
+    return Container(
+      height: 25,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final isFullscreen = widget.isFullscreen;
+    final foreground = isFullscreen ? Colors.white : WicaraColors.text;
+    final durationLabel = widget.artifact.durationLabel.trim();
+    final card = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.artifact.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (!isFullscreen &&
+                  !_isLoading &&
+                  _errorMessage == null &&
+                  controller != null)
+                IconButton(
+                  onPressed: () => _openFullscreenPlayer(controller),
+                  icon: const Icon(Icons.open_in_full_rounded),
+                  color: foreground,
+                  tooltip: 'Open fullscreen',
+                ),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: Icon(
+                  isFullscreen
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.close_rounded,
+                ),
+                color: foreground,
+              ),
+            ],
+          ),
+          if (widget.artifact.subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              widget.artifact.subtitle,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: isFullscreen
+                    ? Colors.white.withValues(alpha: 0.78)
+                    : WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (durationLabel.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _metaChip('Duration $durationLabel'),
+            ),
+          ],
+          const SizedBox(height: 10),
+          AspectRatio(
+            aspectRatio: controller?.value.isInitialized == true
+                ? controller!.value.aspectRatio
+                : 16 / 9,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ColoredBox(
+                color: Colors.black,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      )
+                    : InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 3,
+                        panEnabled: true,
+                        scaleEnabled: true,
+                        child: Center(
+                          child: Transform.scale(
+                            scale: _zoomScale,
+                            child: VideoPlayer(controller!),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (!_isLoading && _errorMessage == null && controller != null)
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: controller,
+              builder: (context, value, _) {
+                final totalDuration = value.duration > Duration.zero
+                    ? value.duration
+                    : const Duration(seconds: 1);
+                final maxMs = totalDuration.inMilliseconds;
+                final positionMs = value.position.inMilliseconds
+                    .clamp(0, maxMs)
+                    .toInt();
+                final sliderValue = maxMs <= 0 ? 0.0 : positionMs / maxMs;
+                final currentLabel = _formatTimelineTime(
+                  Duration(milliseconds: positionMs),
+                );
+                final totalLabel = _formatTimelineTime(totalDuration);
+
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              if (value.isPlaying) {
+                                controller.pause();
+                              } else {
+                                controller.play();
+                              }
+                            });
+                          },
+                          icon: Icon(
+                            value.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                          color: foreground,
+                        ),
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final trackWidth = constraints.maxWidth;
+                              final hoverFraction = _timelineHoverFraction;
+                              final showHover =
+                                  hoverFraction != null && trackWidth > 0;
+                              final safeHoverFraction = hoverFraction ?? 0.0;
+                              final hoverMs = showHover
+                                  ? (maxMs * safeHoverFraction).round()
+                                  : 0;
+                              final hoverLabel = showHover
+                                  ? _formatTimelineTime(
+                                      Duration(milliseconds: hoverMs),
+                                    )
+                                  : '';
+                              final bubbleWidth = 64.0;
+                              final hoverLeft = showHover
+                                  ? ((trackWidth * safeHoverFraction) -
+                                            (bubbleWidth / 2))
+                                        .clamp(
+                                          0.0,
+                                          math.max(
+                                            0.0,
+                                            trackWidth - bubbleWidth,
+                                          ),
+                                        )
+                                        .toDouble()
+                                  : 0.0;
+
+                              return MouseRegion(
+                                onHover: (event) {
+                                  _updateTimelineHover(
+                                    localDx: event.localPosition.dx,
+                                    trackWidth: trackWidth,
+                                  );
+                                },
+                                onExit: (_) => _clearTimelineHover(),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(
+                                      height: showHover ? 22 : 0,
+                                      child: showHover
+                                          ? Stack(
+                                              children: [
+                                                Positioned(
+                                                  left: hoverLeft,
+                                                  width: bubbleWidth,
+                                                  child: Container(
+                                                    height: 20,
+                                                    alignment: Alignment.center,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black87,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      hoverLabel,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                    SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 4,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 5,
+                                        ),
+                                        overlayShape:
+                                            SliderComponentShape.noOverlay,
+                                        activeTrackColor:
+                                            WicaraColors.secondary,
+                                        inactiveTrackColor: WicaraColors.line,
+                                        thumbColor: WicaraColors.secondary,
+                                      ),
+                                      child: Slider(
+                                        value: sliderValue.clamp(0.0, 1.0),
+                                        min: 0,
+                                        max: 1,
+                                        onChanged: (nextValue) {
+                                          final target = Duration(
+                                            milliseconds: (maxMs * nextValue)
+                                                .round(),
+                                          );
+                                          controller.seekTo(target);
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(_zoomScale - 0.25),
+                          icon: const Icon(Icons.zoom_out_rounded),
+                          color: foreground,
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(1.0),
+                          icon: const Icon(Icons.filter_center_focus_rounded),
+                          color: foreground,
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(_zoomScale + 0.25),
+                          icon: const Icon(Icons.zoom_in_rounded),
+                          color: foreground,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          currentLabel,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.82),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          totalLabel,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.82),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+
+    if (isFullscreen) {
+      return Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: ColoredBox(color: Colors.black, child: card),
+        ),
+      );
+    }
+
+    return Dialog(insetPadding: const EdgeInsets.all(16), child: card);
   }
 }
 

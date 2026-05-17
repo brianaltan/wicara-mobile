@@ -15,6 +15,21 @@ abstract class WorkspaceRepository {
     Map<String, dynamic> metadata = const {},
   });
 
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  });
+
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
+  });
+
   Future<void> updateModuleState({
     required String trackId,
     required String moduleId,

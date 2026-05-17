@@ -236,6 +236,27 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
   Future<void> updateModuleState({
     required String trackId,
     required String moduleId,
@@ -268,6 +289,18 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<HomeSnapshot> fetchSnapshot() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 
