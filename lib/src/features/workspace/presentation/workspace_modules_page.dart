@@ -1367,6 +1367,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
     if (isCorrect && mounted) {
       setState(() => _moduleCompleted = true);
+      _finishModuleAndOpenPosttest();
+      return;
     }
     _scrollToBottom();
   }
@@ -2581,6 +2583,46 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _WorkspaceVideoPreviewPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final background = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFEAF4FF), Color(0xFFDCEEFF)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(rect);
+    canvas.drawRect(rect, background);
+
+    final circlePaint = Paint()..color = const Color(0xFFBBD8FF).withValues(alpha: 0.45);
+    canvas.drawCircle(Offset(size.width * 0.2, size.height * 0.28), size.shortestSide * 0.16, circlePaint);
+    canvas.drawCircle(Offset(size.width * 0.82, size.height * 0.76), size.shortestSide * 0.2, circlePaint);
+
+    final framePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = const Color(0xFF9EC3F8);
+    final frameRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(size.width * 0.14, size.height * 0.2, size.width * 0.72, size.height * 0.6),
+      const Radius.circular(12),
+    );
+    canvas.drawRRect(frameRect, framePaint);
+
+    final playPath = Path()
+      ..moveTo(size.width * 0.46, size.height * 0.39)
+      ..lineTo(size.width * 0.46, size.height * 0.61)
+      ..lineTo(size.width * 0.62, size.height * 0.5)
+      ..close();
+    final playPaint = Paint()..color = const Color(0xFF6FA3EA);
+    canvas.drawPath(playPath, playPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WorkspaceVideoPreviewPainter oldDelegate) =>
+      false;
 }
 
 class _WorkspaceVideoFailedCard extends StatelessWidget {
