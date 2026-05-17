@@ -330,8 +330,14 @@ class LiteRtLmBridge(
                             "LiteRT model is not initialized. Call initializeModel first.",
                         )
                     val conversation = activeEngine.createConversation()
-                    val responseMessage = conversation.sendMessage(prompt)
-                    extractMessageText(responseMessage)
+                    try {
+                        val responseMessage = conversation.sendMessage(prompt)
+                        extractMessageText(responseMessage)
+                    } finally {
+                        // LiteRT currently supports a single active session per engine.
+                        // Always close conversation after each request to avoid session leak.
+                        runCatching { conversation.close() }
+                    }
                 }
 
                 val totalMs = SystemClock.elapsedRealtime() - start

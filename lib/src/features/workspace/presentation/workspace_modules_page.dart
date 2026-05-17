@@ -10,6 +10,7 @@ import '../../home/domain/home_repository.dart';
 import '../../home/domain/home_snapshot.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../../edge_ai/domain/edge_model_router.dart';
 import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
@@ -32,6 +33,9 @@ class WorkspaceModulesPage extends StatefulWidget {
     required this.workspaceRepository,
     this.homeRepository,
     this.routeArguments,
+    this.edgeForceLocalForPilot = true,
+    this.edgeCloudFallbackAllowed = false,
+    this.showEdgeRouteTrace = false,
     super.key,
   });
 
@@ -42,6 +46,9 @@ class WorkspaceModulesPage extends StatefulWidget {
   /// as a summary card at the top of the chat history.
   final HomeRepository? homeRepository;
   final WorkspaceRouteArguments? routeArguments;
+  final bool edgeForceLocalForPilot;
+  final bool edgeCloudFallbackAllowed;
+  final bool showEdgeRouteTrace;
 
   @override
   State<WorkspaceModulesPage> createState() => _WorkspaceModulesPageState();
@@ -73,6 +80,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   List<WorkspaceSessionSummary> _sessionHistory = const [];
   String? _activeSessionId;
   int _workspaceRequestSerial = 0;
+  late final EdgeModelRouter _edgeModelRouter;
+  EdgeRouteAudit? _lastEdgeRouteAudit;
+  EdgeRouteDecision? _lastEdgeRouteDecision;
 
   /// Latest weekly report fetched from HomeRepository. Null while loading or
   /// if no HomeRepository was provided.
@@ -89,6 +99,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   @override
   void initState() {
     super.initState();
+    _edgeModelRouter = EdgeModelRouter(
+      forceLocalForPilot: widget.edgeForceLocalForPilot,
+      cloudFallbackAllowed: widget.edgeCloudFallbackAllowed,
+    );
     _loadWorkspace();
     _loadWeeklyReport();
   }
@@ -261,6 +275,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     _latestVideoArtifact = null;
     _videoStatusMessage = null;
     _videoErrorMessage = null;
+    _lastEdgeRouteAudit = null;
+    _lastEdgeRouteDecision = null;
   }
 
   Future<void> _openSessionHistorySheet() async {
@@ -1496,6 +1512,24 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
           ? _WorkspaceQuizState.correct
           : _WorkspaceQuizState.review;
     });
+    final routeResult = await _routeLocalTutorResponse(
+      eventType: 'quiz_answer',
+      learnerText: 'Jawaban kuis siswa: $answer',
+    );
+    if (mounted) {
+      setState(() {
+        _lastEdgeRouteAudit = routeResult.audit;
+        _lastEdgeRouteDecision = routeResult.decision;
+        if (routeResult.text.trim().isNotEmpty) {
+          _chatEntries.add(
+            _WorkspaceChatEntry.text(
+              text: routeResult.text.trim(),
+              isUser: false,
+            ),
+          );
+        }
+      });
+    }
     await _appendWorkspaceEvent(
       eventType: 'quiz_answer',
       textPayload: answer,
@@ -1504,7 +1538,12 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         'correct_answer': assessmentPack.workspaceQuizCorrectAnswer,
         'is_correct': isCorrect,
         'confidence': isCorrect ? 8 : 4,
+        ..._edgeMetadataForEvent(
+          eventType: 'quiz_answer',
+          routeResult: routeResult,
+        ),
       },
+      acceptBackendTutorResponse: false,
     );
     final arguments = widget.routeArguments;
     if (isCorrect && arguments != null && arguments.isValid) {
@@ -1539,6 +1578,25 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       _canvasSnapshots.add(snapshot);
       _chatEntries.add(_WorkspaceChatEntry.canvas(snapshot));
     });
+    final routeResult = await _routeLocalTutorResponse(
+      eventType: 'canvas_sent',
+      learnerText:
+          'Siswa mengirim canvas: ${snapshot.elementCount} marks, attachment=${snapshot.hasAttachment}',
+    );
+    if (mounted) {
+      setState(() {
+        _lastEdgeRouteAudit = routeResult.audit;
+        _lastEdgeRouteDecision = routeResult.decision;
+        if (routeResult.text.trim().isNotEmpty) {
+          _chatEntries.add(
+            _WorkspaceChatEntry.text(
+              text: routeResult.text.trim(),
+              isUser: false,
+            ),
+          );
+        }
+      });
+    }
     await _appendWorkspaceEvent(
       eventType: 'canvas_sent',
       metadata: {
@@ -1548,7 +1606,12 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         'show_grid': snapshot.showGrid,
         'canvas_width': snapshot.canvasSize.width,
         'canvas_height': snapshot.canvasSize.height,
+        ..._edgeMetadataForEvent(
+          eventType: 'canvas_sent',
+          routeResult: routeResult,
+        ),
       },
+      acceptBackendTutorResponse: false,
     );
     _scrollToBottom();
   }
@@ -1567,14 +1630,135 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     setState(() {
       _chatEntries.add(_WorkspaceChatEntry.text(text: message, isUser: true));
     });
-    await _appendWorkspaceEvent(eventType: 'text', textPayload: message);
+    EdgeRouteResult? routeResult;
+    try {
+      routeResult = await _routeLocalTutorResponse(
+        eventType: 'text',
+        learnerText: message,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lastEdgeRouteAudit = routeResult?.audit;
+        _lastEdgeRouteDecision = routeResult?.decision;
+        if (routeResult != null && routeResult.text.trim().isNotEmpty) {
+          _chatEntries.add(
+            _WorkspaceChatEntry.text(
+              text: routeResult.text.trim(),
+              isUser: false,
+            ),
+          );
+        }
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _workspaceError =
+            'Edge route failed, backend fallback will be used: $error';
+      });
+    }
+
+    await _appendWorkspaceEvent(
+      eventType: 'text',
+      textPayload: message,
+      metadata: routeResult == null
+          ? const <String, dynamic>{
+              'edge_mode': 'cloud_fallback_due_to_route_error',
+              'edge_force_local': false,
+            }
+          : _edgeMetadataForEvent(eventType: 'text', routeResult: routeResult),
+      acceptBackendTutorResponse: routeResult == null,
+    );
     _scrollToBottom();
+  }
+
+  Future<EdgeRouteResult> _routeLocalTutorResponse({
+    required String eventType,
+    required String learnerText,
+  }) {
+    final task = _taskForWorkspaceEvent(eventType);
+    final topic = _workspace?.currentTopic.trim().isNotEmpty == true
+        ? _workspace!.currentTopic.trim()
+        : 'topik pembelajaran saat ini';
+    final prompt =
+        '''
+Anda adalah tutor Socratic WICARA.
+Topik: $topic
+Konteks chat terbaru:
+${_recentDialogueContext()}
+
+Pesan siswa:
+$learnerText
+
+Respon:
+- Bahasa Indonesia
+- 1-3 kalimat ringkas
+- jangan beri jawaban final penuh
+- akhiri dengan 1 pertanyaan pemandu atau next action
+''';
+
+    return _edgeModelRouter.routeAndGenerate(
+      task: task,
+      prompt: prompt,
+      requestId: 'ws_${DateTime.now().millisecondsSinceEpoch}',
+      temperature: 0.35,
+      maxTokens: 180,
+      allowCloudFallback: widget.edgeCloudFallbackAllowed,
+    );
+  }
+
+  EdgeTaskType _taskForWorkspaceEvent(String eventType) {
+    return switch (eventType) {
+      'quiz_answer' => EdgeTaskType.tutorEvaluate,
+      'canvas_sent' => EdgeTaskType.tutorHint,
+      _ => EdgeTaskType.tutorExplain,
+    };
+  }
+
+  String _recentDialogueContext() {
+    final recent = _chatEntries
+        .where(
+          (entry) =>
+              !entry.isCanvas && (entry.text?.trim().isNotEmpty ?? false),
+        )
+        .toList(growable: false);
+    if (recent.isEmpty) {
+      return '(belum ada riwayat)';
+    }
+    final startIndex = recent.length > 6 ? recent.length - 6 : 0;
+    final snippet = recent.sublist(startIndex);
+    return snippet
+        .map(
+          (entry) =>
+              '${entry.isUser ? 'Siswa' : 'Tutor'}: ${(entry.text ?? '').trim()}',
+        )
+        .join('\n');
+  }
+
+  Map<String, dynamic> _edgeMetadataForEvent({
+    required String eventType,
+    required EdgeRouteResult routeResult,
+  }) {
+    return {
+      'edge_mode': widget.edgeForceLocalForPilot ? 'force_local' : 'hybrid',
+      'edge_force_local': widget.edgeForceLocalForPilot,
+      'edge_task': _taskForWorkspaceEvent(eventType).name,
+      'runtime_target': routeResult.audit.runtimeTarget,
+      'execution_location': routeResult.audit.executionLocation,
+      'fallback_used': routeResult.audit.fallbackUsed,
+      'route_reason': routeResult.audit.routeReason,
+      'edge_ai_audit': routeResult.auditMetadata,
+    };
   }
 
   Future<void> _appendWorkspaceEvent({
     required String eventType,
     String textPayload = '',
     Map<String, dynamic> metadata = const {},
+    bool acceptBackendTutorResponse = true,
   }) async {
     final workspace = _workspace;
     if (workspace == null) {
@@ -1611,7 +1795,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       setState(() {
         _workspace = result.workspace;
         _sessionHistory = history;
-        if (result.tutorResponse != null &&
+        if (acceptBackendTutorResponse &&
+            result.tutorResponse != null &&
             result.tutorResponse!.text.trim().isNotEmpty) {
           _chatEntries.add(
             _WorkspaceChatEntry.text(
@@ -1779,6 +1964,14 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                           ),
                           const SizedBox(height: 10),
                           const EdgeRuntimeStatusPanel(),
+                          if (widget.showEdgeRouteTrace &&
+                              _lastEdgeRouteAudit != null) ...[
+                            const SizedBox(height: 8),
+                            _EdgeRouteTraceCard(
+                              audit: _lastEdgeRouteAudit!,
+                              decision: _lastEdgeRouteDecision,
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           Row(
                             children: [
@@ -1893,6 +2086,63 @@ class _WorkspaceChatEntry {
   final CanvasWorkSnapshot? snapshot;
 
   bool get isCanvas => snapshot != null;
+}
+
+class _EdgeRouteTraceCard extends StatelessWidget {
+  const _EdgeRouteTraceCard({required this.audit, this.decision});
+
+  final EdgeRouteAudit audit;
+  final EdgeRouteDecision? decision;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Edge route trace',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'target=${audit.runtimeTarget}  execution=${audit.executionLocation}  fallback=${audit.fallbackUsed}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'reason=${audit.routeReason}  latency=${audit.latencyMs}ms',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (decision != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'network_required=${decision!.requiresNetwork}  privacy_sensitive=${decision!.privacySensitive}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _WorkspaceHistorySheet extends StatelessWidget {

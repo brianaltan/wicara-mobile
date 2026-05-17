@@ -30,6 +30,9 @@ class WicaraApp extends StatefulWidget {
     required this.pretestRepository,
     this.workspaceRepository,
     this.homeRepository,
+    this.edgeLiteRtForceLocalForPilot = true,
+    this.edgeCloudFallbackAllowed = false,
+    this.edgeDebugRouteTrace = false,
     this.initialRoute = AppRoutes.landing,
     super.key,
   });
@@ -42,6 +45,9 @@ class WicaraApp extends StatefulWidget {
   final OnboardingRepository onboardingRepository;
   final PretestRepository pretestRepository;
   final WorkspaceRepository? workspaceRepository;
+  final bool edgeLiteRtForceLocalForPilot;
+  final bool edgeCloudFallbackAllowed;
+  final bool edgeDebugRouteTrace;
   final String initialRoute;
 
   @override
@@ -185,6 +191,9 @@ class _WicaraAppState extends State<WicaraApp> {
               widget.workspaceRepository ??
               const _UnavailableWorkspaceRepository(),
           homeRepository: widget.homeRepository,
+          edgeForceLocalForPilot: widget.edgeLiteRtForceLocalForPilot,
+          edgeCloudFallbackAllowed: widget.edgeCloudFallbackAllowed,
+          showEdgeRouteTrace: widget.edgeDebugRouteTrace,
           routeArguments: settings.arguments is WorkspaceRouteArguments
               ? settings.arguments! as WorkspaceRouteArguments
               : null,
@@ -380,9 +389,7 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
-  Future<DailyEvaluationResult> finalizePosttest({
-    required String sessionId,
-  }) {
+  Future<DailyEvaluationResult> finalizePosttest({required String sessionId}) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 

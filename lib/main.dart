@@ -20,6 +20,18 @@ import 'src/features/workspace/data/workspace_session_store.dart';
 const _googleWebClientId = String.fromEnvironment(
   'WICARA_GOOGLE_WEB_CLIENT_ID',
 );
+const _edgeLiteRtForceLocalForPilot = bool.fromEnvironment(
+  'EDGE_LITERT_FORCE_LOCAL_FOR_PILOT',
+  defaultValue: true,
+);
+const _edgeCloudFallbackAllowed = bool.fromEnvironment(
+  'EDGE_CLOUD_FALLBACK_ALLOWED',
+  defaultValue: false,
+);
+const _edgeDebugRouteTrace = bool.fromEnvironment(
+  'EDGE_DEBUG_ROUTE_TRACE',
+  defaultValue: false,
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,6 +94,9 @@ Future<void> main() async {
         sessionStore: sessionStore,
         workspaceSessionStore: workspaceStore,
       ),
+      edgeLiteRtForceLocalForPilot: _edgeLiteRtForceLocalForPilot,
+      edgeCloudFallbackAllowed: _edgeCloudFallbackAllowed,
+      edgeDebugRouteTrace: _edgeDebugRouteTrace,
     ),
   );
 }
