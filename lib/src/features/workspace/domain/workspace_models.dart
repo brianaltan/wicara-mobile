@@ -46,6 +46,28 @@ class WorkspaceSession {
   final WorkspaceMediaArtifact? latestMedia;
 }
 
+class WorkspaceSessionSummary {
+  const WorkspaceSessionSummary({
+    required this.id,
+    required this.trackId,
+    required this.moduleId,
+    required this.title,
+    required this.preview,
+    required this.messageCount,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String trackId;
+  final String moduleId;
+  final String title;
+  final String preview;
+  final int messageCount;
+  final String createdAt;
+  final String updatedAt;
+}
+
 class WorkspaceEvent {
   const WorkspaceEvent({
     required this.id,

@@ -8637,6 +8637,8 @@ class _ConceptDetailData {
         description: concept.description.isEmpty
             ? fallbackNode.description
             : concept.description,
+        idDesc: concept.idDesc.isEmpty ? fallbackNode.idDesc : concept.idDesc,
+        enDesc: concept.enDesc.isEmpty ? fallbackNode.enDesc : concept.enDesc,
         gradeBand: concept.gradeBand.isEmpty
             ? fallbackNode.gradeBand
             : concept.gradeBand,
@@ -9116,11 +9118,21 @@ class _NodeStatusDot extends StatelessWidget {
 }
 
 String _nodeDescription(_KnowledgeNode node, OnboardingCopy copy) {
-  final description = node.description;
+  final description = copy.isIndonesian
+      ? (node.idDesc ?? node.description)
+      : (node.enDesc ?? node.description);
   if (description != null && description.isNotEmpty) {
     return description;
   }
-  return copy.conceptFallbackDescription;
+  final grade = node.gradeBand;
+  if (copy.isIndonesian) {
+    return grade == null || grade.isEmpty
+        ? 'Pelajari konsep ${node.label} dalam graf prasyarat Kurikulum Merdeka.'
+        : 'Pelajari konsep ${node.label} untuk $grade dalam graf prasyarat Kurikulum Merdeka.';
+  }
+  return grade == null || grade.isEmpty
+      ? 'Learn ${node.label} in the Kurikulum Merdeka prerequisite graph.'
+      : 'Learn ${node.label} for $grade in the Kurikulum Merdeka prerequisite graph.';
 }
 
 class _KnowledgeGraph {
@@ -9310,6 +9322,8 @@ class _KnowledgeNode {
     required this.x,
     required this.y,
     this.description,
+    this.idDesc,
+    this.enDesc,
     this.gradeBand,
     this.status = _NodeStatus.ready,
     this.statusLabel,
@@ -9320,6 +9334,8 @@ class _KnowledgeNode {
   final double x;
   final double y;
   final String? description;
+  final String? idDesc;
+  final String? enDesc;
   final String? gradeBand;
   final _NodeStatus status;
   final String? statusLabel;
@@ -9414,6 +9430,8 @@ _KnowledgeGraph _knowledgeGraphFromApi(
           x: node.x,
           y: node.y,
           description: node.description,
+          idDesc: node.idDesc,
+          enDesc: node.enDesc,
           gradeBand: node.gradeBand,
           status: _nodeStatusFromApi(node.status),
           statusLabel: node.statusLabel.isEmpty ? null : node.statusLabel,

@@ -1,7 +1,35 @@
 import 'workspace_models.dart';
 
+class WorkspaceSessionHistory {
+  const WorkspaceSessionHistory({
+    required this.activeWorkspaceId,
+    required this.workspaceIds,
+  });
+
+  final String? activeWorkspaceId;
+  final List<String> workspaceIds;
+}
+
 abstract class WorkspaceRepository {
   Future<WorkspaceSession> createOrResumeWorkspace({
+    required String trackId,
+    required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
+  });
+
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  });
+
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  });
+
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
     required String trackId,
     required String moduleId,
   });

@@ -27,7 +27,9 @@ Future<void> main() async {
   final sessionStore = authSessionStore;
   final pretestStore = pretestSessionStore;
   final workspaceStore = workspaceSessionStore;
-  final apiClient = ApiClient(baseUrl: ApiClient.defaultBaseUrl);
+  final apiClient = ApiClient(
+    baseUrl: ApiClient.resolveRuntimeBaseUrl(ApiClient.defaultBaseUrl),
+  );
   final googleWebClientId = resolveGoogleWebClientId(_googleWebClientId);
   final authController = AuthController(
     authRepository: ApiAuthRepository(

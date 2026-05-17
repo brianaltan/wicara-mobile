@@ -36,6 +36,7 @@ class WorkspaceModulesPage extends StatefulWidget {
 
   final OnboardingController onboardingController;
   final WorkspaceRepository workspaceRepository;
+
   /// Optional: when provided the latest weekly report is fetched and shown
   /// as a summary card at the top of the chat history.
   final HomeRepository? homeRepository;
@@ -68,6 +69,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   WorkspaceMediaArtifact? _latestVideoArtifact;
   String? _videoStatusMessage;
   String? _videoErrorMessage;
+  List<WorkspaceSessionSummary> _sessionHistory = const [];
+  String? _activeSessionId;
+  int _workspaceRequestSerial = 0;
 
   /// Latest weekly report fetched from HomeRepository. Null while loading or
   /// if no HomeRepository was provided.
@@ -108,7 +112,11 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     super.dispose();
   }
 
-  Future<void> _loadWorkspace() async {
+  Future<void> _loadWorkspace({
+    String? workspaceSessionId,
+    bool startNewSession = false,
+  }) async {
+    final requestSerial = ++_workspaceRequestSerial;
     final arguments = widget.routeArguments;
     if (arguments == null || !arguments.isValid) {
       setState(() {
@@ -122,34 +130,174 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     setState(() {
       _isLoadingWorkspace = true;
       _workspaceError = null;
+      if (startNewSession || workspaceSessionId != null) {
+        _resetCurrentChatState(nextActiveSessionId: workspaceSessionId);
+      }
     });
     try {
+      final storedHistory = widget.workspaceRepository.sessionHistory(
+        trackId: arguments.trackId,
+        moduleId: arguments.moduleId,
+      );
+      final resolvedWorkspaceSessionId =
+          workspaceSessionId ??
+          (startNewSession ? null : storedHistory.activeWorkspaceId);
       final workspace = await widget.workspaceRepository
           .createOrResumeWorkspace(
             trackId: arguments.trackId,
             moduleId: arguments.moduleId,
+            workspaceSessionId: resolvedWorkspaceSessionId,
+            startNewSession: startNewSession,
           );
       await widget.workspaceRepository.updateModuleState(
         trackId: arguments.trackId,
         moduleId: arguments.moduleId,
         status: 'active',
       );
-      if (!mounted) return;
+      var history = _sessionHistory;
+      try {
+        history = await widget.workspaceRepository.fetchSessionHistory(
+          trackId: arguments.trackId,
+          moduleId: arguments.moduleId,
+        );
+      } on WorkspaceException {
+        history = _sessionHistory;
+      }
+      if (!mounted || requestSerial != _workspaceRequestSerial) return;
       setState(() {
         _workspace = workspace;
+        _activeSessionId = workspace.id;
         _chatEntries
           ..clear()
           ..addAll(_entriesFromEvents(workspace.events));
         _latestVideoArtifact = _withResolvedArtifactUrls(workspace.latestMedia);
+        _sessionHistory = history;
         _isLoadingWorkspace = false;
       });
       _scrollToBottom();
     } on WorkspaceException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestSerial != _workspaceRequestSerial) return;
       setState(() {
         _isLoadingWorkspace = false;
         _workspaceError = error.message;
       });
+    }
+  }
+
+  Future<void> _startNewChatSession() async {
+    await _loadWorkspace(startNewSession: true);
+  }
+
+  Future<void> _switchToSession(String workspaceId) async {
+    final requestSerial = ++_workspaceRequestSerial;
+    final arguments = widget.routeArguments;
+    if (arguments == null || !arguments.isValid) {
+      return;
+    }
+    if (workspaceId == (_workspace?.id ?? '')) {
+      return;
+    }
+    setState(() {
+      _isLoadingWorkspace = true;
+      _workspaceError = null;
+      _resetCurrentChatState(nextActiveSessionId: workspaceId);
+    });
+    try {
+      final workspace = await widget.workspaceRepository.fetchWorkspace(
+        workspaceId,
+      );
+      await widget.workspaceRepository.setActiveSession(
+        trackId: arguments.trackId,
+        moduleId: arguments.moduleId,
+        workspaceId: workspaceId,
+      );
+      var history = _sessionHistory;
+      try {
+        history = await widget.workspaceRepository.fetchSessionHistory(
+          trackId: arguments.trackId,
+          moduleId: arguments.moduleId,
+        );
+      } on WorkspaceException {
+        history = _sessionHistory;
+      }
+      if (!mounted || requestSerial != _workspaceRequestSerial) {
+        return;
+      }
+      setState(() {
+        _workspace = workspace;
+        _activeSessionId = workspace.id;
+        _chatEntries
+          ..clear()
+          ..addAll(_entriesFromEvents(workspace.events));
+        _latestVideoArtifact = _withResolvedArtifactUrls(workspace.latestMedia);
+        _sessionHistory = history;
+        _isLoadingWorkspace = false;
+      });
+      _scrollToBottom();
+    } on WorkspaceException catch (error) {
+      if (!mounted || requestSerial != _workspaceRequestSerial) {
+        return;
+      }
+      setState(() {
+        _isLoadingWorkspace = false;
+        _workspaceError = error.message;
+      });
+    }
+  }
+
+  void _resetCurrentChatState({String? nextActiveSessionId}) {
+    _workspace = null;
+    _activeSessionId = nextActiveSessionId;
+    _isAppendingEvent = false;
+    _isVideoGenerating = false;
+    _stopVideoPolling = true;
+    _chatEntries.clear();
+    _canvasSnapshots.clear();
+    _contentMode = _WorkspaceContentMode.choosing;
+    _quizState = _WorkspaceQuizState.unanswered;
+    _selectedQuizAnswer = null;
+    _latestVideoStatus = null;
+    _latestVideoArtifact = null;
+    _videoStatusMessage = null;
+    _videoErrorMessage = null;
+  }
+
+  Future<void> _openSessionHistorySheet() async {
+    final arguments = widget.routeArguments;
+    if (arguments == null || !arguments.isValid) {
+      return;
+    }
+    List<WorkspaceSessionSummary> sessions = _sessionHistory;
+    try {
+      sessions = await widget.workspaceRepository.fetchSessionHistory(
+        trackId: arguments.trackId,
+        moduleId: arguments.moduleId,
+      );
+      if (mounted) {
+        setState(() => _sessionHistory = sessions);
+      }
+    } on WorkspaceException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _workspaceError = error.message);
+      return;
+    }
+    if (!mounted || sessions.isEmpty) {
+      return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return _WorkspaceHistorySheet(
+          sessions: sessions,
+          activeSessionId: _activeSessionId,
+        );
+      },
+    );
+    if (selected != null) {
+      await _switchToSession(selected);
     }
   }
 
@@ -1407,6 +1555,12 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
+    if (_isLoadingWorkspace || _workspace == null) {
+      setState(() {
+        _workspaceError = 'Chat session is still loading.';
+      });
+      return;
+    }
 
     _messageController.clear();
     setState(() {
@@ -1439,9 +1593,23 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         textPayload: textPayload,
         metadata: metadata,
       );
-      if (!mounted) return;
+      if (!mounted || _workspace?.id != workspace.id) return;
+      final arguments = widget.routeArguments;
+      var history = _sessionHistory;
+      if (arguments != null && arguments.isValid) {
+        try {
+          history = await widget.workspaceRepository.fetchSessionHistory(
+            trackId: arguments.trackId,
+            moduleId: arguments.moduleId,
+          );
+        } on WorkspaceException {
+          history = _sessionHistory;
+        }
+      }
+      if (!mounted || _workspace?.id != workspace.id) return;
       setState(() {
         _workspace = result.workspace;
+        _sessionHistory = history;
         if (result.tutorResponse != null &&
             result.tutorResponse!.text.trim().isNotEmpty) {
           _chatEntries.add(
@@ -1454,7 +1622,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         _isAppendingEvent = false;
       });
     } on WorkspaceException catch (error) {
-      if (!mounted) return;
+      if (!mounted || _workspace?.id != workspace.id) return;
       setState(() {
         _isAppendingEvent = false;
         _workspaceError = error.message;
@@ -1608,6 +1776,34 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 ? 'Connect this module to backend workspace evidence before chatting, sketching, or answering.'
                                 : 'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
                           ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoadingWorkspace
+                                      ? null
+                                      : () {
+                                          unawaited(_startNewChatSession());
+                                        },
+                                  icon: const Icon(Icons.add_comment_outlined),
+                                  label: const Text('New chat'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    unawaited(_openSessionHistorySheet());
+                                  },
+                                  icon: const Icon(Icons.history_rounded),
+                                  label: Text(
+                                    'History (${_sessionHistory.length})',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -1694,6 +1890,104 @@ class _WorkspaceChatEntry {
   final CanvasWorkSnapshot? snapshot;
 
   bool get isCanvas => snapshot != null;
+}
+
+class _WorkspaceHistorySheet extends StatelessWidget {
+  const _WorkspaceHistorySheet({
+    required this.sessions,
+    required this.activeSessionId,
+  });
+
+  final List<WorkspaceSessionSummary> sessions;
+  final String? activeSessionId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 520),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Text(
+                'Chat history',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: WicaraColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: sessions.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final session = sessions[index];
+                  final isActive = session.id == activeSessionId;
+                  return ListTile(
+                    leading: Icon(
+                      isActive
+                          ? Icons.chat_bubble_rounded
+                          : Icons.chat_bubble_outline_rounded,
+                      color: isActive
+                          ? WicaraColors.primary
+                          : WicaraColors.muted,
+                    ),
+                    title: Text(
+                      session.title.isEmpty ? 'New chat' : session.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      _historySubtitle(session),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: isActive
+                        ? const Icon(Icons.check_rounded)
+                        : const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).pop(session.id),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _historySubtitle(WorkspaceSessionSummary session) {
+    final parts = <String>[];
+    if (session.preview.isNotEmpty) {
+      parts.add(session.preview);
+    }
+    final countLabel = session.messageCount == 1
+        ? '1 message'
+        : '${session.messageCount} messages';
+    parts.add(countLabel);
+    final timeLabel = _compactDate(session.updatedAt);
+    if (timeLabel.isNotEmpty) {
+      parts.add(timeLabel);
+    }
+    return parts.join(' | ');
+  }
+
+  String _compactDate(String value) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) {
+      return '';
+    }
+    final local = parsed.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.day}/${local.month} $hour:$minute';
+  }
 }
 
 class _VideoGenerationPayload {
@@ -3596,10 +3890,7 @@ class _WorkspacePanel extends StatelessWidget {
 /// chatbot whenever the HomeRepository is configured. It displays the user's
 /// latest weekly learning progress so they can pick up where they left off.
 class _WeeklyReportChatCard extends StatelessWidget {
-  const _WeeklyReportChatCard({
-    required this.report,
-    this.onDismiss,
-  });
+  const _WeeklyReportChatCard({required this.report, this.onDismiss});
 
   final WeeklyLearningReport report;
   final VoidCallback? onDismiss;

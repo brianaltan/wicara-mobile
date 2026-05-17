@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiClient {
@@ -12,6 +13,25 @@ class ApiClient {
     'WICARA_API_BASE_URL',
     defaultValue: deployedBaseUrl,
   );
+
+  /// Prevents a loopback URL from being used in web environments where the
+  /// app is not served from localhost/127.0.0.1.
+  static String resolveRuntimeBaseUrl(String configuredBaseUrl) {
+    final configuredUri = Uri.tryParse(configuredBaseUrl);
+    if (configuredUri == null) return configuredBaseUrl;
+    if (!kIsWeb) return configuredBaseUrl;
+
+    final configuredHost = configuredUri.host.toLowerCase();
+    final isConfiguredLoopback =
+        configuredHost == '127.0.0.1' || configuredHost == 'localhost';
+    if (!isConfiguredLoopback) return configuredBaseUrl;
+
+    final webHost = Uri.base.host.toLowerCase();
+    final isWebLoopback = webHost == '127.0.0.1' || webHost == 'localhost';
+    if (isWebLoopback) return configuredBaseUrl;
+
+    return deployedBaseUrl;
+  }
 
   final String baseUrl;
   final http.Client _httpClient;
@@ -207,8 +227,7 @@ String _errorMessage(
   http.Response response, {
   required String method,
   required Uri uri,
-}) =>
-    _errorMessageAndDetail(response, method: method, uri: uri).$1;
+}) => _errorMessageAndDetail(response, method: method, uri: uri).$1;
 
 class ApiClientException implements Exception {
   const ApiClientException(this.message, {this.detail});

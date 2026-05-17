@@ -265,6 +265,12 @@ LearningConceptSuggestion _conceptFromJson(Map<String, dynamic> json) {
     conceptCode: _stringValue(json['concept_code']),
     title: _stringValue(json['title']),
     description: _stringValue(json['description']),
+    idDesc: _stringValue(
+      json['id_desc'].isEmpty
+          ? json['description']
+          : json['id_desc'],
+    ),
+    enDesc: _stringValue(json['en_desc']),
     subjectCode: _stringValue(json['subject_code']),
     subject: _stringValue(json['subject']),
     gradeBand: _nullableString(json['grade_band']),

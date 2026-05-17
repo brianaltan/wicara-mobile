@@ -48,6 +48,8 @@ class LearningConceptSuggestion {
     required this.title,
     required this.subject,
     this.description = '',
+    this.idDesc = '',
+    this.enDesc = '',
     this.subjectCode = '',
     this.gradeBand,
     this.gradeRelation,
@@ -60,11 +62,21 @@ class LearningConceptSuggestion {
   final String title;
   final String subject;
   final String description;
+  final String idDesc;
+  final String enDesc;
   final String subjectCode;
   final String? gradeBand;
   final String? gradeRelation;
   final String? levelNote;
   final double? confidence;
+
+  String descriptionFor({required bool isIndonesian}) {
+    final localized = isIndonesian ? idDesc : enDesc;
+    if (localized.isNotEmpty) {
+      return localized;
+    }
+    return description;
+  }
 }
 
 class LearningGoalResolution {

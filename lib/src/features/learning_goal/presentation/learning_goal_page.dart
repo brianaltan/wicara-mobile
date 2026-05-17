@@ -230,9 +230,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   /// Cancels a specific goal by ID (used when resolving a conflict).
   Future<void> _cancelActiveGoalById(String goalId) async {
     try {
-      await widget.learningGoalRepository.cancelGoal(
-        learningGoalId: goalId,
-      );
+      await widget.learningGoalRepository.cancelGoal(learningGoalId: goalId);
       if (!mounted) return;
       setState(() {
         _activeGoal = null;
@@ -252,7 +250,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
         );
     }
   }
-
 
   Future<void> _cancelActiveGoal() async {
     final activeGoal = _activeGoal;
@@ -333,7 +330,9 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           : 'Find learning goal node';
     }
     if (resolution.suggestedConcept == null) {
-      return copy.isIndonesian ? 'Cari ulang dengan query baru' : 'Search again';
+      return copy.isIndonesian
+          ? 'Cari ulang dengan query baru'
+          : 'Search again';
     }
     return copy.isIndonesian
         ? 'Node cocok, mulai pretest'
@@ -495,10 +494,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: math.max(
-                            0.0,
-                            constraints.maxHeight - 42,
-                          ),
+                          minHeight: math.max(0.0, constraints.maxHeight - 42),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -579,9 +575,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
-                                        borderRadius: BorderRadius.circular(
-                                          15,
-                                        ),
+                                        borderRadius: BorderRadius.circular(15),
                                         border: Border.all(
                                           color: WicaraColors.line,
                                           width: 1.2,
@@ -621,17 +615,14 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                                   .titleMedium
                                                   ?.copyWith(
                                                     fontSize: 15,
-                                                    fontWeight:
-                                                        FontWeight.w700,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                             ),
                                             const SizedBox(height: 13),
                                             _SubjectSelector(
                                               choices: subjectChoices,
-                                              selectedCode:
-                                                  selectedSubjectCode,
-                                              isIndonesian:
-                                                  copy.isIndonesian,
+                                              selectedCode: selectedSubjectCode,
+                                              isIndonesian: copy.isIndonesian,
                                               onSelected: _selectSubject,
                                             ),
                                             const SizedBox(height: 14),
@@ -668,9 +659,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                             ),
                                             const SizedBox(height: 22),
                                             GradientButton(
-                                              label: _primaryActionLabel(
-                                                copy,
-                                              ),
+                                              label: _primaryActionLabel(copy),
                                               onPressed: _primaryAction(),
                                               isLoading: _isGenerating,
                                             ),
@@ -943,23 +932,17 @@ class _ResolutionNotice extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onRefine,
                   icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text(
-                    isIndonesian ? 'Perjelas query' : 'Refine query',
-                  ),
+                  label: Text(isIndonesian ? 'Perjelas query' : 'Refine query'),
                 ),
                 TextButton.icon(
                   onPressed: onManualSearch,
                   icon: const Icon(Icons.search_rounded, size: 18),
-                  label: Text(
-                    isIndonesian ? 'Cari manual' : 'Manual search',
-                  ),
+                  label: Text(isIndonesian ? 'Cari manual' : 'Manual search'),
                 ),
                 TextButton.icon(
                   onPressed: onOpenGraph,
                   icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  label: Text(
-                    isIndonesian ? 'Lihat graph' : 'Open graph',
-                  ),
+                  label: Text(isIndonesian ? 'Lihat graph' : 'Open graph'),
                 ),
               ],
             ),
@@ -1015,8 +998,8 @@ class _ResolutionNotice extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            concept.description.isNotEmpty
-                ? concept.description
+            concept.descriptionFor(isIndonesian: isIndonesian).isNotEmpty
+                ? concept.descriptionFor(isIndonesian: isIndonesian)
                 : isIndonesian
                 ? 'Node ini dipakai sebagai learning goal utama untuk pretest adaptif.'
                 : 'This node will be used as the main learning goal for the adaptive pretest.',
@@ -1088,9 +1071,7 @@ class _ResolutionNotice extends StatelessWidget {
                 onPressed: onRefine,
                 icon: const Icon(Icons.edit_outlined, size: 18),
                 label: Text(
-                  isIndonesian
-                      ? 'Belum cocok? Perjelas'
-                      : 'Not right? Refine',
+                  isIndonesian ? 'Belum cocok? Perjelas' : 'Not right? Refine',
                 ),
               ),
               TextButton.icon(
@@ -1150,8 +1131,10 @@ class _AlternativeNodeButton extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  suggestion.description.isNotEmpty
-                      ? suggestion.description
+                  suggestion
+                          .descriptionFor(isIndonesian: isIndonesian)
+                          .isNotEmpty
+                      ? suggestion.descriptionFor(isIndonesian: isIndonesian)
                       : isIndonesian
                       ? 'Lihat apakah node ini lebih cocok dengan tujuanmu.'
                       : 'Check whether this node better matches your goal.',
@@ -1201,11 +1184,7 @@ class _AlternativeNodeButton extends StatelessWidget {
 }
 
 class _NoticeHeader extends StatelessWidget {
-  const _NoticeHeader({
-    required this.icon,
-    required this.title,
-    this.trailing,
-  });
+  const _NoticeHeader({required this.icon, required this.title, this.trailing});
 
   final IconData icon;
   final String title;
@@ -1234,10 +1213,7 @@ class _NoticeHeader extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerRight,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: WicaraColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(999),

@@ -2,25 +2,27 @@ import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
-import 'workspace_session_store.dart';
+import 'workspace_session_store.dart' as store;
 
 class ApiWorkspaceRepository implements WorkspaceRepository {
   const ApiWorkspaceRepository({
     required ApiClient apiClient,
     required AuthSessionStore sessionStore,
-    required WorkspaceSessionStore workspaceSessionStore,
+    required store.WorkspaceSessionStore workspaceSessionStore,
   }) : _apiClient = apiClient,
        _sessionStore = sessionStore,
        _workspaceSessionStore = workspaceSessionStore;
 
   final ApiClient _apiClient;
   final AuthSessionStore _sessionStore;
-  final WorkspaceSessionStore _workspaceSessionStore;
+  final store.WorkspaceSessionStore _workspaceSessionStore;
 
   @override
   Future<WorkspaceSession> createOrResumeWorkspace({
     required String trackId,
     required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
   }) async {
     final token = _requireToken();
     try {
@@ -31,17 +33,69 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
           'track_id': trackId,
           'module_id': moduleId,
           'content_mode': 'chat',
+          'workspace_session_id': _nullableString(workspaceSessionId),
+          'start_new_session': startNewSession,
         },
       );
       final workspace = workspaceFromJson(json);
-      // Persist using the keyed store so every (track, module) pair keeps its
-      // own workspace ID independently of other open sessions.
-      await _workspaceSessionStore.save(
+      await _workspaceSessionStore.saveAndSetActive(
         trackId: trackId,
         moduleId: moduleId,
         workspaceId: workspace.id,
       );
       return workspace;
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) {
+    final history = _workspaceSessionStore.sessionHistoryFor(
+      trackId: trackId,
+      moduleId: moduleId,
+    );
+    return WorkspaceSessionHistory(
+      activeWorkspaceId: history.activeWorkspaceId,
+      workspaceIds: history.workspaceIds,
+    );
+  }
+
+  @override
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  }) {
+    return _workspaceSessionStore.setActiveWorkspaceId(
+      trackId: trackId,
+      moduleId: moduleId,
+      workspaceId: workspaceId,
+    );
+  }
+
+  @override
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) async {
+    final token = _requireToken();
+    try {
+      final json = await _apiClient.getJson(
+        '/api/v1/workspaces',
+        headers: {'Authorization': 'Bearer $token'},
+        queryParameters: {'track_id': trackId, 'module_id': moduleId},
+      );
+      final sessions = json['sessions'];
+      return sessions is List
+          ? sessions
+                .whereType<Map<String, dynamic>>()
+                .map(workspaceSessionSummaryFromJson)
+                .toList(growable: false)
+          : const [];
     } on ApiClientException catch (error) {
       throw WorkspaceException(error.message);
     }
@@ -176,6 +230,21 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     }
     return token;
   }
+}
+
+WorkspaceSessionSummary workspaceSessionSummaryFromJson(
+  Map<String, dynamic> json,
+) {
+  return WorkspaceSessionSummary(
+    id: _string(json['id']),
+    trackId: _string(json['track_id']),
+    moduleId: _string(json['module_id']),
+    title: _string(json['title']),
+    preview: _string(json['preview']),
+    messageCount: _int(json['message_count']),
+    createdAt: _string(json['created_at']),
+    updatedAt: _string(json['updated_at']),
+  );
 }
 
 WorkspaceSession workspaceFromJson(Map<String, dynamic> json) {

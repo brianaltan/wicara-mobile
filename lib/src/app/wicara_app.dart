@@ -218,6 +218,33 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
   Future<WorkspaceSession> createOrResumeWorkspace({
     required String trackId,
     required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
+    required String trackId,
+    required String moduleId,
   }) {
     throw UnimplementedError('WorkspaceRepository is not configured.');
   }
