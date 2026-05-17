@@ -22,6 +22,22 @@ abstract class HomeRepository {
     required String sessionId,
   });
 
+  Future<DailyEvaluationSession> startPosttest({
+    String? learningGoalId,
+    String? trackId,
+  });
+
+  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  });
+
+  Future<DailyEvaluationResult> finalizePosttest({
+    required String sessionId,
+  });
+
   Future<WeeklyLearningReport> fetchWeeklyLearningReport({
     DateTime? start,
     DateTime? end,

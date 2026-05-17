@@ -211,7 +211,11 @@ class _PretestPageState extends State<PretestPage> {
   void _goHome() {
     Navigator.of(
       context,
-    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+    ).pushNamedAndRemoveUntil(
+      AppRoutes.home,
+      (route) => false,
+      arguments: const {'auto_open_workspace': true},
+    );
   }
 
   void _openLargeCanvas() {

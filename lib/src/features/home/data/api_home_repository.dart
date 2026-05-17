@@ -163,6 +163,67 @@ class ApiHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<DailyEvaluationSession> startPosttest({
+    String? learningGoalId,
+    String? trackId,
+  }) async {
+    final token = _requireToken();
+    final body = <String, dynamic>{};
+    if ((learningGoalId ?? '').isNotEmpty) {
+      body['learning_goal_id'] = learningGoalId;
+    }
+    if ((trackId ?? '').isNotEmpty) {
+      body['track_id'] = trackId;
+    }
+    final json = await _apiClient.postJson(
+      '/api/v1/posttests/start',
+      headers: {'Authorization': 'Bearer $token'},
+      body: body,
+    );
+    return _posttestSessionFromJson(json);
+  }
+
+  @override
+  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) async {
+    final token = _requireToken();
+    final json = await _apiClient.postJson(
+      '/api/v1/posttests/$sessionId/answers',
+      headers: {'Authorization': 'Bearer $token'},
+      body: {
+        'question_id': questionId,
+        'selected_option_id': optionId,
+        'confidence': confidence,
+      },
+    );
+    return DailyEvaluationAnswerResult(
+      attemptId: _string(json['attempt_id']),
+      isCorrect: json['is_correct'] == true,
+      nextReviewLabel: '',
+      masteryDelta: 0,
+      sessionStatus: json['completed'] == true ? 'completed' : 'active',
+      completed: json['completed'] == true,
+    );
+  }
+
+  @override
+  Future<DailyEvaluationResult> finalizePosttest({
+    required String sessionId,
+  }) async {
+    final token = _requireToken();
+    final json = await _apiClient.postJson(
+      '/api/v1/posttests/$sessionId/finalize',
+      headers: {'Authorization': 'Bearer $token'},
+      body: const {},
+    );
+    return _posttestResultFromJson(json, sessionId: sessionId);
+  }
+
+  @override
   Future<WeeklyLearningReport> fetchWeeklyLearningReport({
     DateTime? start,
     DateTime? end,
@@ -315,6 +376,116 @@ class ApiHomeRepository implements HomeRepository {
       backToHome: _actionTargetFromJson(
         json['back_to_home'],
         fallbackLabel: 'Back to Home',
+      ),
+    );
+  }
+
+  DailyEvaluationSession _posttestSessionFromJson(Map<String, dynamic> json) {
+    final questions = json['questions'];
+    final parsedQuestions = questions is List
+        ? questions
+              .whereType<Map<String, dynamic>>()
+              .map(questionFromJson)
+              .toList(growable: false)
+        : const <PretestQuestion>[];
+    final currentQuestionJson = json['current_question'];
+    final currentQuestion = currentQuestionJson is Map<String, dynamic>
+        ? questionFromJson(currentQuestionJson)
+        : (parsedQuestions.isEmpty ? null : parsedQuestions.first);
+    final totalQuestions = _int(json['total_questions']);
+    final answered = _int(json['question_count']);
+    final safeCurrent = (answered + 1)
+        .clamp(1, totalQuestions == 0 ? 1 : totalQuestions)
+        .toInt();
+    return DailyEvaluationSession(
+      sessionId: _string(json['session_id']),
+      title: 'Adaptive Posttest',
+      status: _stringWithFallback(json['status'], 'active'),
+      language: 'id',
+      source: 'adaptive_generated',
+      reviewDue: ReviewDueSummary(
+        title: 'Posttest siap',
+        dueCount: totalQuestions,
+        summary: '$totalQuestions soal untuk validasi mastery per node.',
+        actionLabel: 'Mulai',
+      ),
+      progress: DailyEvaluationProgress(
+        current: safeCurrent,
+        total: totalQuestions,
+        completed: answered,
+        label: '$safeCurrent of $totalQuestions',
+      ),
+      currentQuestion: currentQuestion,
+      questions: parsedQuestions,
+      retentionForecast: const RetentionForecast(
+        title: 'Target posttest',
+        basis: 'Pass score per node minimal 7.0.',
+        points: [
+          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
+          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
+        ],
+      ),
+      recommendationCallout: const RecommendationCallout(
+        title: 'Mastery gate',
+        message: 'Node dengan skor <7 wajib retake dan badge tidak diberikan.',
+        impactLabel: 'Posttest',
+        actionLabel: 'Jawab',
+      ),
+    );
+  }
+
+  DailyEvaluationResult _posttestResultFromJson(
+    Map<String, dynamic> json, {
+    required String sessionId,
+  }) {
+    final nodeResults = json['node_results'];
+    final nodes = nodeResults is List
+        ? nodeResults.whereType<Map<String, dynamic>>().toList(growable: false)
+        : const <Map<String, dynamic>>[];
+    final totalNodes = nodes.length;
+    final passedNodes = nodes.where((item) => item['passed'] == true).length;
+    final scorePercent = totalNodes == 0 ? 0 : ((passedNodes / totalNodes) * 100).round();
+    return DailyEvaluationResult(
+      sessionId: sessionId,
+      title: 'Adaptive Posttest',
+      status: _stringWithFallback(json['status'], 'completed'),
+      source: 'adaptive_generated',
+      scorePercent: scorePercent,
+      reviewedCount: totalNodes,
+      correctCount: passedNodes,
+      reviewAgainCount: totalNodes - passedNodes,
+      reviewedConcepts: nodes
+          .map(
+            (item) => ReviewedConcept(
+              title: _string(item['concept_title']),
+              statusLabel: item['passed'] == true ? 'Strong' : 'Retake',
+              masteryScore: _double(item['scaled_score']) / 10,
+            ),
+          )
+          .toList(growable: false),
+      spacedRepetitionImpact: SpacedRepetitionImpact(
+        retentionLiftPercent: scorePercent,
+        daysUntilNextReview: passedNodes == totalNodes ? 7 : 1,
+        summary: '$passedNodes/$totalNodes nodes passed mastery gate.',
+      ),
+      nextReview: DailyEvaluationNextReview(
+        label: passedNodes == totalNodes ? 'Review ringan' : 'Retake posttest',
+        dueDate: '',
+        intervalDays: passedNodes == totalNodes ? 7 : 1,
+      ),
+      recommendedNextActions: [
+        RecommendedNextAction(
+          title: passedNodes == totalNodes ? 'Lanjut materi berikutnya' : 'Retake node yang gagal',
+          actionType: passedNodes == totalNodes ? 'continue_learning' : 'practice',
+          reason: passedNodes == totalNodes
+              ? 'Semua node posttest lulus.'
+              : 'Beberapa node belum mencapai skor minimum 7.',
+        ),
+      ],
+      backToHome: const ActionTarget(
+        label: 'Kembali ke Home',
+        actionType: 'navigate',
+        target: '/home',
       ),
     );
   }

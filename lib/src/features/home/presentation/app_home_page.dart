@@ -21,7 +21,6 @@ import '../../onboarding/domain/onboarding_profile.dart';
 import '../../onboarding/presentation/widgets/subject_tile.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
-import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/presentation/widgets/assessment_option_tile.dart';
 import '../../workspace/domain/workspace_models.dart';
@@ -57,6 +56,13 @@ bool _shouldOpenKnowledgeMap(Object? arguments) {
     return true;
   }
   return subjectCode is String && subjectCode.trim().isNotEmpty;
+}
+
+bool _shouldAutoOpenWorkspace(Object? arguments) {
+  if (arguments is! Map) {
+    return false;
+  }
+  return arguments['auto_open_workspace'] == true;
 }
 
 class AppHomePage extends StatefulWidget {
@@ -97,28 +103,76 @@ class _AppHomePageState extends State<AppHomePage> {
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
   DailyEvaluationResult? _posttestResult;
-  String _posttestModuleTitle = 'Perkalian';
+  String? _posttestSessionId;
+  DailyEvaluationSession? _posttestSessionData;
+  List<PretestQuestion> _backendPosttestQuestions = const [];
+  bool _isLoadingPosttest = false;
+  bool _isSubmittingPosttest = false;
+  String? _posttestError;
+  String _lastCompletedTrackId = '';
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
   bool _isLoadingDailyEvaluation = false;
   bool _isSubmittingDailyEvaluation = false;
   String? _dailyEvaluationError;
   String? _lastSyncedProfileFingerprint;
   late Future<HomeSnapshot> _homeSnapshotFuture;
-
-  HardcodedAssessmentPack get _assessmentPack {
-    return HardcodedAssessmentBank.packForEducation(
-      educationLevel: widget.onboardingController.profile.educationLevel,
-      gradeLevel: widget.onboardingController.profile.gradeLevel,
-    );
-  }
+  bool _autoOpenWorkspacePending = false;
 
   @override
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
+    _autoOpenWorkspacePending = _shouldAutoOpenWorkspace(widget.routeArguments);
     if (_shouldOpenKnowledgeMap(widget.routeArguments)) {
       _selectedTab = _HomeTab.progress;
       _showKnowledgeMap = true;
+    }
+    if (_autoOpenWorkspacePending) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _autoOpenWorkspaceAfterPretest();
+      });
+    }
+  }
+
+  Future<void> _autoOpenWorkspaceAfterPretest() async {
+    if (!_autoOpenWorkspacePending || !mounted) {
+      return;
+    }
+    _autoOpenWorkspacePending = false;
+    try {
+      final snapshot = await _homeSnapshotFuture;
+      if (!mounted) {
+        return;
+      }
+      final target = snapshot.firstWorkspaceTarget;
+      if (target == null || !target.isValid) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        return;
+      }
+      await _syncOnboardingProfileFromSnapshot(snapshot);
+      if (!mounted) {
+        return;
+      }
+      await _openWorkspaceModules(target);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Gagal auto-open workspace setelah pretest.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
     }
   }
 
@@ -371,12 +425,12 @@ class _AppHomePageState extends State<AppHomePage> {
     if (!mounted) return;
     _retryHomeSnapshot();
     if (result is WorkspaceCompletionResult) {
-      _openPosttest();
+      _lastCompletedTrackId = result.trackId;
+      _openPosttest(trackId: result.trackId);
     }
   }
 
-  void _openPosttest() {
-    final assessmentPack = _assessmentPack;
+  Future<void> _openPosttest({String? trackId}) async {
     setState(() {
       _selectedTab = _HomeTab.home;
       _showGalleryDetail = false;
@@ -389,37 +443,98 @@ class _AppHomePageState extends State<AppHomePage> {
       _posttestIndex = 0;
       _posttestAnswers.clear();
       _posttestResult = null;
-      _posttestModuleTitle = assessmentPack.topicTitle;
+      _posttestSessionId = null;
+      _posttestSessionData = null;
+      _backendPosttestQuestions = const [];
+      _posttestError = null;
+      _isLoadingPosttest = true;
     });
+    try {
+      final session = await widget.homeRepository.startPosttest(
+        trackId: (trackId ?? _lastCompletedTrackId).isEmpty
+            ? null
+            : (trackId ?? _lastCompletedTrackId),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _posttestSessionId = session.sessionId;
+        _posttestSessionData = session;
+        _backendPosttestQuestions = session.questions;
+        _posttestIndex = _initialPosttestIndex(session);
+        _isLoadingPosttest = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _posttestError = error.toString();
+        _isLoadingPosttest = false;
+      });
+    }
   }
 
   void _selectPosttestAnswer(String optionId) {
     setState(() => _posttestAnswers[_posttestIndex] = optionId);
   }
 
-  void _nextPosttestQuestion() {
-    final assessmentPack = _assessmentPack;
-    final questions = assessmentPack.posttestQuestions;
+  Future<void> _nextPosttestQuestion() async {
+    final sessionId = _posttestSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    final questions = _backendPosttestQuestions;
     final optionId = _posttestAnswers[_posttestIndex];
-    if (optionId == null || optionId.isEmpty) {
+    if (optionId == null || optionId.isEmpty || _isSubmittingPosttest) {
       return;
     }
-
-    final isLastQuestion = _posttestIndex >= questions.length - 1;
-    if (!isLastQuestion) {
-      setState(() => _posttestIndex += 1);
-      return;
+    setState(() => _isSubmittingPosttest = true);
+    try {
+      final answerResult = await widget.homeRepository.submitPosttestAnswer(
+        sessionId: sessionId,
+        questionId: questions[_posttestIndex].id,
+        optionId: optionId,
+        confidence: 6,
+      );
+      if (!mounted) {
+        return;
+      }
+      final isLastQuestion = _posttestIndex >= questions.length - 1;
+      if (!isLastQuestion && !answerResult.completed) {
+        setState(() {
+          _posttestIndex += 1;
+          _isSubmittingPosttest = false;
+        });
+        return;
+      }
+      final result = await widget.homeRepository.finalizePosttest(
+        sessionId: sessionId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmittingPosttest = false;
+        _posttestResult = result;
+        _showPosttest = false;
+        _showPosttestResult = true;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isSubmittingPosttest = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
     }
-
-    final correctCount = assessmentPack.correctCount(
-      kind: HardcodedAssessmentKind.posttest,
-      selectedAnswers: _posttestAnswers,
-    );
-    setState(() {
-      _posttestResult = _buildPosttestResult(correctCount);
-      _showPosttest = false;
-      _showPosttestResult = true;
-    });
   }
 
   void _previousPosttestQuestion() {
@@ -431,117 +546,20 @@ class _AppHomePageState extends State<AppHomePage> {
     setState(() => _posttestIndex -= 1);
   }
 
-  DailyEvaluationSession _posttestSession() {
-    final assessmentPack = _assessmentPack;
-    final questions = assessmentPack.posttestQuestions;
-    return DailyEvaluationSession(
-      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
-      title: assessmentPack.posttestTitle,
-      language: 'id',
-      reviewDue: ReviewDueSummary(
-        title: 'Posttest siap',
-        dueCount: questions.length,
-        summary:
-            '${questions.length} soal untuk mengecek pemahaman $_posttestModuleTitle.',
-        actionLabel: 'Mulai',
-      ),
-      progress: DailyEvaluationProgress(
-        current: _posttestIndex + 1,
-        total: questions.length,
-        completed: _posttestIndex,
-        label: '${_posttestIndex + 1} of ${questions.length}',
-      ),
-      currentQuestion: questions[_posttestIndex],
-      questions: questions,
-      retentionForecast: const RetentionForecast(
-        title: 'Target posttest',
-        basis: 'Selesaikan soal untuk melihat nilai akhir.',
-        points: [
-          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
-          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
-        ],
-      ),
-      recommendationCallout: const RecommendationCallout(
-        title: 'Cek pemahaman',
-        message:
-            'Nilai posttest dihitung dari jumlah jawaban benar pada 10 soal.',
-        impactLabel: 'Posttest',
-        actionLabel: 'Jawab',
-      ),
-    );
-  }
-
-  DailyEvaluationResult _buildPosttestResult(int correctCount) {
-    final assessmentPack = _assessmentPack;
-    final totalQuestions = assessmentPack.posttestQuestions.length;
-    final reviewAgainCount = totalQuestions - correctCount;
-    final scorePercent = ((correctCount / totalQuestions) * 100).round();
-    final passed = correctCount >= 7;
-    return DailyEvaluationResult(
-      sessionId: 'hardcoded-posttest-${assessmentPack.id}',
-      title: assessmentPack.posttestTitle,
-      status: 'completed',
-      source: 'hardcoded_mobile',
-      scorePercent: scorePercent,
-      reviewedCount: totalQuestions,
-      correctCount: correctCount,
-      reviewAgainCount: reviewAgainCount,
-      reviewedConcepts: [
-        ReviewedConcept(
-          title: assessmentPack.focusAreas[0].title,
-          statusLabel: passed ? 'Strong' : 'Review',
-          masteryScore: passed ? 0.86 : 0.45,
-        ),
-        ReviewedConcept(
-          title: assessmentPack.focusAreas[1].title,
-          statusLabel: correctCount >= 6 ? 'Good' : 'Review',
-          masteryScore: correctCount >= 6 ? 0.72 : 0.4,
-        ),
-        ReviewedConcept(
-          title: assessmentPack.focusAreas[2].title,
-          statusLabel: correctCount >= 8 ? 'Strong' : 'Review',
-          masteryScore: correctCount >= 8 ? 0.9 : 0.5,
-        ),
-        ReviewedConcept(
-          title: assessmentPack.topicTitle,
-          statusLabel: passed ? 'Good' : 'Review',
-          masteryScore: passed ? 0.76 : 0.42,
-        ),
-      ],
-      spacedRepetitionImpact: SpacedRepetitionImpact(
-        retentionLiftPercent: scorePercent,
-        daysUntilNextReview: passed ? 7 : 1,
-        summary:
-            'Posttest: $correctCount jawaban benar dari $totalQuestions soal.',
-      ),
-      nextReview: DailyEvaluationNextReview(
-        label: passed ? 'Review ringan' : 'Ulangi segera',
-        dueDate: '',
-        intervalDays: passed ? 7 : 1,
-      ),
-      recommendedNextActions: [
-        RecommendedNextAction(
-          title: passed
-              ? 'Lanjut materi berikutnya'
-              : 'Ulangi ${assessmentPack.topicTitle}',
-          actionType: passed ? 'continue_learning' : 'practice',
-          reason: passed
-              ? 'Skor posttest cukup kuat untuk lanjut.'
-              : 'Perkuat lagi fondasi ${assessmentPack.topicTitle}.',
-        ),
-        RecommendedNextAction(
-          title: 'Review: ${assessmentPack.topicTitle}',
-          actionType: 'review',
-          reason:
-              'Simpan konsep ${assessmentPack.topicTitle} ke jadwal review.',
-        ),
-      ],
-      backToHome: const ActionTarget(
-        label: 'Kembali ke Home',
-        actionType: 'navigate',
-        target: '/home',
-      ),
-    );
+  int _initialPosttestIndex(DailyEvaluationSession session) {
+    final currentQuestionId = session.currentQuestion?.id;
+    if (currentQuestionId != null && currentQuestionId.isNotEmpty) {
+      final index = session.questions.indexWhere(
+        (question) => question.id == currentQuestionId,
+      );
+      if (index >= 0) {
+        return index;
+      }
+    }
+    if (session.questions.isEmpty) {
+      return 0;
+    }
+    return session.progress.completed.clamp(0, session.questions.length - 1).toInt();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -660,24 +678,47 @@ class _AppHomePageState extends State<AppHomePage> {
       widget.onboardingController.profile.preferredLanguage,
     );
     if (_showPosttest) {
-      final assessmentPack = _assessmentPack;
-      final session = _posttestSession();
+      if (_isLoadingPosttest) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: copy.isIndonesian ? 'Memuat Posttest' : 'Loading Posttest',
+          message: copy.isIndonesian
+              ? 'Menyiapkan soal posttest adaptif dari backend.'
+              : 'Preparing adaptive posttest from backend.',
+        );
+      }
+      if (_posttestError != null || _backendPosttestQuestions.isEmpty) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: copy.isIndonesian ? 'Posttest tidak tersedia' : 'Posttest unavailable',
+          message: _posttestError ??
+              (copy.isIndonesian
+                  ? 'Backend tidak mengembalikan soal posttest.'
+                  : 'Backend returned no posttest questions.'),
+          actionLabel: copy.isIndonesian ? 'Coba lagi' : 'Try again',
+          onAction: () {
+            _openPosttest();
+          },
+        );
+      }
+      final session = _posttestSessionData!;
       return _DailyEvaluationQuestionPage(
         constraints: constraints,
-        session: session,
-        question: session.questions[_posttestIndex],
+        session: _posttestSessionData,
+        question: _backendPosttestQuestions[_posttestIndex],
         questionIndex: _posttestIndex,
-        totalQuestions: session.questions.length,
+        totalQuestions: _backendPosttestQuestions.length,
         selectedOptionId: _posttestAnswers[_posttestIndex],
         onBack: _previousPosttestQuestion,
         onSelected: _selectPosttestAnswer,
-        isSubmitting: false,
-        sectionLabel: assessmentPack.posttestTitle,
-        subtitle:
-            'Jawab 10 soal untuk melihat berapa banyak jawaban benar setelah belajar.',
+        isSubmitting: _isSubmittingPosttest,
+        sectionLabel: session.title,
+        subtitle: 'Jawab 3 soal per node untuk mengecek mastery.',
         nextLabel: 'Lanjut',
         finishLabel: 'Selesai posttest',
-        onSubmit: _nextPosttestQuestion,
+        onSubmit: () {
+          _nextPosttestQuestion();
+        },
       );
     }
 
