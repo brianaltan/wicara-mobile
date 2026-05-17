@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../domain/pretest_models.dart';
@@ -209,9 +210,7 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   void _goHome() {
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(
+    Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.home,
       (route) => false,
       arguments: const {'auto_open_workspace': true},
@@ -244,10 +243,7 @@ class _PretestPageState extends State<PretestPage> {
                     0.0,
                     constraints.maxHeight - verticalPadding * 2,
                   );
-                  final canvasWidth = math.min(
-                    availableWidth,
-                    860.0,
-                  );
+                  final canvasWidth = math.min(availableWidth, 860.0);
                   final canvasHeight = math.min(
                     math.max(availableHeight, 220.0),
                     constraints.maxHeight,
@@ -288,12 +284,27 @@ class _PretestPageState extends State<PretestPage> {
             return Center(
               child: SizedBox(
                 width: pageWidth,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: KeyedSubtree(
-                    key: ValueKey(_stage),
-                    child: _stageView(constraints, copy),
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 10, 16, 8),
+                      child: EdgeRuntimeStatusPanel(),
+                    ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, stageConstraints) {
+                          return AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: KeyedSubtree(
+                              key: ValueKey(_stage),
+                              child: _stageView(stageConstraints, copy),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -599,7 +610,9 @@ class _QuestionStage extends StatelessWidget {
                     label: Text(addEvidenceLabel),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: WicaraColors.secondaryDeep,
-                      side: const BorderSide(color: WicaraColors.secondaryLight),
+                      side: const BorderSide(
+                        color: WicaraColors.secondaryLight,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(13),
                       ),
@@ -775,7 +788,12 @@ class _ReasoningFooter extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(horizontalPadding, 11, horizontalPadding, 14),
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          11,
+          horizontalPadding,
+          14,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1008,7 +1026,8 @@ class _ScoreSummaryCard extends StatelessWidget {
                       '${copy.isIndonesian ? 'Keseluruhan' : 'Overall'} $overallMasteryPercent%',
                     if (confidencePercent != null)
                       '${copy.isIndonesian ? 'Keyakinan' : 'Confidence'} $confidencePercent%',
-                    if (overallMasteryPercent == null && confidencePercent == null)
+                    if (overallMasteryPercent == null &&
+                        confidencePercent == null)
                       'Mastery estimate from adaptive pretest',
                   ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1130,7 +1149,9 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
           if (strengths.isNotEmpty) ...[
             const SizedBox(height: 18),
             _ReportInsightList(
-              title: copy.isIndonesian ? 'Yang sudah kuat' : 'What looks strong',
+              title: copy.isIndonesian
+                  ? 'Yang sudah kuat'
+                  : 'What looks strong',
               icon: Icons.check_circle_outline_rounded,
               color: WicaraColors.secondary,
               items: strengths,
@@ -1139,7 +1160,9 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
           if (gaps.isNotEmpty) ...[
             const SizedBox(height: 14),
             _ReportInsightList(
-              title: copy.isIndonesian ? 'Yang perlu diperbaiki' : 'What needs work',
+              title: copy.isIndonesian
+                  ? 'Yang perlu diperbaiki'
+                  : 'What needs work',
               icon: Icons.warning_amber_rounded,
               color: WicaraColors.accentCoral,
               items: gaps,
@@ -1302,10 +1325,7 @@ class _NodeBreakdownRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              _TinyBadge(
-                label: node.status.toUpperCase(),
-                color: statusColor,
-              ),
+              _TinyBadge(label: node.status.toUpperCase(), color: statusColor),
             ],
           ),
           const SizedBox(height: 9),
@@ -1375,7 +1395,9 @@ class _RecommendedFocusCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  copy.isIndonesian ? 'Fokus path berikutnya' : 'Next path focus',
+                  copy.isIndonesian
+                      ? 'Fokus path berikutnya'
+                      : 'Next path focus',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: WicaraColors.text,
                     fontSize: 16,
@@ -1670,10 +1692,7 @@ class _CanvasPromptBubble extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        _CanvasQuickActionButton(
-          label: buttonLabel,
-          onPressed: onUseCanvas,
-        ),
+        _CanvasQuickActionButton(label: buttonLabel, onPressed: onUseCanvas),
       ],
     );
   }

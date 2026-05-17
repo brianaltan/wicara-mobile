@@ -10,6 +10,7 @@ import '../../home/domain/home_repository.dart';
 import '../../home/domain/home_snapshot.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
+import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 import '../domain/workspace_models.dart';
@@ -1777,6 +1778,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 : 'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
                           ),
                           const SizedBox(height: 10),
+                          const EdgeRuntimeStatusPanel(),
+                          const SizedBox(height: 10),
                           Row(
                             children: [
                               Expanded(
@@ -2891,16 +2894,30 @@ class _WorkspaceVideoPreviewPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, background);
 
-    final circlePaint = Paint()..color = const Color(0xFFBBD8FF).withValues(alpha: 0.45);
-    canvas.drawCircle(Offset(size.width * 0.2, size.height * 0.28), size.shortestSide * 0.16, circlePaint);
-    canvas.drawCircle(Offset(size.width * 0.82, size.height * 0.76), size.shortestSide * 0.2, circlePaint);
+    final circlePaint = Paint()
+      ..color = const Color(0xFFBBD8FF).withValues(alpha: 0.45);
+    canvas.drawCircle(
+      Offset(size.width * 0.2, size.height * 0.28),
+      size.shortestSide * 0.16,
+      circlePaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.82, size.height * 0.76),
+      size.shortestSide * 0.2,
+      circlePaint,
+    );
 
     final framePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = const Color(0xFF9EC3F8);
     final frameRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.14, size.height * 0.2, size.width * 0.72, size.height * 0.6),
+      Rect.fromLTWH(
+        size.width * 0.14,
+        size.height * 0.2,
+        size.width * 0.72,
+        size.height * 0.6,
+      ),
       const Radius.circular(12),
     );
     canvas.drawRRect(frameRect, framePaint);
