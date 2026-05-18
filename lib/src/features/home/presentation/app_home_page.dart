@@ -10342,59 +10342,56 @@ class _KnowledgeConceptDetailPanelState
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: WicaraColors.fieldFill,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: WicaraColors.line),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          copy.crossSubjectConnectionsLabel,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: WicaraColors.text,
-                                fontWeight: FontWeight.w800,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          copy.graphOfGraphsHint,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: WicaraColors.muted,
-                                fontWeight: FontWeight.w600,
-                                height: 1.25,
-                              ),
-                        ),
-                      ],
+            if (crossSubject != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: WicaraColors.fieldFill,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: WicaraColors.line),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            copy.crossSubjectConnectionsLabel,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: WicaraColors.text,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            copy.graphOfGraphsHint,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: WicaraColors.muted,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.25,
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Switch(
-                    value: _showCrossSubject,
-                    activeThumbColor: WicaraColors.primaryDeep,
-                    activeTrackColor: WicaraColors.primaryLight,
-                    onChanged: (value) =>
-                        setState(() => _showCrossSubject = value),
-                  ),
-                ],
+                    Switch(
+                      value: _showCrossSubject,
+                      activeThumbColor: WicaraColors.primaryDeep,
+                      activeTrackColor: WicaraColors.primaryLight,
+                      onChanged: (value) =>
+                          setState(() => _showCrossSubject = value),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (_showCrossSubject) ...[
-              const SizedBox(height: 10),
-              _CrossSubjectCard(
-                relation: crossSubject,
-                fallbackLabel: node.gradeBand?.isNotEmpty == true
-                    ? node.gradeBand!
-                    : copy.conceptBridgeFallbackLabel,
-              ),
+              if (_showCrossSubject) ...[
+                const SizedBox(height: 10),
+                _CrossSubjectCard(relation: crossSubject),
+              ],
             ],
           ],
         ),
@@ -10474,13 +10471,9 @@ class _ConceptRelationRow extends StatelessWidget {
 }
 
 class _CrossSubjectCard extends StatelessWidget {
-  const _CrossSubjectCard({
-    required this.relation,
-    required this.fallbackLabel,
-  });
+  const _CrossSubjectCard({required this.relation});
 
-  final _ConceptRelationItem? relation;
-  final String fallbackLabel;
+  final _ConceptRelationItem relation;
 
   @override
   Widget build(BuildContext context) {
@@ -10509,9 +10502,7 @@ class _CrossSubjectCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              relation == null
-                  ? fallbackLabel
-                  : '${relation!.label} - ${relation!.subjectName}',
+              _crossSubjectCardTitle(relation),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -10582,21 +10573,52 @@ class _NodeStatusDot extends StatelessWidget {
 }
 
 String _nodeDescription(_KnowledgeNode node, OnboardingCopy copy) {
-  final description = copy.isIndonesian
+  final rawDescription = copy.isIndonesian
       ? (node.idDesc ?? node.description)
       : (node.enDesc ?? node.description);
+  final description = _conceptDescriptionForDisplay(rawDescription, copy);
   if (description != null && description.isNotEmpty) {
     return description;
   }
-  final grade = node.gradeBand;
   if (copy.isIndonesian) {
-    return grade == null || grade.isEmpty
-        ? 'Pelajari konsep ${node.label} dalam graf prasyarat.'
-        : 'Pelajari konsep ${node.label} untuk $grade dalam graf prasyarat.';
+    return 'Pelajari konsep ${node.label} dalam graf prasyarat.';
   }
-  return grade == null || grade.isEmpty
-      ? 'Learn ${node.label} in the prerequisite graph.'
-      : 'Learn ${node.label} for $grade in the prerequisite graph.';
+  return 'Learn ${node.label} in the prerequisite graph.';
+}
+
+String? _conceptDescriptionForDisplay(String? value, OnboardingCopy copy) {
+  final description = value?.trim();
+  if (description == null || description.isEmpty) {
+    return null;
+  }
+  if (!copy.isIndonesian && _looksLikeCurriculumMetadata(description)) {
+    return null;
+  }
+  return description;
+}
+
+String _crossSubjectCardTitle(_ConceptRelationItem relation) {
+  final subjectName = relation.subjectName.trim();
+  if (subjectName.isEmpty || _looksLikeCurriculumMetadata(subjectName)) {
+    return relation.label;
+  }
+  return '${relation.label} - $subjectName';
+}
+
+bool _looksLikeCurriculumMetadata(String value) {
+  final normalized = value.trim().toLowerCase();
+  if (normalized.isEmpty) {
+    return false;
+  }
+  if (normalized.contains('fase ') ||
+      normalized.contains('phase ') ||
+      normalized.contains('sd/mi') ||
+      normalized.contains('smp/mts') ||
+      normalized.contains('sma/ma') ||
+      normalized.contains('kurikulum merdeka')) {
+    return true;
+  }
+  return RegExp(r'\bgrades?\b').hasMatch(normalized);
 }
 
 class _KnowledgeGraph {
