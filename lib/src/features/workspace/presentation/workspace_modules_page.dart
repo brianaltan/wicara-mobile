@@ -11,6 +11,7 @@ import '../../home/domain/home_snapshot.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
+import '../../pretest/presentation/widgets/rich_math_text.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
@@ -2761,7 +2762,7 @@ class _WorkspaceBubble extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            child: Text(
+            child: RichMathText(
               text,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: WicaraColors.text,
