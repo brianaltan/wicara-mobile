@@ -7362,14 +7362,15 @@ class _LearningReportPreview extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        _PreviewScoreSummaryCard(
-          isIndonesian: copy.isIndonesian,
-          hasPairedEvidence: hasPairedEvidence,
-          pretestScore: report.pretestScorePercent ?? 0,
-          posttestScore: report.posttestScorePercent ?? 0,
-          learningGainPercent: report.learningGainPercent ?? 0,
-        ),
+        if (hasPairedEvidence) ...[
+          const SizedBox(height: 10),
+          _PreviewScoreSummaryCard(
+            isIndonesian: copy.isIndonesian,
+            pretestScore: report.pretestScorePercent ?? 0,
+            posttestScore: report.posttestScorePercent ?? 0,
+            learningGainPercent: report.learningGainPercent ?? 0,
+          ),
+        ],
       ],
     );
   }
@@ -7515,14 +7516,12 @@ class _PreviewScoreTile extends StatelessWidget {
 class _PreviewScoreSummaryCard extends StatelessWidget {
   const _PreviewScoreSummaryCard({
     required this.isIndonesian,
-    required this.hasPairedEvidence,
     required this.pretestScore,
     required this.posttestScore,
     required this.learningGainPercent,
   });
 
   final bool isIndonesian;
-  final bool hasPairedEvidence;
   final int pretestScore;
   final int posttestScore;
   final int learningGainPercent;
@@ -7558,44 +7557,33 @@ class _PreviewScoreSummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          if (hasPairedEvidence)
-            Row(
-              children: [
-                Expanded(
-                  child: _PreviewScoreTile(
-                    label: 'Pre-test',
-                    value: '$pretestScore%',
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: _PreviewScoreTile(
+                  label: 'Pre-test',
+                  value: '$pretestScore%',
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _PreviewScoreTile(
-                    label: 'Post-test',
-                    value: '$posttestScore%',
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _PreviewScoreTile(
-                    label: isIndonesian ? 'Perubahan' : 'Change',
-                    value: _signedPercent(learningGainPercent),
-                    valueColor: learningGainPercent >= 0
-                        ? WicaraColors.secondary
-                        : WicaraColors.accentAmber,
-                  ),
-                ),
-              ],
-            )
-          else
-            Text(
-              isIndonesian
-                  ? 'Data pre-test/post-test belum cukup.'
-                  : 'Pre-test/post-test data is not sufficient yet.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w600,
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PreviewScoreTile(
+                  label: 'Post-test',
+                  value: '$posttestScore%',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PreviewScoreTile(
+                  label: isIndonesian ? 'Perubahan' : 'Change',
+                  value: _signedPercent(learningGainPercent),
+                  valueColor: learningGainPercent >= 0
+                      ? WicaraColors.secondary
+                      : WicaraColors.accentAmber,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
