@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 class LocalDbTables {
+  static const localMeta = 'local_meta';
   static const localConcepts = 'local_concepts';
   static const localConceptEdges = 'local_concept_edges';
   static const localMasteryStates = 'local_mastery_states';
@@ -57,9 +58,20 @@ class LocalWicaraDatabase {
     _database = await _databaseFactory.openDatabase(
       resolvedPath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onCreate: (db, version) async {
           await _createSchema(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute('''
+CREATE TABLE IF NOT EXISTS ${LocalDbTables.localMeta} (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''');
+          }
         },
       ),
     );
@@ -87,6 +99,14 @@ class LocalWicaraDatabase {
   }
 
   Future<void> _createSchema(DatabaseExecutor db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS ${LocalDbTables.localMeta} (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''');
+
     await db.execute('''
 CREATE TABLE IF NOT EXISTS ${LocalDbTables.localConcepts} (
   id TEXT PRIMARY KEY,

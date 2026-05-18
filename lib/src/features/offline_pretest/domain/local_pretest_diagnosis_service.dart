@@ -126,7 +126,7 @@ class LocalPretestDiagnosisService {
               'pretest_diagnosis_${DateTime.now().microsecondsSinceEpoch}',
           schemaName: 'pretest_diagnosis_report_v1',
           system:
-              "You are WICARA's on-device diagnostic report writer. Return valid JSON only. Keep adaptive decision logic unchanged and focus on concise learner-facing diagnosis narrative.",
+              'Kamu adalah pelapor diagnostik pretest WICARA on-device. Tulis narasi spesifik berdasarkan soal & jawaban siswa yang diberikan, bukan generalisasi. Output JSON valid saja.',
           user: _diagnosisPrompt(diagnosis),
         ),
       );
@@ -177,7 +177,6 @@ class LocalPretestDiagnosisService {
 
   String _diagnosisPrompt(Map<String, dynamic> diagnosis) {
     final target = _map(diagnosis['target']);
-    final analysis = _map(diagnosis['analysis']);
     final testedNodes = ((diagnosis['nodes'] as List?) ?? const <dynamic>[])
         .whereType<Map>()
         .map((item) => item.cast<String, dynamic>())
@@ -185,56 +184,81 @@ class LocalPretestDiagnosisService {
         .toList(growable: false);
     final nodeContext = testedNodes
         .map((node) {
-          final summary =
-              (node['evidence_summary'] as Map?)?.cast<String, dynamic>() ??
-              const <String, dynamic>{};
+          final attempts =
+              (node['evidence'] as List?)
+                  ?.whereType<Map>()
+                  .map((item) => item.cast<String, dynamic>())
+                  .toList(growable: false) ??
+              const <Map<String, dynamic>>[];
+          final correctQuestions = <Map<String, dynamic>>[];
+          final wrongQuestions = <Map<String, dynamic>>[];
+          for (final attempt in attempts) {
+            final stem = _string(attempt['question_stem']);
+            final selectedOption = _string(attempt['selected_option_text']);
+            final correctOption = _string(attempt['correct_option_text']);
+            final typedReasoning = _string(attempt['typed_reasoning']);
+            final expectedReasoning = _string(attempt['expected_reasoning']);
+            if (stem.isEmpty) {
+              continue;
+            }
+            if (attempt['is_correct'] == true) {
+              correctQuestions.add(<String, dynamic>{
+                'stem': stem,
+                'siswa_pilih': selectedOption,
+                'reasoning_siswa': typedReasoning,
+              });
+              continue;
+            }
+            wrongQuestions.add(<String, dynamic>{
+              'stem': stem,
+              'jawaban_benar': correctOption,
+              'siswa_pilih': selectedOption,
+              'reasoning_siswa': typedReasoning,
+              'expected_reasoning': expectedReasoning,
+            });
+          }
           return <String, dynamic>{
-            'title': _string(node['title']),
+            'concept': _string(node['title']),
             'role': _string(node['role']),
-            'status': _string(node['status']),
-            'difficulty_reached': _string(node['difficulty_reached']),
-            'attempt_count': _int(summary['attempt_count']),
-            'correct_count': _int(summary['correct_count']),
-            'reasoning_quality': _string(summary['reasoning_quality']),
-            'diagnostic_signals': _stringList(summary['diagnostic_signals']),
+            'status_deterministic': _string(node['status']),
+            'soal_benar': correctQuestions,
+            'soal_salah': wrongQuestions,
           };
         })
         .toList(growable: false);
 
     final payload = <String, dynamic>{
-      'core_decision': <String, dynamic>{
-        'recommended_path': _string(diagnosis['recommended_path']),
-        'target_status': _string(target['status']),
-        'stop_reason': _string(diagnosis['stop_reason']),
-        'score_percent': _int(diagnosis['score_percent']),
-        'confidence_percent': _int(diagnosis['confidence_percent']),
-      },
-      'existing_narrative': <String, dynamic>{
-        'summary': _string(diagnosis['summary']),
-        'strengths': _stringList(analysis['strengths']),
-        'gaps': _stringList(analysis['gaps']),
-        'evidence_notes': _stringList(analysis['evidence_notes']),
-        'recommended_focus': _stringList(analysis['recommended_focus']),
-      },
-      'tested_nodes': nodeContext,
+      'target_concept': _string(target['title']),
+      'recommended_path': _string(diagnosis['recommended_path']),
+      'stop_reason': _string(diagnosis['stop_reason']),
+      'score_percent': _int(diagnosis['score_percent']),
+      'confidence_percent': _int(diagnosis['confidence_percent']),
+      'nodes': nodeContext,
     };
 
     return '''
-Buatkan narasi diagnosis belajar untuk siswa dalam Bahasa Indonesia.
-Jangan mengubah keputusan inti adaptif (recommended_path, target_status, score, confidence, stop_reason).
-Jangan membocorkan jawaban soal.
-Fokus pada rangkuman kondisi belajar yang spesifik dari evidence.
+Kamu menulis ringkasan diagnostik untuk SISWA setelah pretest singkat.
+Gunakan HANYA data yang diberikan. Jangan menebak konsep di luar data.
+Bahasa: santai, langsung ke siswa ("Kamu..."), tanpa jargon.
+Jangan bocorkan jawaban soal yang belum dia coba.
+
+Cara menulis setiap field:
+- "summary": 2-3 kalimat. Sebut konsep target spesifik + apa yang sudah dipahami + apa yang masih kurang.
+- "strengths": maks 3 poin. Setiap poin harus merujuk ke SOAL BENAR pada data.
+- "gaps": maks 3 poin. Setiap poin harus merujuk ke SOAL SALAH dan jelaskan kesalahannya spesifik.
+- "evidence_notes": maks 3 poin. Catat pola penting (misalnya reasoning tidak ditulis, salah konsisten di level tertentu).
+- "recommended_focus": maks 3 poin. Beri latihan konkret yang langsung memperbaiki gaps.
 
 Return valid JSON only:
 {
-  "summary": "maks 1-2 kalimat",
-  "strengths": ["maks 4 poin"],
-  "gaps": ["maks 4 poin"],
-  "evidence_notes": ["maks 4 poin"],
-  "recommended_focus": ["maks 4 poin"]
+  "summary": "...",
+  "strengths": ["..."],
+  "gaps": ["..."],
+  "evidence_notes": ["..."],
+  "recommended_focus": ["..."]
 }
 
-Context JSON:
+Data:
 ${jsonEncode(payload)}
 ''';
   }
@@ -652,16 +676,6 @@ String? _trimToNull(Object? value, {required int maxLength}) {
     return text;
   }
   return text.substring(0, maxLength).trimRight();
-}
-
-List<String> _stringList(Object? value) {
-  if (value is! List) {
-    return const <String>[];
-  }
-  return value
-      .map((item) => _string(item))
-      .where((item) => item.isNotEmpty)
-      .toList(growable: false);
 }
 
 Map<String, dynamic> _map(Object? value) {

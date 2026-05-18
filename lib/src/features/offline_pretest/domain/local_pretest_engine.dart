@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../edge_ai/domain/edge_ai_models.dart';
 import '../../offline_learning/data/local_curriculum_repository.dart';
 import '../../offline_learning/data/local_mastery_repository.dart';
 import '../../offline_learning/data/local_session_repository.dart';
@@ -33,10 +34,8 @@ class LocalPretestEngine {
     this.forceLocalForPilot = true,
     this.allowBackendFallback = false,
     this.maxDepth = 2,
-    this.maxQuestions = 10,
+    this.maxQuestions = 3,
     this.maxNodesVisited = 5,
-    this.preferredTargetConceptCode =
-        'km_d_matematika_laju_perubahan_sederhana',
   }) : _database = localDatabase,
        _pretestSessionStore = pretestSessionStore,
        _localCurriculum =
@@ -76,7 +75,6 @@ class LocalPretestEngine {
   final int maxDepth;
   final int maxQuestions;
   final int maxNodesVisited;
-  final String preferredTargetConceptCode;
 
   String? _activeLocalSessionId;
   String? _lastCompletedLocalSessionId;
@@ -265,6 +263,13 @@ class LocalPretestEngine {
       conceptCode: question.conceptCode,
       difficulty: question.difficulty,
       isCorrect: evaluation.isCorrect,
+      questionStem: question.prompt,
+      correctOptionText: question.options
+          .firstWhere((option) => option.isCorrect)
+          .text,
+      selectedOptionText: selectedOption.text,
+      typedReasoning: answer.typedReasoning.trim(),
+      expectedReasoning: question.expectedReasoning,
       evidenceScore: evaluation.evidenceScore,
       confidence: evaluation.confidence,
       answerScore: evaluation.answerScore,
@@ -653,29 +658,22 @@ class LocalPretestEngine {
     final byCode = <String, LocalConceptRecord>{
       for (final concept in concepts) concept.code: concept,
     };
-    final candidates = <String>[
-      _string(preferredConceptCode),
-      preferredTargetConceptCode,
-      'km_d_matematika_bentuk_aljabar',
-      'km_d_matematika_laju_perubahan_sederhana',
-      'km_d_matematika_fungsi_dasar',
-      'km_d_matematika_proporsi',
-    ].where((code) => code.isNotEmpty).toList(growable: false);
-    for (final code in candidates) {
-      final concept = byCode[code];
-      if (concept != null) {
-        return _TargetConcept(
-          id: concept.id,
-          code: concept.code,
-          title: concept.title,
-        );
-      }
+    final targetCode = _string(preferredConceptCode);
+    if (targetCode.isEmpty) {
+      throw const PretestException(
+        'Target concept belum dipilih. Buka Learning Goal dan pilih node target dulu.',
+      );
     }
-    final fallback = concepts.first;
+    final concept = byCode[targetCode];
+    if (concept == null) {
+      throw PretestException(
+        'Target concept "$targetCode" tidak ditemukan di kurikulum lokal.',
+      );
+    }
     return _TargetConcept(
-      id: fallback.id,
-      code: fallback.code,
-      title: fallback.title,
+      id: concept.id,
+      code: concept.code,
+      title: concept.title,
     );
   }
 
@@ -730,6 +728,11 @@ class LocalPretestEngine {
       conceptTitle: conceptTitle,
       conceptDescription: conceptDescription,
     );
+    final packQuestionCount = _packQuestionCount(generatedPack);
+    final effectiveProgressMax = packQuestionCount <= 0
+        ? progressMax
+        : packQuestionCount;
+    decisionState['max_questions'] = effectiveProgressMax;
     final item = _questionSeedForDifficulty(
       difficulty: difficulty,
       fallbackSeed: fallbackSeed,
@@ -761,7 +764,7 @@ class LocalPretestEngine {
       expectedReasoning: item.explanation,
       options: options,
       progressCurrent: progressCurrent,
-      progressMax: progressMax,
+      progressMax: effectiveProgressMax,
     );
   }
 
@@ -784,22 +787,71 @@ class LocalPretestEngine {
       decisionState['generated_packs'] = generatedPacks;
     }
 
+    await _ensureRuntimeReadyOrThrow(conceptCode: conceptCode);
     final generated = await _questionGenerator.generatePack(
       conceptCode: conceptCode,
       conceptTitle: conceptTitle,
       conceptDescription: conceptDescription,
     );
     if (generated == null) {
-      return null;
+      throw PretestException(
+        'PretestGenerationError: model lokal gagal membuat soal untuk $conceptCode.',
+      );
     }
     final generatedPack = _extractGeneratedPack(generated);
     if (generatedPack == null || generatedPack.isEmpty) {
-      // Keep fallback for current turn, but don't persist empty pack.
-      return null;
+      throw PretestException(
+        'PretestGenerationError: output model lokal tidak valid untuk $conceptCode.',
+      );
     }
     generatedPacks[conceptCode] = generated;
     decisionState['generated_packs'] = generatedPacks;
     return generatedPack;
+  }
+
+  Future<void> _ensureRuntimeReadyOrThrow({required String conceptCode}) async {
+    final runtime = _questionGenerator.runtime;
+    EdgeRuntimeStatus status;
+    try {
+      status = await runtime.getStatus();
+    } catch (error) {
+      throw PretestException(
+        'PretestGenerationError: gagal membaca status runtime lokal ($error).',
+      );
+    }
+    if (!status.available) {
+      throw const PretestException(
+        'PretestGenerationError: LiteRT tidak tersedia di device ini. Jalankan pretest di Android fisik.',
+      );
+    }
+    final modelPath = status.modelPath ?? status.defaultModelPath;
+    if (!status.defaultModelExists &&
+        (modelPath == null || modelPath.isEmpty)) {
+      throw const PretestException(
+        'PretestGenerationError: model belum terpasang. Buka Pengaturan AI Lokal untuk install model dulu.',
+      );
+    }
+    if (status.loaded) {
+      return;
+    }
+    try {
+      status = await runtime
+          .initialize(modelPath: modelPath)
+          .timeout(const Duration(seconds: 120));
+    } on TimeoutException {
+      throw const PretestException(
+        'PretestGenerationError: initialize model timeout (120s).',
+      );
+    } catch (error) {
+      throw PretestException(
+        'PretestGenerationError: initialize model gagal ($error).',
+      );
+    }
+    if (!status.isReady) {
+      throw PretestException(
+        'PretestGenerationError: runtime belum siap (status=${status.executionLocation}).',
+      );
+    }
   }
 
   Map<String, dynamic>? _extractGeneratedPack(Object? raw) {
@@ -866,6 +918,19 @@ class LocalPretestEngine {
   int _generatedPackCount(Map<String, dynamic> decisionState) {
     final generatedPacks = _map(decisionState['generated_packs']);
     return generatedPacks.length;
+  }
+
+  int _packQuestionCount(Map<String, dynamic>? generatedPack) {
+    if (generatedPack == null || generatedPack.isEmpty) {
+      return 3;
+    }
+    var count = 0;
+    for (final difficulty in const <String>['easy', 'medium', 'hard']) {
+      if (_seedFromDynamic(generatedPack[difficulty]) != null) {
+        count += 1;
+      }
+    }
+    return count <= 0 ? 3 : count;
   }
 
   Future<T> _withFallback<T>(

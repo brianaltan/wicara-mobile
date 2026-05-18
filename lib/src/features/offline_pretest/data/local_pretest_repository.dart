@@ -29,10 +29,8 @@ class LocalPretestRepository implements PretestRepository {
     bool forceLocalForPilot = true,
     bool allowBackendFallback = false,
     int maxDepth = 2,
-    int maxQuestions = 10,
+    int maxQuestions = 3,
     int maxNodesVisited = 5,
-    String preferredTargetConceptCode =
-        'km_d_matematika_laju_perubahan_sederhana',
   }) : _engine = LocalPretestEngine(
          localDatabase: localDatabase,
          pretestSessionStore: pretestSessionStore,
@@ -50,7 +48,6 @@ class LocalPretestRepository implements PretestRepository {
          maxDepth: maxDepth,
          maxQuestions: maxQuestions,
          maxNodesVisited: maxNodesVisited,
-         preferredTargetConceptCode: preferredTargetConceptCode,
        );
 
   final LocalPretestEngine _engine;

@@ -81,6 +81,7 @@ flutter:
     - lib/src/assets/pretestIcon.png
     - lib/src/assets/workspaceIcon.png
     - assets/offline_graph/math_derivatives_pilot.json
+    - assets/offline_graph/full_curriculum_dump.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

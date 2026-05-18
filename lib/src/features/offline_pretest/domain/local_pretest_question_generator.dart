@@ -15,6 +15,8 @@ class LocalQuestionGenerationProgress {
     required this.attempt,
     required this.maxAttempts,
     required this.progress,
+    this.completedSections = 0,
+    this.totalSections = LocalPretestQuestionGenerator.sectionCount,
     this.estimatedRemainingSeconds,
     this.message = '',
     this.rawOutputPreview = '',
@@ -27,6 +29,8 @@ class LocalQuestionGenerationProgress {
   final int attempt;
   final int maxAttempts;
   final double progress;
+  final int completedSections;
+  final int totalSections;
   final int? estimatedRemainingSeconds;
   final String message;
   final String rawOutputPreview;
@@ -37,7 +41,7 @@ class LocalPretestQuestionGenerator {
   const LocalPretestQuestionGenerator({
     this.runtime = defaultEdgeAiRuntime,
     this.maxAttempts = 3,
-    this.perAttemptTimeout = const Duration(seconds: 60),
+    this.perAttemptTimeout = const Duration(seconds: 120),
   });
 
   final EdgeAiRuntime runtime;
@@ -45,6 +49,7 @@ class LocalPretestQuestionGenerator {
   final Duration perAttemptTimeout;
 
   static const _difficulties = <String>['easy', 'medium', 'hard'];
+  static const sectionCount = 3;
   static final _progressController =
       StreamController<LocalQuestionGenerationProgress>.broadcast();
 
@@ -71,6 +76,7 @@ class LocalPretestQuestionGenerator {
             attempt: maxAttempts,
             maxAttempts: maxAttempts,
             progress: 1,
+            completedSections: 0,
             message:
                 'Model LiteRT belum siap / belum terpasang. Gunakan fallback lokal.',
           ),
@@ -100,6 +106,7 @@ class LocalPretestQuestionGenerator {
             attempt: attempt,
             maxAttempts: maxAttempts,
             progress: ((attempt - 1) / maxAttempts).clamp(0, 1).toDouble(),
+            completedSections: merged.length,
             estimatedRemainingSeconds: estimatedRemaining,
             message:
                 'Generate soal lokal (percobaan $attempt/$maxAttempts, timeout ${perAttemptTimeout.inSeconds}s)...',
@@ -200,6 +207,7 @@ class LocalPretestQuestionGenerator {
               attempt: attempt,
               maxAttempts: maxAttempts,
               progress: (attempt / maxAttempts).clamp(0, 1).toDouble(),
+              completedSections: merged.length,
               estimatedRemainingSeconds: _estimateRemainingSeconds(
                 attemptDurationsMs: attemptDurationsMs,
                 currentAttempt: attempt + 1,
@@ -230,6 +238,7 @@ class LocalPretestQuestionGenerator {
           attempt: attemptCount,
           maxAttempts: maxAttempts,
           progress: 1,
+          completedSections: merged.length,
           estimatedRemainingSeconds: 0,
           message: _finalMessage(statusLabel, dropped),
         ),
@@ -261,6 +270,7 @@ class LocalPretestQuestionGenerator {
           attempt: maxAttempts,
           maxAttempts: maxAttempts,
           progress: 1,
+          completedSections: 0,
           message: 'Generate soal lokal gagal. Pakai fallback template.',
         ),
       );
@@ -293,6 +303,7 @@ class LocalPretestQuestionGenerator {
           attempt: 0,
           maxAttempts: maxAttempts,
           progress: 0.03,
+          completedSections: 0,
           estimatedRemainingSeconds: maxAttempts * 20,
           message: 'Menyiapkan model lokal...',
         ),

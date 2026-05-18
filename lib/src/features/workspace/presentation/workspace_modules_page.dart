@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../app/app_routes.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../home/domain/home_repository.dart';
@@ -11,7 +12,6 @@ import '../../home/domain/home_snapshot.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../edge_ai/domain/edge_model_router.dart';
-import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
 import '../domain/workspace_models.dart';
@@ -1963,7 +1963,15 @@ Respon:
                                 : 'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
                           ),
                           const SizedBox(height: 10),
-                          const EdgeRuntimeStatusPanel(),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(
+                                context,
+                              ).pushNamed(AppRoutes.edgeAiSettings);
+                            },
+                            icon: const Icon(Icons.memory_rounded, size: 18),
+                            label: const Text('Buka pengaturan Edge AI'),
+                          ),
                           if (widget.showEdgeRouteTrace &&
                               _lastEdgeRouteAudit != null) ...[
                             const SizedBox(height: 8),

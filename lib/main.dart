@@ -6,12 +6,12 @@ import 'src/features/auth/application/auth_controller.dart';
 import 'src/features/auth/data/api_auth_repository.dart';
 import 'src/features/auth/data/auth_session_store.dart';
 import 'src/features/auth/data/google_web_client_id.dart';
-import 'src/features/curriculum/data/api_curriculum_repository.dart';
 import 'src/features/home/data/api_home_repository.dart';
-import 'src/features/learning_goal/data/api_learning_goal_repository.dart';
+import 'src/features/learning_goal/data/local_learning_goal_repository.dart';
 import 'src/features/onboarding/application/onboarding_controller.dart';
 import 'src/features/onboarding/data/api_onboarding_repository.dart';
 import 'src/features/onboarding/data/onboarding_profile_store.dart';
+import 'src/features/offline_learning/data/curriculum_bootstrap_service.dart';
 import 'src/features/offline_learning/data/local_curriculum_repository.dart';
 import 'src/features/offline_learning/data/local_wicara_database.dart';
 import 'src/features/offline_pretest/data/local_pretest_repository.dart';
@@ -38,12 +38,17 @@ const _edgeDebugRouteTrace = bool.fromEnvironment(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await _warmUpOfflinePilotGraph();
-
+  final localDatabase = LocalWicaraDatabase();
+  final localCurriculumRepository = LocalCurriculumRepository(
+    database: localDatabase,
+  );
+  await _bootstrapOfflineCurriculum(
+    database: localDatabase,
+    curriculumRepository: localCurriculumRepository,
+  );
   final sessionStore = authSessionStore;
   final pretestStore = pretestSessionStore;
   final workspaceStore = workspaceSessionStore;
-  final localDatabase = LocalWicaraDatabase();
   final apiClient = ApiClient(
     baseUrl: ApiClient.resolveRuntimeBaseUrl(ApiClient.defaultBaseUrl),
   );
@@ -81,10 +86,9 @@ Future<void> main() async {
     WicaraApp(
       authController: authController,
       onboardingController: onboardingController,
-      curriculumRepository: ApiCurriculumRepository(apiClient: apiClient),
-      learningGoalRepository: ApiLearningGoalRepository(
-        apiClient: apiClient,
-        sessionStore: sessionStore,
+      curriculumRepository: localCurriculumRepository,
+      learningGoalRepository: LocalLearningGoalRepository(
+        localCurriculumRepository: localCurriculumRepository,
         pretestSessionStore: pretestStore,
       ),
       homeRepository: ApiHomeRepository(
@@ -98,6 +102,7 @@ Future<void> main() async {
       pretestRepository: LocalPretestRepository(
         localDatabase: localDatabase,
         pretestSessionStore: pretestStore,
+        localCurriculumRepository: localCurriculumRepository,
         backendRepository: backendPretestRepository,
         forceLocalForPilot: _edgeLiteRtForceLocalForPilot,
         allowBackendFallback: false,
@@ -114,17 +119,22 @@ Future<void> main() async {
   );
 }
 
-Future<void> _warmUpOfflinePilotGraph() async {
-  final localDatabase = LocalWicaraDatabase();
-  if (!localDatabase.isPlatformSupported) {
+Future<void> _bootstrapOfflineCurriculum({
+  required LocalWicaraDatabase database,
+  required LocalCurriculumRepository curriculumRepository,
+}) async {
+  if (!database.isPlatformSupported) {
     return;
   }
-  final localCurriculum = LocalCurriculumRepository(database: localDatabase);
+  final bootstrapService = CurriculumBootstrapService(
+    repository: curriculumRepository,
+  );
   try {
-    await localCurriculum.ensurePilotSliceSeeded();
+    await bootstrapService.ensureBootstrapped();
   } catch (error) {
-    debugPrint('Offline curriculum warmup skipped: $error');
-  } finally {
-    await localDatabase.close();
+    debugPrint(
+      'Offline curriculum bootstrap failed, fallback to pilot graph: $error',
+    );
+    await curriculumRepository.ensurePilotSliceSeeded();
   }
 }

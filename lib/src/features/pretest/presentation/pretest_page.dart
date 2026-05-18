@@ -7,7 +7,6 @@ import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../edge_ai/data/litert_gemma_runtime.dart';
-import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
 import '../../offline_pretest/domain/local_pretest_question_generator.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
@@ -19,7 +18,7 @@ import 'widgets/fishbone_canvas.dart';
 import 'widgets/knowledge_state_card.dart';
 import 'widgets/rich_math_text.dart';
 
-enum _PretestStage { question, reasoning, result }
+enum _PretestStage { question, result }
 
 class PretestPage extends StatefulWidget {
   const PretestPage({
@@ -110,18 +109,6 @@ class _PretestPageState extends State<PretestPage> {
       return;
     }
 
-    await _submitCurrentAnswer(typedReasoning: '', usedCanvas: false);
-  }
-
-  void _openReasoning() {
-    if (_selectedOptionId.isEmpty) {
-      _showMessage('Pilih jawaban sebelum tambah cara.');
-      return;
-    }
-    setState(() => _stage = _PretestStage.reasoning);
-  }
-
-  Future<void> _submitReasoning() async {
     await _submitCurrentAnswer(
       typedReasoning: _reasoningController.text,
       usedCanvas: _canvasSnapshots.isNotEmpty,
@@ -172,9 +159,6 @@ class _PretestPageState extends State<PretestPage> {
     }
   }
 
-  PretestOption get _selectedOption =>
-      _question!.options.firstWhere((option) => option.id == _selectedOptionId);
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -185,20 +169,6 @@ class _PretestPageState extends State<PretestPage> {
 
   void _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) {
     setState(() => _canvasSnapshots.add(snapshot));
-  }
-
-  void _goBack() {
-    if (_stage == _PretestStage.reasoning) {
-      setState(() => _stage = _PretestStage.question);
-      return;
-    }
-    if (_stage == _PretestStage.result) {
-      setState(() => _stage = _PretestStage.question);
-      return;
-    }
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
   }
 
   Future<void> _selectPathAndGoHome() async {
@@ -318,10 +288,6 @@ class _PretestPageState extends State<PretestPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 10, 16, 8),
-                      child: EdgeRuntimeStatusPanel(),
-                    ),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, stageConstraints) {
@@ -360,8 +326,9 @@ class _PretestPageState extends State<PretestPage> {
     if (_isLoadingQuestion) {
       return _PretestStateView(
         constraints: constraints,
-        title: 'Loading pretest',
-        message: 'Preparing adaptive questions (local-first).',
+        title: 'Menyiapkan pretest lokal',
+        message:
+            'Menyiapkan soal lokal… (bisa sampai 2 menit di device lambat).',
       );
     }
     if (_questionError != null || _question == null) {
@@ -389,24 +356,17 @@ class _PretestPageState extends State<PretestPage> {
         onClose: _goHome,
         onSelected: (id) => setState(() => _selectedOptionId = id),
         onConfidenceChanged: (value) => setState(() => _confidence = value),
-        submitLabel: copy.isIndonesian ? 'Kirim jawaban' : 'Submit answer',
-        addEvidenceLabel: copy.isIndonesian
-            ? 'Tambah cara / coretan'
-            : 'Add reasoning / sketch',
-        onSubmit: _submitAnswer,
-        onAddEvidence: _openReasoning,
-      ),
-      _PretestStage.reasoning => _ReasoningStage(
-        constraints: constraints,
-        copy: copy,
-        question: question,
-        selectedOption: _selectedOption,
-        controller: _reasoningController,
+        reasoningController: _reasoningController,
         canvasSnapshots: _canvasSnapshots,
-        isSubmitting: _isSubmitting,
-        onBack: _goBack,
+        submitLabel: copy.isIndonesian ? 'Kirim jawaban' : 'Submit answer',
+        onSubmit: _submitAnswer,
         onUseCanvas: _openLargeCanvas,
-        onSubmit: _submitReasoning,
+        onSkipReasoning: () {
+          setState(() {
+            _reasoningController.clear();
+            _canvasSnapshots.clear();
+          });
+        },
       ),
       _PretestStage.result => _ResultStage(
         constraints: constraints,
@@ -440,6 +400,15 @@ class _QuestionGenerationOverlay extends StatelessWidget {
     final progressText = copy.isIndonesian
         ? 'Percobaan ${progress.attempt}/${progress.maxAttempts}'
         : 'Attempt ${progress.attempt}/${progress.maxAttempts}';
+    final sectionText = copy.isIndonesian
+        ? 'Section ${progress.completedSections}/${progress.totalSections}'
+        : 'Section ${progress.completedSections}/${progress.totalSections}';
+    final sectionProgress = progress.totalSections <= 0
+        ? 0.0
+        : (progress.completedSections / progress.totalSections).clamp(0.0, 1.0);
+    final combinedProgress = progress.progress > sectionProgress
+        ? progress.progress
+        : sectionProgress;
     final rawOutput = progress.rawOutputPreview;
     final parsedOutput = progress.parsedOutputPreview;
     final showDebugOutput = rawOutput.isNotEmpty || parsedOutput.isNotEmpty;
@@ -491,7 +460,7 @@ class _QuestionGenerationOverlay extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: LinearProgressIndicator(
-                        value: progress.progress.clamp(0.0, 1.0),
+                        value: combinedProgress.clamp(0.0, 1.0),
                         minHeight: 8,
                         color: WicaraColors.secondary,
                         backgroundColor: WicaraColors.line,
@@ -509,8 +478,8 @@ class _QuestionGenerationOverlay extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       etaText.isEmpty
-                          ? progressText
-                          : '$progressText • $etaText',
+                          ? '$sectionText • $progressText'
+                          : '$sectionText • $progressText • $etaText',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: WicaraColors.softMuted,
                         fontWeight: FontWeight.w700,
@@ -691,9 +660,11 @@ class _QuestionStage extends StatelessWidget {
     required this.onSelected,
     required this.onConfidenceChanged,
     required this.submitLabel,
-    required this.addEvidenceLabel,
     required this.onSubmit,
-    required this.onAddEvidence,
+    required this.reasoningController,
+    required this.canvasSnapshots,
+    required this.onUseCanvas,
+    required this.onSkipReasoning,
   });
 
   final BoxConstraints constraints;
@@ -707,9 +678,11 @@ class _QuestionStage extends StatelessWidget {
   final ValueChanged<String> onSelected;
   final ValueChanged<int> onConfidenceChanged;
   final String submitLabel;
-  final String addEvidenceLabel;
   final VoidCallback onSubmit;
-  final VoidCallback onAddEvidence;
+  final TextEditingController reasoningController;
+  final List<CanvasWorkSnapshot> canvasSnapshots;
+  final VoidCallback onUseCanvas;
+  final VoidCallback onSkipReasoning;
 
   @override
   Widget build(BuildContext context) {
@@ -812,6 +785,83 @@ class _QuestionStage extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: compact ? 18 : 26),
+                  Text(
+                    copy.isIndonesian
+                        ? 'Tulis caramu menyelesaikan (opsional)'
+                        : 'Write your solving steps (optional)',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: WicaraColors.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: reasoningController,
+                    minLines: 3,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: copy.isIndonesian
+                          ? 'Contoh: pakai aturan turunan pangkat...'
+                          : 'Example: using derivative power rule...',
+                      filled: true,
+                      fillColor: WicaraColors.fieldFill,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: WicaraColors.line),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: WicaraColors.line),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: WicaraColors.secondary,
+                          width: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: onUseCanvas,
+                        icon: const Icon(Icons.draw_outlined, size: 18),
+                        label: Text(
+                          canvasSnapshots.isEmpty
+                              ? (copy.isIndonesian
+                                    ? 'Tambah canvas (opsional)'
+                                    : 'Add canvas (optional)')
+                              : (copy.isIndonesian
+                                    ? 'Edit canvas (${canvasSnapshots.length})'
+                                    : 'Edit canvas (${canvasSnapshots.length})'),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: isSubmitting ? null : onSkipReasoning,
+                        icon: const Icon(Icons.fast_forward_rounded, size: 18),
+                        label: Text(
+                          copy.isIndonesian ? 'Lewati cara' : 'Skip reasoning',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    copy.isIndonesian ? 'Pilih jawaban' : 'Select your answer',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: WicaraColors.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   for (
                     var index = 0;
                     index < question.options.length;
@@ -837,24 +887,6 @@ class _QuestionStage extends StatelessWidget {
                     label: submitLabel,
                     onPressed: selectedOptionId.isEmpty ? null : onSubmit,
                     isLoading: isSubmitting,
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: selectedOptionId.isEmpty || isSubmitting
-                        ? null
-                        : onAddEvidence,
-                    icon: const Icon(Icons.edit_note_rounded, size: 20),
-                    label: Text(addEvidenceLabel),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: WicaraColors.secondaryDeep,
-                      side: const BorderSide(
-                        color: WicaraColors.secondaryLight,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                    ),
                   ),
                 ],
               ),

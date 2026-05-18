@@ -14,6 +14,7 @@ import '../../../core/widgets/language_chip.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
 import '../../curriculum/domain/curriculum_repository.dart';
+import '../../edge_ai/presentation/edge_ai_status_chip.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../onboarding/domain/onboarding_options.dart';
@@ -131,9 +132,7 @@ class _AppHomePageState extends State<AppHomePage> {
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
-    final shouldOpenGoalHistory = _shouldOpenGoalHistory(
-      widget.routeArguments,
-    );
+    final shouldOpenGoalHistory = _shouldOpenGoalHistory(widget.routeArguments);
     _autoOpenWorkspacePending =
         _shouldAutoOpenWorkspace(widget.routeArguments) &&
         !shouldOpenGoalHistory;
@@ -167,7 +166,9 @@ class _AppHomePageState extends State<AppHomePage> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             const SnackBar(
-              content: Text('Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.'),
+              content: Text(
+                'Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -435,6 +436,10 @@ class _AppHomePageState extends State<AppHomePage> {
     Navigator.of(context).pushNamed(AppRoutes.learningGoal);
   }
 
+  void _openEdgeAiSettings() {
+    Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+  }
+
   Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
     final result = await Navigator.of(
       context,
@@ -576,7 +581,9 @@ class _AppHomePageState extends State<AppHomePage> {
     if (session.questions.isEmpty) {
       return 0;
     }
-    return session.progress.completed.clamp(0, session.questions.length - 1).toInt();
+    return session.progress.completed
+        .clamp(0, session.questions.length - 1)
+        .toInt();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -707,8 +714,11 @@ class _AppHomePageState extends State<AppHomePage> {
       if (_posttestError != null || _backendPosttestQuestions.isEmpty) {
         return _DashboardStatePage(
           constraints: constraints,
-          title: copy.isIndonesian ? 'Posttest tidak tersedia' : 'Posttest unavailable',
-          message: _posttestError ??
+          title: copy.isIndonesian
+              ? 'Posttest tidak tersedia'
+              : 'Posttest unavailable',
+          message:
+              _posttestError ??
               (copy.isIndonesian
                   ? 'Backend tidak mengembalikan soal posttest.'
                   : 'Backend returned no posttest questions.'),
@@ -859,7 +869,8 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         homeRepository: widget.homeRepository,
         curriculumRepository: widget.curriculumRepository,
-        preferredLanguage: widget.onboardingController.profile.preferredLanguage,
+        preferredLanguage:
+            widget.onboardingController.profile.preferredLanguage,
         onBack: _openHome,
         showLearningReport: _showLearningReport,
         showKnowledgeMap: _showKnowledgeMap,
@@ -882,6 +893,7 @@ class _AppHomePageState extends State<AppHomePage> {
             authController: widget.authController,
             onboardingController: widget.onboardingController,
             onProfileSaved: _retryHomeSnapshot,
+            onOpenEdgeAiSettings: _openEdgeAiSettings,
           );
         },
       ),
@@ -1559,9 +1571,7 @@ class _GoalHistoryCard extends StatelessWidget {
                                   track.title,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(
                                         fontSize: 15,
                                         height: 1.18,
@@ -1793,9 +1803,7 @@ String? _resolveExpandedGoalTrackId({
   return goals.first.id;
 }
 
-LearningTrackModuleSummary? _currentModuleForGoal(
-  LearningTrackSummary track,
-) {
+LearningTrackModuleSummary? _currentModuleForGoal(LearningTrackSummary track) {
   for (final status in const ['active', 'ready', 'in_progress']) {
     for (final module in track.modules) {
       if (module.status.toLowerCase() == status) {
@@ -1837,9 +1845,7 @@ String _goalStatusLabel(String status, OnboardingCopy copy) {
     case 'needs review':
       return copy.isIndonesian ? 'Perlu review' : 'Needs review';
     default:
-      return status.isEmpty
-          ? (copy.isIndonesian ? 'Aktif' : 'Active')
-          : status;
+      return status.isEmpty ? (copy.isIndonesian ? 'Aktif' : 'Active') : status;
   }
 }
 
@@ -6006,6 +6012,7 @@ class _ProfilePage extends StatelessWidget {
     required this.authController,
     required this.onboardingController,
     required this.onProfileSaved,
+    required this.onOpenEdgeAiSettings,
   });
 
   final BoxConstraints constraints;
@@ -6014,6 +6021,7 @@ class _ProfilePage extends StatelessWidget {
   final AuthController authController;
   final OnboardingController onboardingController;
   final VoidCallback onProfileSaved;
+  final VoidCallback onOpenEdgeAiSettings;
 
   Future<void> _persistProfileUpdate(
     BuildContext context,
@@ -6278,6 +6286,7 @@ class _ProfilePage extends StatelessWidget {
             _ProfileHeaderCard(
               snapshot: snapshot,
               roleLabel: copy.learnerLabel,
+              onOpenEdgeAiSettings: onOpenEdgeAiSettings,
             ),
             const SizedBox(height: 22),
             _ProfileSection(
@@ -6320,6 +6329,16 @@ class _ProfilePage extends StatelessWidget {
                       .map(copy.subjectLabel)
                       .join(', '),
                   onTap: () => _editSubjects(context, copy),
+                ),
+                _ProfileSettingTile(
+                  icon: Icons.memory_rounded,
+                  label: copy.isIndonesian
+                      ? 'Pengaturan AI Lokal'
+                      : 'Local AI Settings',
+                  value: copy.isIndonesian
+                      ? 'Install / initialize model LiteRT'
+                      : 'Install / initialize LiteRT model',
+                  onTap: onOpenEdgeAiSettings,
                 ),
                 _ProfileSettingTile(
                   icon: Icons.track_changes_rounded,
@@ -6375,10 +6394,15 @@ class _ProfilePage extends StatelessWidget {
 }
 
 class _ProfileHeaderCard extends StatelessWidget {
-  const _ProfileHeaderCard({required this.snapshot, required this.roleLabel});
+  const _ProfileHeaderCard({
+    required this.snapshot,
+    required this.roleLabel,
+    required this.onOpenEdgeAiSettings,
+  });
 
   final HomeSnapshot snapshot;
   final String roleLabel;
+  final VoidCallback onOpenEdgeAiSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -6421,6 +6445,21 @@ class _ProfileHeaderCard extends StatelessWidget {
                     color: WicaraColors.muted,
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    EdgeAiStatusChip(onTap: onOpenEdgeAiSettings),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: onOpenEdgeAiSettings,
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      child: const Text('Edge AI'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -8252,10 +8291,9 @@ class _SubjectMapTabs extends StatelessWidget {
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
         final columns = width >= 420 ? 3 : 2;
-        final itemWidth = ((width - (8 * (columns - 1))) / columns).clamp(
-          104.0,
-          140.0,
-        ).toDouble();
+        final itemWidth = ((width - (8 * (columns - 1))) / columns)
+            .clamp(104.0, 140.0)
+            .toDouble();
 
         return Wrap(
           spacing: 8,
@@ -8858,7 +8896,7 @@ class _KnowledgeGraphLayout {
             return sectionCompare;
           }
           return a.y.compareTo(b.y);
-      });
+        });
       final headerLabel = _levelLabel(levelNodes, sectionLabelByNodeId);
       final headerWidth = math.min(
         maxWidth,

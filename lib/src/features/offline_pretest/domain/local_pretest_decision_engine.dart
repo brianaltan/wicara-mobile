@@ -6,6 +6,11 @@ class LocalPretestDecisionEngine {
     required String conceptCode,
     required String difficulty,
     required bool isCorrect,
+    required String questionStem,
+    required String correctOptionText,
+    required String selectedOptionText,
+    required String typedReasoning,
+    required String expectedReasoning,
     required double evidenceScore,
     required double confidence,
     double? answerScore,
@@ -37,6 +42,11 @@ class LocalPretestDecisionEngine {
     attempts.add(<String, dynamic>{
       'difficulty': difficulty,
       'is_correct': isCorrect,
+      'question_stem': questionStem,
+      'correct_option_text': correctOptionText,
+      'selected_option_text': selectedOptionText,
+      'typed_reasoning': typedReasoning,
+      'expected_reasoning': expectedReasoning,
       'answer_score': _round4(answerScore ?? (isCorrect ? 1.0 : 0.0)),
       'reasoning_score': reasoningScore == null
           ? null
@@ -294,7 +304,7 @@ class LocalPretestDecisionEngine {
 
   Map<String, dynamic>? _limitAction(Map<String, dynamic> state) {
     if (_int(state['question_count']) >=
-        _int(state['max_questions'], fallback: 10)) {
+        _int(state['max_questions'], fallback: 3)) {
       return {'type': 'finalize', 'reason': 'max_questions_reached'};
     }
     if (_double(state['confidence']) >=

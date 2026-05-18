@@ -8,6 +8,7 @@ class AppRoutes {
   static const pretest = '/pretest';
   static const home = '/home';
   static const workspaceModules = '/workspace-modules';
+  static const edgeAiSettings = '/settings/edge-ai';
 
   static const protectedRoutes = <String>{
     onboarding,
@@ -15,5 +16,6 @@ class AppRoutes {
     pretest,
     home,
     workspaceModules,
+    edgeAiSettings,
   };
 }
