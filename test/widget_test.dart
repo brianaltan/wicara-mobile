@@ -305,13 +305,14 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   const _FailingCurriculumRepository();
 
   @override
-  Future<List<CurriculumSubject>> fetchSubjects() async {
+  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'id'}) async {
     throw UnimplementedError();
   }
 
   @override
   Future<CurriculumKnowledgeMap> fetchKnowledgeMap({
     required String subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
@@ -320,6 +321,7 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   Future<CurriculumConceptDetail> fetchConceptDetail({
     required String conceptCode,
     String? subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
