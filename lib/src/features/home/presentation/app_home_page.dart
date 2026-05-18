@@ -65,6 +65,13 @@ bool _shouldAutoOpenWorkspace(Object? arguments) {
   return arguments['auto_open_workspace'] == true;
 }
 
+bool _shouldOpenGoalHistory(Object? arguments) {
+  if (arguments is! Map) {
+    return false;
+  }
+  return arguments['open_goal_history'] == true;
+}
+
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
@@ -110,6 +117,8 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _isSubmittingPosttest = false;
   String? _posttestError;
   String _lastCompletedTrackId = '';
+  String? _selectedGoalSubject;
+  String? _expandedGoalTrackId;
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
   bool _isLoadingDailyEvaluation = false;
   bool _isSubmittingDailyEvaluation = false;
@@ -122,10 +131,18 @@ class _AppHomePageState extends State<AppHomePage> {
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
-    _autoOpenWorkspacePending = _shouldAutoOpenWorkspace(widget.routeArguments);
+    final shouldOpenGoalHistory = _shouldOpenGoalHistory(
+      widget.routeArguments,
+    );
+    _autoOpenWorkspacePending =
+        _shouldAutoOpenWorkspace(widget.routeArguments) &&
+        !shouldOpenGoalHistory;
     if (_shouldOpenKnowledgeMap(widget.routeArguments)) {
       _selectedTab = _HomeTab.progress;
       _showKnowledgeMap = true;
+    } else if (shouldOpenGoalHistory) {
+      _selectedTab = _HomeTab.queue;
+      _queueTab = _QueueTab.tracks;
     }
     if (_autoOpenWorkspacePending) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -815,6 +832,17 @@ class _AppHomePageState extends State<AppHomePage> {
             snapshot: snapshot,
             selectedTab: _queueTab,
             onTabChanged: (tab) => setState(() => _queueTab = tab),
+            selectedGoalSubject: _selectedGoalSubject,
+            selectedGoalTrackId: _expandedGoalTrackId,
+            onGoalSubjectChanged: (subject) {
+              setState(() {
+                _selectedGoalSubject = subject;
+                _expandedGoalTrackId = null;
+              });
+            },
+            onGoalSelected: (trackId) {
+              setState(() => _expandedGoalTrackId = trackId);
+            },
             onCreateTrack: () {
               _syncOnboardingProfileFromSnapshot(snapshot);
               _openLearningGoal();
@@ -1092,6 +1120,10 @@ class _LearningQueue extends StatelessWidget {
     required this.snapshot,
     required this.selectedTab,
     required this.onTabChanged,
+    required this.selectedGoalSubject,
+    required this.selectedGoalTrackId,
+    required this.onGoalSubjectChanged,
+    required this.onGoalSelected,
     required this.onCreateTrack,
     required this.onOpenWorkspace,
     required this.onBack,
@@ -1101,6 +1133,10 @@ class _LearningQueue extends StatelessWidget {
   final HomeSnapshot snapshot;
   final _QueueTab selectedTab;
   final ValueChanged<_QueueTab> onTabChanged;
+  final String? selectedGoalSubject;
+  final String? selectedGoalTrackId;
+  final ValueChanged<String> onGoalSubjectChanged;
+  final ValueChanged<String> onGoalSelected;
   final VoidCallback onCreateTrack;
   final ValueChanged<WorkspaceRouteArguments> onOpenWorkspace;
   final VoidCallback onBack;
@@ -1143,11 +1179,20 @@ class _LearningQueue extends StatelessWidget {
             if (selectedTab == _QueueTab.recommended)
               _BackendSubjectQueueContent(
                 snapshot: snapshot,
+                selectedSubject: selectedGoalSubject,
+                selectedTrackId: selectedGoalTrackId,
+                onSubjectChanged: onGoalSubjectChanged,
+                onGoalSelected: onGoalSelected,
                 onContinue: onOpenWorkspace,
+                onCreateTrack: onCreateTrack,
               )
             else if (selectedTab == _QueueTab.tracks)
               _BackendTrackQueueContent(
                 snapshot: snapshot,
+                selectedSubject: selectedGoalSubject,
+                selectedTrackId: selectedGoalTrackId,
+                onSubjectChanged: onGoalSubjectChanged,
+                onGoalSelected: onGoalSelected,
                 onCreateTrack: onCreateTrack,
                 onContinue: onOpenWorkspace,
               )
@@ -1166,17 +1211,28 @@ class _LearningQueue extends StatelessWidget {
 class _BackendSubjectQueueContent extends StatelessWidget {
   const _BackendSubjectQueueContent({
     required this.snapshot,
+    required this.selectedSubject,
+    required this.selectedTrackId,
+    required this.onSubjectChanged,
+    required this.onGoalSelected,
     required this.onContinue,
+    this.onCreateTrack,
+    this.showCreateTrack = false,
   });
 
   final HomeSnapshot snapshot;
+  final String? selectedSubject;
+  final String? selectedTrackId;
+  final ValueChanged<String> onSubjectChanged;
+  final ValueChanged<String> onGoalSelected;
   final ValueChanged<WorkspaceRouteArguments> onContinue;
+  final VoidCallback? onCreateTrack;
+  final bool showCreateTrack;
 
   @override
   Widget build(BuildContext context) {
     final copy = _HomeCopyScope.of(context);
-    final subjects = snapshot.selectedSubjects;
-    final workspaceTarget = snapshot.firstWorkspaceTarget;
+    final subjects = _goalHistorySubjects(snapshot);
     if (subjects.isEmpty) {
       return _BackendEmptyPanel(
         icon: Icons.menu_book_outlined,
@@ -1185,61 +1241,75 @@ class _BackendSubjectQueueContent extends StatelessWidget {
       );
     }
 
+    final activeSubject = _resolveGoalHistorySubject(
+      subjects: subjects,
+      selectedSubject: selectedSubject,
+    );
+    final goals = _goalHistoryTracksForSubject(
+      snapshot: snapshot,
+      subject: activeSubject,
+    );
+    final expandedTrackId = _resolveExpandedGoalTrackId(
+      goals: goals,
+      selectedTrackId: selectedTrackId,
+    );
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final subject in subjects) ...[
-          _Panel(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: WicaraColors.speechBlue,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: const Icon(
-                    Icons.menu_book_outlined,
-                    color: WicaraColors.secondary,
-                    size: 21,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        copy.subjectLabel(subject),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _displayGradeSummary(snapshot, copy),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: WicaraColors.muted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: workspaceTarget == null
-                      ? null
-                      : () => onContinue(workspaceTarget),
-                  icon: const Icon(Icons.chevron_right_rounded),
-                  color: WicaraColors.secondary,
-                ),
-              ],
-            ),
+        if (showCreateTrack && onCreateTrack != null) ...[
+          GradientButton(
+            label: copy.isIndonesian
+                ? 'Buat goal belajar baru'
+                : 'Create learning goal',
+            onPressed: onCreateTrack,
           ),
+          const SizedBox(height: 18),
+        ],
+        _GoalSubjectSelector(
+          subjects: subjects,
+          selectedSubject: activeSubject,
+          onSelected: onSubjectChanged,
+        ),
+        const SizedBox(height: 18),
+        if (goals.isEmpty) ...[
+          _BackendEmptyPanel(
+            icon: Icons.flag_outlined,
+            title: copy.isIndonesian
+                ? 'Belum ada goal ${copy.subjectLabel(activeSubject)}'
+                : 'No ${copy.subjectLabel(activeSubject)} goals yet',
+            message: copy.isIndonesian
+                ? 'Buat goal belajar baru agar WICARA bisa menyiapkan track dan workspace.'
+                : 'Create a learning goal so WICARA can prepare a track and workspace.',
+          ),
+          if (onCreateTrack != null && !showCreateTrack) ...[
+            const SizedBox(height: 14),
+            GradientButton(
+              label: copy.isIndonesian
+                  ? 'Buat goal belajar baru'
+                  : 'Create learning goal',
+              onPressed: onCreateTrack,
+            ),
+          ],
+        ] else ...[
+          _GoalHistorySectionHeader(subject: activeSubject),
           const SizedBox(height: 12),
+          for (var index = 0; index < goals.length; index++) ...[
+            _GoalHistoryCard(
+              track: goals[index],
+              subject: activeSubject,
+              isExpanded: goals[index].id == expandedTrackId,
+              isPrimary: index == 0,
+              onTap: () => onGoalSelected(goals[index].id),
+              onContinue: () {
+                final target = _workspaceTargetForGoal(goals[index]);
+                if (target != null) {
+                  onContinue(target);
+                }
+              },
+            ),
+            if (index < goals.length - 1) const SizedBox(height: 12),
+          ],
         ],
       ],
     );
@@ -1249,25 +1319,587 @@ class _BackendSubjectQueueContent extends StatelessWidget {
 class _BackendTrackQueueContent extends StatelessWidget {
   const _BackendTrackQueueContent({
     required this.snapshot,
+    required this.selectedSubject,
+    required this.selectedTrackId,
+    required this.onSubjectChanged,
+    required this.onGoalSelected,
     required this.onCreateTrack,
     required this.onContinue,
   });
 
   final HomeSnapshot snapshot;
+  final String? selectedSubject;
+  final String? selectedTrackId;
+  final ValueChanged<String> onSubjectChanged;
+  final ValueChanged<String> onGoalSelected;
   final VoidCallback onCreateTrack;
   final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _BackendSubjectQueueContent(
+      snapshot: snapshot,
+      selectedSubject: selectedSubject,
+      selectedTrackId: selectedTrackId,
+      onSubjectChanged: onSubjectChanged,
+      onGoalSelected: onGoalSelected,
+      onContinue: onContinue,
+      onCreateTrack: onCreateTrack,
+      showCreateTrack: true,
+    );
+  }
+}
+
+class _GoalSubjectSelector extends StatelessWidget {
+  const _GoalSubjectSelector({
+    required this.subjects,
+    required this.selectedSubject,
+    required this.onSelected,
+  });
+
+  final List<String> subjects;
+  final String selectedSubject;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        _BackendSubjectQueueContent(snapshot: snapshot, onContinue: onContinue),
-        const SizedBox(height: 8),
-        GradientButton(label: 'Create learning goal', onPressed: onCreateTrack),
+        for (final subject in subjects)
+          _GoalSubjectChip(
+            label: copy.subjectLabel(subject),
+            isSelected: subject == selectedSubject,
+            onTap: () => onSelected(subject),
+          ),
       ],
     );
   }
+}
+
+class _GoalSubjectChip extends StatelessWidget {
+  const _GoalSubjectChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isSelected ? null : onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          constraints: const BoxConstraints(maxWidth: 154, minHeight: 39),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? WicaraColors.primaryDeep : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? WicaraColors.primaryDeep
+                  : WicaraColors.primaryLight,
+              width: 1.2,
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: isSelected ? Colors.white : WicaraColors.primaryDeep,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalHistorySectionHeader extends StatelessWidget {
+  const _GoalHistorySectionHeader({required this.subject});
+
+  final String subject;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: WicaraColors.speechBlue,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Icon(
+              Icons.history_rounded,
+              color: WicaraColors.secondary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  copy.isIndonesian
+                      ? 'Goal ${copy.subjectLabel(subject)}'
+                      : '${copy.subjectLabel(subject)} goals',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  copy.isIndonesian
+                      ? 'Pilih goal subject ini dulu sebelum masuk workspace.'
+                      : 'Pick a goal in this subject before opening workspace.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontWeight: FontWeight.w600,
+                    height: 1.28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GoalHistoryCard extends StatelessWidget {
+  const _GoalHistoryCard({
+    required this.track,
+    required this.subject,
+    required this.isExpanded,
+    required this.isPrimary,
+    required this.onTap,
+    required this.onContinue,
+  });
+
+  final LearningTrackSummary track;
+  final String subject;
+  final bool isExpanded;
+  final bool isPrimary;
+  final VoidCallback onTap;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final module = _currentModuleForGoal(track);
+    final target = _workspaceTargetForGoal(track);
+    final statusColor = _goalStatusColor(track.status);
+    final preview = _goalPreviewLabel(module, copy);
+
+    return _Panel(
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(15),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: isPrimary
+                            ? WicaraColors.speechBlue
+                            : WicaraColors.pageBackground,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isPrimary
+                            ? Icons.playlist_play_rounded
+                            : Icons.history_rounded,
+                        color: WicaraColors.secondary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  track.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontSize: 15,
+                                        height: 1.18,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Icon(
+                                isExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                color: WicaraColors.softMuted,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 6,
+                            children: [
+                              _GoalMetaPill(copy.subjectLabel(subject)),
+                              _GoalMetaPill(
+                                _goalStatusLabel(track.status, copy),
+                                color: statusColor,
+                              ),
+                              _GoalMetaPill(
+                                copy.isIndonesian
+                                    ? '${track.progressPercent}% selesai'
+                                    : '${track.progressPercent}% complete',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 9),
+                          Text(
+                            preview,
+                            maxLines: isExpanded ? 3 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: WicaraColors.muted,
+                                  height: 1.32,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (isExpanded) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
+                    decoration: BoxDecoration(
+                      color: WicaraColors.pageBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: WicaraColors.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          copy.isIndonesian
+                              ? 'Modul berikutnya'
+                              : 'Next module',
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: WicaraColors.ink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          module?.title ?? _missingModuleLabel(copy),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: WicaraColors.text,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _goalActivityLabel(module, copy),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: WicaraColors.muted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 13),
+                        GradientButton(
+                          label: copy.continueLearningLabel,
+                          onPressed: target == null ? null : onContinue,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalMetaPill extends StatelessWidget {
+  const _GoalMetaPill(this.label, {this.color});
+
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = color ?? WicaraColors.secondary;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: foreground,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+List<String> _goalHistorySubjects(HomeSnapshot snapshot) {
+  final source = snapshot.selectedSubjects.isNotEmpty
+      ? snapshot.selectedSubjects
+      : snapshot.availableSubjects;
+  final seen = <String>{};
+  final subjects = <String>[];
+  for (final subject in source) {
+    final normalized = subject.trim();
+    if (normalized.isEmpty) {
+      continue;
+    }
+    final key = normalized.toLowerCase();
+    if (seen.add(key)) {
+      subjects.add(normalized);
+    }
+  }
+  return subjects;
+}
+
+String _resolveGoalHistorySubject({
+  required List<String> subjects,
+  required String? selectedSubject,
+}) {
+  final selected = selectedSubject?.trim();
+  if (selected != null && selected.isNotEmpty) {
+    for (final subject in subjects) {
+      if (subject.toLowerCase() == selected.toLowerCase()) {
+        return subject;
+      }
+    }
+  }
+  return subjects.first;
+}
+
+List<LearningTrackSummary> _goalHistoryTracksForSubject({
+  required HomeSnapshot snapshot,
+  required String subject,
+}) {
+  final tracks = snapshot.activeTracks;
+  if (tracks.isEmpty) {
+    return const [];
+  }
+  return tracks
+      .where((track) => _trackBelongsToSubject(track, subject))
+      .toList(growable: false);
+}
+
+bool _trackBelongsToSubject(LearningTrackSummary track, String subject) {
+  final selectedCode = _canonicalGoalSubjectCode(subject);
+  final trackCode = _canonicalGoalSubjectCode(
+    track.subjectCode.isNotEmpty ? track.subjectCode : track.subjectName,
+  );
+  if (trackCode.isNotEmpty) {
+    return trackCode == selectedCode;
+  }
+  return false;
+}
+
+String _canonicalGoalSubjectCode(String value) {
+  final normalized = value.trim().toLowerCase();
+  return switch (normalized) {
+    'math' || 'mathematics' || 'matematika' => 'matematika',
+    'physics' || 'fisika' => 'fisika',
+    'chemistry' || 'kimia' => 'kimia',
+    'biology' || 'biologi' => 'biologi',
+    'science' || 'integrated science' || 'ipa' => 'ipa',
+    'science and social studies' || 'ipas' => 'ipas',
+    _ => normalized,
+  };
+}
+
+String? _resolveExpandedGoalTrackId({
+  required List<LearningTrackSummary> goals,
+  required String? selectedTrackId,
+}) {
+  if (goals.isEmpty) {
+    return null;
+  }
+  final selected = selectedTrackId?.trim();
+  if (selected != null && selected.isNotEmpty) {
+    for (final goal in goals) {
+      if (goal.id == selected) {
+        return goal.id;
+      }
+    }
+  }
+  return goals.first.id;
+}
+
+LearningTrackModuleSummary? _currentModuleForGoal(
+  LearningTrackSummary track,
+) {
+  for (final status in const ['active', 'ready', 'in_progress']) {
+    for (final module in track.modules) {
+      if (module.status.toLowerCase() == status) {
+        return module;
+      }
+    }
+  }
+  if (track.modules.isEmpty) {
+    return null;
+  }
+  return track.modules.first;
+}
+
+WorkspaceRouteArguments? _workspaceTargetForGoal(LearningTrackSummary track) {
+  final module = _currentModuleForGoal(track);
+  if (module == null || module.id.isEmpty || track.id.isEmpty) {
+    return null;
+  }
+  return WorkspaceRouteArguments(
+    trackId: track.id,
+    moduleId: module.id,
+    moduleTitle: module.title,
+  );
+}
+
+String _goalStatusLabel(String status, OnboardingCopy copy) {
+  switch (status.toLowerCase().replaceAll('_', ' ')) {
+    case 'active':
+    case 'in progress':
+      return copy.isIndonesian ? 'Sedang belajar' : 'In progress';
+    case 'ready':
+      return copy.isIndonesian ? 'Siap lanjut' : 'Ready';
+    case 'completed':
+    case 'complete':
+      return copy.isIndonesian ? 'Selesai' : 'Completed';
+    case 'paused':
+      return copy.isIndonesian ? 'Dijeda' : 'Paused';
+    case 'review':
+    case 'needs review':
+      return copy.isIndonesian ? 'Perlu review' : 'Needs review';
+    default:
+      return status.isEmpty
+          ? (copy.isIndonesian ? 'Aktif' : 'Active')
+          : status;
+  }
+}
+
+Color _goalStatusColor(String status) {
+  switch (status.toLowerCase().replaceAll('_', ' ')) {
+    case 'completed':
+    case 'complete':
+      return WicaraColors.accentMint;
+    case 'review':
+    case 'needs review':
+      return WicaraColors.accentCoral;
+    case 'paused':
+      return WicaraColors.softMuted;
+    default:
+      return WicaraColors.secondary;
+  }
+}
+
+String _missingModuleLabel(OnboardingCopy copy) {
+  return copy.isIndonesian
+      ? 'Belum ada modul yang siap'
+      : 'No module is ready yet';
+}
+
+String _goalPreviewLabel(
+  LearningTrackModuleSummary? module,
+  OnboardingCopy copy,
+) {
+  final description = module?.description.trim() ?? '';
+  if (description.isNotEmpty) {
+    return description;
+  }
+  final title = module?.title.trim() ?? '';
+  if (title.isNotEmpty) {
+    return title;
+  }
+  return copy.isIndonesian
+      ? 'Goal ini belum punya modul aktif.'
+      : 'This goal does not have an active module yet.';
+}
+
+String _goalActivityLabel(
+  LearningTrackModuleSummary? module,
+  OnboardingCopy copy,
+) {
+  if (module == null) {
+    return copy.isIndonesian
+        ? 'Buat atau pilih goal lain untuk mulai belajar.'
+        : 'Create or choose another goal to start learning.';
+  }
+  final minutes = module.estimatedMinutes;
+  final status = _goalStatusLabel(module.status, copy).toLowerCase();
+  if (minutes <= 0) {
+    return copy.isIndonesian
+        ? 'Status modul: $status'
+        : 'Module status: $status';
+  }
+  return copy.isIndonesian
+      ? '$minutes menit - status modul: $status'
+      : '$minutes min - module status: $status';
 }
 
 class _BackendGalleryContent extends StatelessWidget {

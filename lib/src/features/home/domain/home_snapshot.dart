@@ -178,6 +178,8 @@ class LearningQueueItem {
 class LearningTrackSummary {
   const LearningTrackSummary({
     required this.id,
+    required this.subjectCode,
+    required this.subjectName,
     required this.title,
     required this.status,
     required this.progressPercent,
@@ -185,6 +187,8 @@ class LearningTrackSummary {
   });
 
   final String id;
+  final String subjectCode;
+  final String subjectName;
   final String title;
   final String status;
   final int progressPercent;

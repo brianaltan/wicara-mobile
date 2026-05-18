@@ -214,7 +214,7 @@ class _PretestPageState extends State<PretestPage> {
     ).pushNamedAndRemoveUntil(
       AppRoutes.home,
       (route) => false,
-      arguments: const {'auto_open_workspace': true},
+      arguments: const {'open_goal_history': true},
     );
   }
 
