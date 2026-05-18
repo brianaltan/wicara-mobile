@@ -1,5 +1,6 @@
 // ignore_for_file: unused_element
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7217,10 +7218,14 @@ class _LearningReportOptionState extends State<_LearningReportOption> {
 
   Future<WeeklyLearningReport> _fetchCurrentWeekReport() {
     final range = _reportRangeFor(_ReportRangeOption.thisWeek, DateTime.now());
-    return widget.homeRepository.fetchWeeklyLearningReport(
-      start: range.start,
-      end: range.end,
-    );
+    return widget.homeRepository
+        .fetchWeeklyLearningReport(start: range.start, end: range.end)
+        .timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => throw TimeoutException(
+            'Laporan butuh waktu terlalu lama. Coba lagi.',
+          ),
+        );
   }
 
   @override
@@ -7242,15 +7247,15 @@ class _LearningReportOptionState extends State<_LearningReportOption> {
           }
           if (snapshot.hasError) {
             return const _LearningReportPreviewState(
-              label: 'Report unavailable',
-              badge: 'Open detail',
-              message: 'Open the report to retry loading backend data.',
+              label: 'Laporan belum tersedia',
+              badge: 'Buka detail',
+              message: 'Buka halaman laporan untuk mencoba sinkron ulang.',
             );
           }
           return const _LearningReportPreviewState(
-            label: 'Loading current week',
-            badge: 'Syncing',
-            message: 'Fetching learning performance from backend attempts.',
+            label: 'Memuat minggu ini',
+            badge: 'Sinkron',
+            message: 'Mengambil data laporan dari backend.',
           );
         },
       ),
@@ -7297,7 +7302,7 @@ class _LearningReportPreview extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            _SoftBadge(fixed.deltaLabel),
+            _SoftBadge(_deltaLabelId(fixed.weeklyDelta)),
           ],
         ),
         const SizedBox(height: 20),
@@ -7305,9 +7310,10 @@ class _LearningReportPreview extends StatelessWidget {
           height: 112,
           child: groups.isEmpty
               ? const _LearningReportPreviewState(
-                  label: 'No performance data yet',
-                  badge: 'Start',
-                  message: 'Take a daily evaluation to build the graph.',
+                  label: 'Belum ada data',
+                  badge: 'Mulai',
+                  message:
+                      'Kerjakan evaluasi harian dulu supaya grafik terisi.',
                   compact: true,
                 )
               : Row(
@@ -7329,17 +7335,17 @@ class _LearningReportPreview extends StatelessWidget {
           children: [
             Expanded(
               child: _ReportMetric(
-                label: 'Fixed gaps',
+                label: 'Gap Tertutup',
                 value: '${fixed.count}',
-                delta: fixed.deltaLabel,
+                delta: _deltaLabelId(fixed.weeklyDelta),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _ReportMetric(
-                label: 'Remaining gaps',
+                label: 'Gap Tersisa',
                 value: '${remaining.count}',
-                delta: remaining.deltaLabel,
+                delta: _deltaLabelId(remaining.weeklyDelta),
               ),
             ),
           ],
@@ -7454,10 +7460,14 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
 
   Future<WeeklyLearningReport> _fetchSelectedReport() {
     final range = _reportRangeFor(_selectedRange, DateTime.now());
-    return widget.homeRepository.fetchWeeklyLearningReport(
-      start: range.start,
-      end: range.end,
-    );
+    return widget.homeRepository
+        .fetchWeeklyLearningReport(start: range.start, end: range.end)
+        .timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => throw TimeoutException(
+            'Laporan butuh waktu terlalu lama. Coba lagi.',
+          ),
+        );
   }
 
   void _selectRange(_ReportRangeOption option) {
@@ -7486,16 +7496,16 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
         if (snapshot.hasError) {
           return _DashboardStatePage(
             constraints: widget.constraints,
-            title: 'Learning Report unavailable',
+            title: 'Laporan Belajar belum tersedia',
             message: snapshot.error.toString(),
-            actionLabel: 'Try again',
+            actionLabel: 'Coba lagi',
             onAction: _retryReport,
           );
         }
         return _DashboardStatePage(
           constraints: widget.constraints,
-          title: 'Loading Learning Report',
-          message: 'Fetching weekly gap and recommendation data.',
+          title: 'Memuat Laporan Belajar',
+          message: 'Mengambil ringkasan progres mingguan.',
         );
       },
     );
@@ -7578,8 +7588,6 @@ class _LearningReportContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            _DataTrustPanel(report: report),
-            const SizedBox(height: 18),
             _OutcomeSnapshotPanel(
               report: report,
               fixed: fixed,
@@ -7590,24 +7598,17 @@ class _LearningReportContent extends StatelessWidget {
             const SizedBox(height: 18),
             _WeeklyTimelinePanel(report: report),
             const SizedBox(height: 18),
-            _ReportPerformancePanel(report: report),
-            const SizedBox(height: 18),
-            _EffortImpactPanel(report: report),
-            const SizedBox(height: 18),
             _ConceptMoversPanel(report: report),
-            const SizedBox(height: 18),
-            _UnlockedThisWeekCard(summary: report.unlockedThisWeek),
             const SizedBox(height: 18),
             _UpcomingRecommendationsPanel(
               recommendations: report.upcomingRecommendations,
               onRecommendationSelected: onRecommendationSelected,
-              title: '7-day action plan',
-              subtitle: 'Highest leverage actions for the next week.',
+              title: 'Rencana 7 Hari',
+              subtitle:
+                  'Aksi paling penting yang harus kamu kerjakan minggu ini.',
             ),
             const SizedBox(height: 18),
-            _WeeklyNarrativePanel(narrative: report.weeklyNarrative),
-            const SizedBox(height: 18),
-            _ConsistencySummaryCard(summary: report.consistencySummary),
+            _DataTrustPanel(report: report),
           ],
         ),
       ),
@@ -7623,7 +7624,15 @@ class _DataTrustPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final quality = report.dataQuality;
-    final notes = quality.notes.take(2).toList(growable: false);
+    final sampleLine =
+        '${quality.attemptsCovered} jawaban dinilai pada rentang ini.';
+    final pairedLine =
+        '${quality.pairedConcepts} konsep punya pasangan data pretest + posttest.';
+    final notes = [
+      sampleLine,
+      pairedLine,
+      ...quality.notes,
+    ].where((line) => line.trim().isNotEmpty).take(3).toList(growable: false);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Column(
@@ -7639,7 +7648,7 @@ class _DataTrustPanel extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Data trust',
+                  'Kualitas Data',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -7650,29 +7659,20 @@ class _DataTrustPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _LearningGainMetric(
-                  label: 'Confidence',
-                  value: '${quality.confidenceScore}%',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _LearningGainMetric(
-                  label: 'Attempts',
-                  value: '${quality.attemptsCovered}',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _LearningGainMetric(
-                  label: 'Paired',
-                  value: '${quality.pairedConcepts}',
-                ),
-              ),
-            ],
+          Text(
+            'Tingkat keyakinan estimasi: ${quality.confidenceScore}%',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _coverageStatusExplanation(quality.coverageStatus),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (notes.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -7713,7 +7713,7 @@ class _OutcomeSnapshotPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Outcome snapshot',
+            'Ringkasan Minggu Ini',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -7724,7 +7724,7 @@ class _OutcomeSnapshotPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: _ReportMetric(
-                  label: 'Score',
+                  label: 'Akurasi Jawaban',
                   value: '${report.score}%',
                   delta: _signedPercent(gain),
                 ),
@@ -7732,20 +7732,28 @@ class _OutcomeSnapshotPanel extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: _ReportMetric(
-                  label: 'Fixed gaps',
+                  label: 'Gap Tertutup',
                   value: '${fixed.count}',
-                  delta: fixed.deltaLabel,
+                  delta: _deltaLabelId(fixed.weeklyDelta),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _ReportMetric(
-                  label: 'Remaining',
+                  label: 'Gap Tersisa',
                   value: '${remaining.count}',
-                  delta: remaining.deltaLabel,
+                  delta: _deltaLabelId(remaining.weeklyDelta),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Akurasi jawaban = persentase jawaban benar pada rentang tanggal terpilih.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -7770,7 +7778,7 @@ class _WeeklyTimelinePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '4-week trend',
+            'Perkembangan 4 Minggu',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -7778,7 +7786,7 @@ class _WeeklyTimelinePanel extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            'Score, attempts, and gap movement by week.',
+            'Lihat akurasi, jumlah jawaban, dan pergerakan gap tiap minggu.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
@@ -7803,61 +7811,89 @@ class _TimelineWeekRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scoreRatio = (point.score.clamp(0, 100)) / 100;
-    return Column(
-      children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 34,
-              child: Text(
-                point.label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 8,
-                  value: scoreRatio.toDouble(),
-                  backgroundColor: WicaraColors.fieldFill,
-                  valueColor: const AlwaysStoppedAnimation(
-                    WicaraColors.secondary,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 38,
+                child: Text(
+                  point.label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              '${point.score}%',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.text,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            const SizedBox(width: 42),
-            Expanded(
-              child: Text(
-                '${point.attemptCount} attempts • ${point.fixedGaps} fixed • ${point.remainingGaps} remaining',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 8,
+                    value: scoreRatio.toDouble(),
+                    backgroundColor: WicaraColors.line,
+                    valueColor: const AlwaysStoppedAnimation(
+                      WicaraColors.secondary,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Text(
+                '${point.score}%',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              _MiniStatPill(label: '${point.attemptCount} jawaban'),
+              const SizedBox(width: 6),
+              _MiniStatPill(label: '${point.fixedGaps} gap tertutup'),
+              const SizedBox(width: 6),
+              _MiniStatPill(label: '${point.remainingGaps} gap sisa'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStatPill extends StatelessWidget {
+  const _MiniStatPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
-      ],
+      ),
     );
   }
 }
@@ -7939,13 +7975,20 @@ class _ConceptMoversPanel extends StatelessWidget {
     if (movers.isEmpty) {
       return const SizedBox.shrink();
     }
+    final strong = movers
+        .where((item) => item.movementType == 'improved')
+        .toList(growable: false);
+    final needs = movers
+        .where((item) => item.movementType == 'at_risk')
+        .toList(growable: false);
+
     return _Panel(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Concept movers',
+            'Konsep Kuat vs Perlu Diperbaiki',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -7953,18 +7996,96 @@ class _ConceptMoversPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Top improvements and concepts at risk.',
+            'Fokus pada konsep yang naik paling besar dan yang masih rawan.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 14),
-          for (final mover in movers) ...[
-            _ConceptMoverTile(mover: mover),
-            if (mover != movers.last) const SizedBox(height: 8),
-          ],
+          _SubSectionTitle(
+            label: 'Yang Sudah Kuat',
+            color: WicaraColors.accentMint,
+          ),
+          const SizedBox(height: 8),
+          if (strong.isEmpty)
+            const _SimplePlaceholder(
+              text: 'Belum ada konsep yang naik signifikan minggu ini.',
+            )
+          else
+            for (final mover in strong) ...[
+              _ConceptMoverTile(mover: mover),
+              if (mover != strong.last) const SizedBox(height: 8),
+            ],
+          const SizedBox(height: 14),
+          _SubSectionTitle(
+            label: 'Yang Perlu Diperbaiki',
+            color: WicaraColors.accentAmber,
+          ),
+          const SizedBox(height: 8),
+          if (needs.isEmpty)
+            const _SimplePlaceholder(
+              text: 'Tidak ada konsep rawan pada rentang ini.',
+            )
+          else
+            for (final mover in needs) ...[
+              _ConceptMoverTile(mover: mover),
+              if (mover != needs.last) const SizedBox(height: 8),
+            ],
         ],
+      ),
+    );
+  }
+}
+
+class _SubSectionTitle extends StatelessWidget {
+  const _SubSectionTitle({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: WicaraColors.text,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SimplePlaceholder extends StatelessWidget {
+  const _SimplePlaceholder({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -8026,7 +8147,7 @@ class _ConceptMoverTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${_signedPercent(mover.masteryDeltaPercent)} • ${mover.status.toUpperCase()}',
+                  '${_signedPercent(mover.masteryDeltaPercent)} • ${_statusLabelId(mover.status)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: color,
                     fontSize: 11,
@@ -8208,9 +8329,9 @@ _ReportDateRange _reportRangeFor(_ReportRangeOption option, DateTime now) {
 
 String _reportRangeOptionLabel(_ReportRangeOption option) {
   return switch (option) {
-    _ReportRangeOption.thisWeek => 'This week',
-    _ReportRangeOption.lastWeek => 'Last week',
-    _ReportRangeOption.last4Weeks => 'Last 4 weeks',
+    _ReportRangeOption.thisWeek => 'Minggu ini',
+    _ReportRangeOption.lastWeek => 'Minggu lalu',
+    _ReportRangeOption.last4Weeks => '4 minggu terakhir',
   };
 }
 
@@ -8237,7 +8358,7 @@ class _LearningGainCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  'Learning gain',
+                  'Kenaikan Pretest ke Posttest',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -8245,13 +8366,13 @@ class _LearningGainCard extends StatelessWidget {
                 ),
               ),
               if (hasPairedEvidence)
-                _SoftBadge('${report.pairedConceptCount} paired'),
+                _SoftBadge('${report.pairedConceptCount} konsep dibandingkan'),
             ],
           ),
           const SizedBox(height: 14),
           if (!hasPairedEvidence)
             Text(
-              'Not enough paired pretest and posttest evidence yet.',
+              'Belum cukup data pretest + posttest pada konsep yang sama untuk hitung kenaikan.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.muted,
                 fontWeight: FontWeight.w600,
@@ -8263,21 +8384,21 @@ class _LearningGainCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _LearningGainMetric(
-                    label: 'Pretest',
+                    label: 'Sebelum',
                     value: '${report.pretestScorePercent ?? 0}%',
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: _LearningGainMetric(
-                    label: 'Posttest',
+                    label: 'Sesudah',
                     value: '${report.posttestScorePercent ?? 0}%',
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: _LearningGainMetric(
-                    label: 'Gain',
+                    label: 'Perubahan',
                     value: _signedPercent(report.learningGainPercent ?? 0),
                   ),
                 ),
@@ -8334,9 +8455,9 @@ String _signedPercent(int value) => value > 0 ? '+$value%' : '$value%';
 
 String _coverageStatusLabel(String value) {
   return switch (value) {
-    'evidence_backed' => 'Evidence-backed',
-    'partial_history' => 'Partial history',
-    'seeded_baseline' => 'Seeded baseline',
+    'evidence_backed' => 'Data Lengkap',
+    'partial_history' => 'Data Sebagian',
+    'seeded_baseline' => 'Data Awal',
     _ => value.replaceAll('_', ' '),
   };
 }
@@ -8349,6 +8470,38 @@ String _efficiencyLabel(String value) {
     'no_signal' => 'No signal',
     _ => value.replaceAll('_', ' '),
   };
+}
+
+String _coverageStatusExplanation(String value) {
+  return switch (value) {
+    'evidence_backed' =>
+      'Laporan disusun dari riwayat data yang sudah cukup lengkap.',
+    'partial_history' => 'Data sudah ada, tapi histori pembanding belum penuh.',
+    'seeded_baseline' =>
+      'Data masih tipis, jadi beberapa insight masih estimasi awal.',
+    _ => 'Status kualitas data belum terdefinisi.',
+  };
+}
+
+String _statusLabelId(String value) {
+  return switch (value) {
+    'mastered' => 'Kuat',
+    'ready' => 'Siap',
+    'review_due' => 'Perlu Review',
+    'gap' => 'Masih Gap',
+    'in_progress' => 'Sedang Belajar',
+    _ => value.replaceAll('_', ' '),
+  };
+}
+
+String _deltaLabelId(int value) {
+  if (value > 0) {
+    return '+$value minggu ini';
+  }
+  if (value < 0) {
+    return '$value minggu ini';
+  }
+  return '0 minggu ini';
 }
 
 class _ReportPerformancePanel extends StatelessWidget {
@@ -11874,6 +12027,9 @@ class _ReportMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final deltaColor = delta.trim().startsWith('-')
+        ? WicaraColors.accentCoral
+        : WicaraColors.accentMint;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
       decoration: BoxDecoration(
@@ -11905,7 +12061,7 @@ class _ReportMetric extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: WicaraColors.accentMint,
+              color: deltaColor,
               fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
