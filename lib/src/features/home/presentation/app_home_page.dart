@@ -880,7 +880,6 @@ class _AppHomePageState extends State<AppHomePage> {
         onCloseLearningReport: _closeLearningReport,
         onOpenKnowledgeMap: _openKnowledgeMap,
         onCloseKnowledgeMap: _closeKnowledgeMap,
-        onRecommendationSelected: _handleRecommendedAction,
       ),
       _HomeTab.profile => _HomeSnapshotBuilder(
         constraints: constraints,
@@ -7111,7 +7110,6 @@ class _ProgressHub extends StatelessWidget {
     required this.onCloseLearningReport,
     required this.onOpenKnowledgeMap,
     required this.onCloseKnowledgeMap,
-    required this.onRecommendationSelected,
   });
 
   final BoxConstraints constraints;
@@ -7126,7 +7124,6 @@ class _ProgressHub extends StatelessWidget {
   final VoidCallback onCloseLearningReport;
   final VoidCallback onOpenKnowledgeMap;
   final VoidCallback onCloseKnowledgeMap;
-  final ValueChanged<RecommendedNextAction> onRecommendationSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -7136,7 +7133,6 @@ class _ProgressHub extends StatelessWidget {
         constraints: constraints,
         homeRepository: homeRepository,
         onBack: onCloseLearningReport,
-        onRecommendationSelected: onRecommendationSelected,
       );
     }
     if (showKnowledgeMap) {
@@ -7430,13 +7426,11 @@ class _LearningReportDetail extends StatefulWidget {
     required this.constraints,
     required this.homeRepository,
     required this.onBack,
-    required this.onRecommendationSelected,
   });
 
   final BoxConstraints constraints;
   final HomeRepository homeRepository;
   final VoidCallback onBack;
-  final ValueChanged<RecommendedNextAction> onRecommendationSelected;
 
   @override
   State<_LearningReportDetail> createState() => _LearningReportDetailState();
@@ -7490,7 +7484,6 @@ class _LearningReportDetailState extends State<_LearningReportDetail> {
             onBack: widget.onBack,
             selectedRange: _selectedRange,
             onRangeSelected: _selectRange,
-            onRecommendationSelected: widget.onRecommendationSelected,
           );
         }
         if (snapshot.hasError) {
@@ -7519,7 +7512,6 @@ class _LearningReportContent extends StatelessWidget {
     required this.onBack,
     required this.selectedRange,
     required this.onRangeSelected,
-    required this.onRecommendationSelected,
   });
 
   final BoxConstraints constraints;
@@ -7527,7 +7519,6 @@ class _LearningReportContent extends StatelessWidget {
   final VoidCallback onBack;
   final _ReportRangeOption selectedRange;
   final ValueChanged<_ReportRangeOption> onRangeSelected;
-  final ValueChanged<RecommendedNextAction> onRecommendationSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -7599,16 +7590,6 @@ class _LearningReportContent extends StatelessWidget {
             _WeeklyTimelinePanel(report: report),
             const SizedBox(height: 18),
             _ConceptMoversPanel(report: report),
-            const SizedBox(height: 18),
-            _UpcomingRecommendationsPanel(
-              recommendations: report.upcomingRecommendations,
-              onRecommendationSelected: onRecommendationSelected,
-              title: 'Rencana 7 Hari',
-              subtitle:
-                  'Aksi paling penting yang harus kamu kerjakan minggu ini.',
-            ),
-            const SizedBox(height: 18),
-            _DataTrustPanel(report: report),
           ],
         ),
       ),
@@ -8014,7 +7995,7 @@ class _ConceptMoversPanel extends StatelessWidget {
             )
           else
             for (final mover in strong) ...[
-              _ConceptMoverTile(mover: mover),
+              _ConceptMoverRow(mover: mover),
               if (mover != strong.last) const SizedBox(height: 8),
             ],
           const SizedBox(height: 14),
@@ -8029,7 +8010,7 @@ class _ConceptMoversPanel extends StatelessWidget {
             )
           else
             for (final mover in needs) ...[
-              _ConceptMoverTile(mover: mover),
+              _ConceptMoverRow(mover: mover),
               if (mover != needs.last) const SizedBox(height: 8),
             ],
         ],
@@ -8091,8 +8072,8 @@ class _SimplePlaceholder extends StatelessWidget {
   }
 }
 
-class _ConceptMoverTile extends StatelessWidget {
-  const _ConceptMoverTile({required this.mover});
+class _ConceptMoverRow extends StatelessWidget {
+  const _ConceptMoverRow({required this.mover});
 
   final ReportConceptMover mover;
 
@@ -8102,74 +8083,56 @@ class _ConceptMoverTile extends StatelessWidget {
     final color = improving
         ? WicaraColors.accentMint
         : WicaraColors.secondaryDeep;
-    final bg = improving
-        ? WicaraColors.accentMint.withValues(alpha: 0.16)
-        : WicaraColors.accentAmber.withValues(alpha: 0.18);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: WicaraColors.line),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(10),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '-',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            alignment: Alignment.center,
-            child: Icon(
-              improving
-                  ? Icons.trending_up_rounded
-                  : Icons.warning_amber_rounded,
-              color: color,
-              size: 18,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                mover.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  mover.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.text,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${_signedPercent(mover.masteryDeltaPercent)} • ${_statusLabelId(mover.status)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  mover.reason,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const SizedBox(width: 8),
+            Text(
+              _signedPercent(mover.masteryDeltaPercent),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Padding(
+          padding: const EdgeInsets.only(left: 16),
+          child: Text(
+            '${_statusLabelId(mover.status)} • ${mover.reason}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -8494,6 +8457,16 @@ String _statusLabelId(String value) {
   };
 }
 
+String _performanceLabelId(String value) {
+  final key = value.toLowerCase().trim();
+  return switch (key) {
+    'overall' => 'Umum',
+    'application' => 'Penerapan',
+    'analysis' => 'Penalaran',
+    _ => value,
+  };
+}
+
 String _deltaLabelId(int value) {
   if (value > 0) {
     return '+$value minggu ini';
@@ -8722,14 +8695,10 @@ class _UpcomingRecommendationsPanel extends StatelessWidget {
   const _UpcomingRecommendationsPanel({
     required this.recommendations,
     required this.onRecommendationSelected,
-    this.title = 'Upcoming recommendations',
-    this.subtitle,
   });
 
   final List<RecommendedNextAction> recommendations;
   final ValueChanged<RecommendedNextAction> onRecommendationSelected;
-  final String title;
-  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -8748,22 +8717,12 @@ class _UpcomingRecommendationsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            title,
+            'Upcoming recommendations',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (subtitle?.isNotEmpty == true) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
           const SizedBox(height: 14),
           for (final recommendation in rows) ...[
             _ReportRecommendationTile(
@@ -11978,7 +11937,7 @@ class _ReportBarGroup extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            label,
+            _performanceLabelId(label),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
