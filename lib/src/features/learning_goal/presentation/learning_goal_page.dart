@@ -31,7 +31,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   bool _isComplete = false;
   ActiveLearningGoal? _activeGoal;
   LearningGoalResolution? _resolution;
-  String? _selectedSubjectCode;
 
   @override
   void dispose() {
@@ -48,7 +47,10 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   }
 
   void _handleTopicChanged() {
-    setState(() => _resolution = null);
+    if (_resolution != null) {
+      return;
+    }
+    setState(() {});
   }
 
   Future<void> _loadActiveGoal() async {
@@ -76,30 +78,23 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
 
     setState(() => _isGenerating = true);
     try {
-      final existingResolution = _resolution;
-      if (existingResolution == null ||
-          existingResolution.suggestedConcept == null) {
-        final profile = widget.onboardingController.profile;
-        final subjectCode = _effectiveSubjectCode(profile.selectedSubjects);
-        final resolution = await widget.learningGoalRepository
-            .resolveLearningGoal(
-              rawQuery: _controller.text.trim(),
-              subjectCode: subjectCode,
-              educationLevel: profile.educationLevel,
-              gradeLevel: profile.gradeLevel,
-              language: profile.preferredLanguage,
-            );
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _resolution = resolution;
-          _isGenerating = false;
-        });
+      final profile = widget.onboardingController.profile;
+      final subjectCode = _effectiveSubjectCode(profile.selectedSubjects);
+      final resolution = await widget.learningGoalRepository
+          .resolveLearningGoal(
+            rawQuery: _controller.text.trim(),
+            subjectCode: subjectCode,
+            educationLevel: profile.educationLevel,
+            gradeLevel: profile.gradeLevel,
+            language: profile.preferredLanguage,
+          );
+      if (!mounted) {
         return;
       }
-
-      await _confirmSelectedResolution(existingResolution);
+      setState(() {
+        _resolution = resolution;
+        _isGenerating = false;
+      });
     } on ActiveGoalConflictException catch (conflict) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
@@ -131,7 +126,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text(
-          isId ? 'Goal ini sudah aktif' : 'This goal is already active',
+          isId ? 'Node ini sudah aktif' : 'This node is already active',
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -141,7 +136,10 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
               isId
                   ? 'Kamu sudah punya goal aktif untuk node ini:'
                   : 'You already have an active goal for this node:',
-              style: const TextStyle(fontSize: 13),
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             Container(
@@ -152,8 +150,9 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
               ),
               child: Text(
                 '"${conflict.existingTopic}"',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
+                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
                   fontSize: 14,
                 ),
               ),
@@ -161,9 +160,13 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
             const SizedBox(height: 10),
             Text(
               isId
-                  ? 'Kamu bisa lanjutkan goal ini, atau pilih node lain untuk goal baru.'
-                  : 'You can continue this goal, or choose another node for a new goal.',
-              style: const TextStyle(fontSize: 13, height: 1.4),
+                  ? 'Kamu bisa membuat goal lain selama node-nya belum aktif. Pilih node berbeda, atau lanjutkan goal aktif ini.'
+                  : 'You can create another goal as long as that node is not active. Choose a different node, or continue this active goal.',
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
             ),
           ],
         ),
@@ -178,20 +181,17 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           TextButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _continueExistingGoal(conflict);
+              _continueActiveGoal(nextAction: conflict.existingNextAction);
             },
-            child: Text(
-              isId ? 'Lanjutkan goal ini' : 'Continue existing goal',
-            ),
+            child: Text(isId ? 'Lanjutkan goal ini' : 'Continue existing goal'),
           ),
         ],
       ),
     );
   }
 
-  void _continueExistingGoal(ActiveGoalConflictException conflict) {
-    if (conflict.existingNextAction == 'continue_learning' ||
-        conflict.existingNextAction == 'enter_workspace') {
+  void _continueActiveGoal({required String nextAction}) {
+    if (nextAction == 'continue_learning' || nextAction == 'enter_workspace') {
       Navigator.of(context).pushReplacementNamed(
         AppRoutes.home,
         arguments: {'open_goal_history': true},
@@ -206,23 +206,19 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   }
 
   void _selectSubject(String subjectCode) {
-    setState(() {
-      _selectedSubjectCode = subjectCode;
-      _resolution = null;
-    });
+    if (subjectCode != 'math') {
+      return;
+    }
+    setState(() => _resolution = null);
   }
 
-  String _effectiveSubjectCode(List<String> selectedSubjects) {
-    return _selectedSubjectCode ?? _defaultSubjectCode(selectedSubjects);
+  String _effectiveSubjectCode(List<String> _) {
+    return 'math';
   }
 
   VoidCallback? _primaryAction() {
-    if (_controller.text.trim().isEmpty) {
+    if (_controller.text.trim().isEmpty || _isGenerating) {
       return null;
-    }
-    final resolution = _resolution;
-    if (resolution != null && resolution.suggestedConcept == null) {
-      return _generatePretest;
     }
     return _generatePretest;
   }
@@ -240,13 +236,40 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           : 'Search again';
     }
     return copy.isIndonesian
-        ? 'Node cocok, mulai pretest'
-        : 'Node looks right, start pretest';
+        ? 'Cari ulang dengan query baru'
+        : 'Search again with a new query';
+  }
+
+  Future<void> _selectRecommendedNode() async {
+    final resolution = _resolution;
+    if (resolution == null ||
+        resolution.suggestedConcept == null ||
+        _isGenerating) {
+      return;
+    }
+    try {
+      await _confirmSelectedResolution(resolution);
+    } on ActiveGoalConflictException catch (conflict) {
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+      await _showConflictDialog(conflict);
+    } on LearningGoalException catch (error) {
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+      _showLearningGoalError(error);
+    }
   }
 
   Future<void> _selectAlternative(LearningConceptSuggestion suggestion) async {
     final resolution = _resolution;
     if (resolution == null || _isGenerating) {
+      return;
+    }
+    if (await _showDuplicateNodeWarningIfNeeded(suggestion)) {
+      return;
+    }
+    final confirmed = await _showGoalConfirmationDialog(suggestion);
+    if (!mounted || !confirmed) {
       return;
     }
     setState(() => _isGenerating = true);
@@ -261,9 +284,8 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
       }
       setState(() {
         _resolution = selected;
-        _isGenerating = false;
       });
-      await _confirmSelectedResolution(selected);
+      await _confirmResolutionAndOpenPretest(selected.resolutionId);
     } on ActiveGoalConflictException catch (conflict) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
@@ -273,14 +295,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
         return;
       }
       setState(() => _isGenerating = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(error.message),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      _showLearningGoalError(error);
     }
   }
 
@@ -317,6 +332,9 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     if (_isGenerating) {
       setState(() => _isGenerating = false);
     }
+    if (await _showDuplicateNodeWarningIfNeeded(concept)) {
+      return;
+    }
     final confirmed = await _showGoalConfirmationDialog(concept);
     if (!mounted || !confirmed) {
       return;
@@ -331,13 +349,14 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
       widget.onboardingController.profile.preferredLanguage,
     );
     final isId = copy.isIndonesian;
+    final description = _nodeDescription(concept, isIndonesian: isId);
     return await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(
               isId
-                  ? 'Gunakan node ini sebagai goal?'
-                  : 'Use this as your learning goal?',
+                  ? 'Yakin ingin mengambil node ini?'
+                  : 'Are you sure you want to take this?',
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -345,21 +364,21 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
               children: [
                 Text(
                   concept.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: Theme.of(dialogContext).textTheme.titleMedium
+                      ?.copyWith(
+                        color: WicaraColors.text,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  concept
-                          .descriptionFor(isIndonesian: isId)
-                          .isNotEmpty
-                      ? concept.descriptionFor(isIndonesian: isId)
-                      : isId
-                      ? 'Pretest adaptif akan dimulai dari node ini.'
-                      : 'The adaptive pretest will start from this node.',
-                  style: const TextStyle(fontSize: 13, height: 1.35),
+                  description,
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -376,6 +395,252 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           ),
         ) ??
         false;
+  }
+
+  Future<bool> _showDuplicateNodeWarningIfNeeded(
+    LearningConceptSuggestion concept,
+  ) async {
+    final duplicateGoal = _duplicateActiveGoalFor(concept);
+    if (duplicateGoal == null) {
+      return false;
+    }
+    await _showDuplicateNodeDialog(duplicateGoal, concept);
+    return true;
+  }
+
+  ActiveLearningGoal? _duplicateActiveGoalFor(
+    LearningConceptSuggestion concept,
+  ) {
+    final activeGoal = _activeGoal;
+    if (activeGoal == null) {
+      return null;
+    }
+    final activeConcept = activeGoal.targetConcept;
+    if (activeConcept != null) {
+      if (activeConcept.conceptId.isNotEmpty &&
+          activeConcept.conceptId == concept.conceptId) {
+        return activeGoal;
+      }
+      if (activeConcept.conceptCode.isNotEmpty &&
+          activeConcept.conceptCode == concept.conceptCode) {
+        return activeGoal;
+      }
+      if (_sameLooseText(activeConcept.title, concept.title)) {
+        return activeGoal;
+      }
+    }
+    if (_sameLooseText(activeGoal.rawTopic, concept.title)) {
+      return activeGoal;
+    }
+    return null;
+  }
+
+  Future<void> _showDuplicateNodeDialog(
+    ActiveLearningGoal activeGoal,
+    LearningConceptSuggestion concept,
+  ) async {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
+    final isId = copy.isIndonesian;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isId ? 'Node ini sudah aktif' : 'This node is already active',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isId
+                  ? 'Kamu bisa membuat goal lain selama node-nya belum aktif.'
+                  : 'You can create another goal as long as that node is not active.',
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: WicaraColors.accentAmber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: WicaraColors.accentAmber.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Text(
+                concept.title,
+                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              isId
+                  ? 'Pilih node lain untuk goal baru, atau lanjutkan goal aktif ini.'
+                  : 'Choose a different node for a new goal, or continue this active goal.',
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              setState(() => _resolution = null);
+            },
+            child: Text(isId ? 'Pilih node lain' : 'Choose another node'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _continueActiveGoal(nextAction: activeGoal.nextAction);
+            },
+            child: Text(isId ? 'Lanjutkan goal ini' : 'Continue active goal'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showNodeDetail(
+    LearningConceptSuggestion concept,
+    LearningGoalResolution resolution,
+  ) async {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
+    final isId = copy.isIndonesian;
+    final description = _nodeDescription(concept, isIndonesian: isId);
+    final confidence = ((concept.confidence ?? resolution.confidence) * 100)
+        .round();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            22,
+            4,
+            22,
+            22 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                isId ? 'Detail node' : 'Node detail',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                concept.title,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: WicaraColors.text,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  height: 1.18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isId ? 'Deskripsi' : 'Description',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+                decoration: BoxDecoration(
+                  color: WicaraColors.primary.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: WicaraColors.primary.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: Text(
+                  description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              _NodeDetailRow(
+                label: isId ? 'Mata pelajaran' : 'Subject',
+                value: _subjectLabel(
+                  concept.subjectCode.isEmpty
+                      ? concept.subject
+                      : concept.subjectCode,
+                  isIndonesian: isId,
+                ),
+              ),
+              _NodeDetailRow(
+                label: isId ? 'Kecocokan' : 'Match',
+                value: '$confidence%',
+              ),
+              if (concept.levelNote != null) ...[
+                const SizedBox(height: 10),
+                _LevelNoteBox(
+                  note: concept.levelNote!,
+                  relation: concept.gradeRelation,
+                ),
+              ],
+              if (resolution.searchScopeReason != null) ...[
+                const SizedBox(height: 10),
+                _SearchScopeNote(text: resolution.searchScopeReason!),
+              ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    _openKnowledgeMap();
+                  },
+                  icon: const Icon(Icons.account_tree_outlined, size: 18),
+                  label: Text(isId ? 'Lihat graph' : 'See graph'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showLearningGoalError(LearningGoalException error) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   void _openKnowledgeMap() {
@@ -407,10 +672,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           widget.onboardingController.profile.preferredLanguage,
         );
         final profile = widget.onboardingController.profile;
-        final subjectChoices = _subjectChoices(
-          profile.selectedSubjects,
-          isIndonesian: copy.isIndonesian,
-        );
+        final subjectChoices = _subjectChoices(isIndonesian: copy.isIndonesian);
         final selectedSubjectCode = _effectiveSubjectCode(
           profile.selectedSubjects,
         );
@@ -423,6 +685,27 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                 final horizontalPadding = constraints.maxWidth < 360
                     ? 18.0
                     : 28.0;
+
+                if (_resolution != null && !_isComplete) {
+                  return _ResolvedLearningGoalLayout(
+                    pageWidth: pageWidth,
+                    horizontalPadding: horizontalPadding,
+                    copy: copy,
+                    subjectChoices: subjectChoices,
+                    selectedSubjectCode: selectedSubjectCode,
+                    isCheckingActive: _isCheckingActive,
+                    activeGoal: _activeGoal,
+                    controller: _controller,
+                    resolution: _resolution!,
+                    onBack: _goBack,
+                    onSubjectSelected: _selectSubject,
+                    onRefine: _refineResolution,
+                    onOpenGraph: _openKnowledgeMap,
+                    onRecommendedSelected: _selectRecommendedNode,
+                    onAlternativeSelected: _selectAlternative,
+                    onViewDetail: _showNodeDetail,
+                  );
+                }
 
                 return Center(
                   child: SizedBox(
@@ -566,6 +849,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                           _LearningGoalField(
                                             controller: _controller,
                                             copy: copy,
+                                            isLocked: _resolution != null,
                                           ),
                                           const SizedBox(height: 18),
                                           AnimatedSwitcher(
@@ -581,23 +865,25 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                                     resolution: _resolution!,
                                                     isIndonesian:
                                                         copy.isIndonesian,
-                                                    onRefine:
-                                                        _refineResolution,
-                                                    onOpenGraph:
-                                                        _openKnowledgeMap,
+                                                    onRecommendedSelected:
+                                                        _selectRecommendedNode,
                                                     onAlternativeSelected:
                                                         _selectAlternative,
+                                                    onViewDetail:
+                                                        _showNodeDetail,
                                                   )
                                                 : _PretestPreviewNotice(
                                                     copy: copy,
                                                   ),
                                           ),
-                                          const SizedBox(height: 22),
-                                          GradientButton(
-                                            label: _primaryActionLabel(copy),
-                                            onPressed: _primaryAction(),
-                                            isLoading: _isGenerating,
-                                          ),
+                                          if (_resolution == null) ...[
+                                            const SizedBox(height: 22),
+                                            GradientButton(
+                                              label: _primaryActionLabel(copy),
+                                              onPressed: _primaryAction(),
+                                              isLoading: _isGenerating,
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -620,11 +906,179 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   }
 }
 
+class _ResolvedLearningGoalLayout extends StatelessWidget {
+  const _ResolvedLearningGoalLayout({
+    required this.pageWidth,
+    required this.horizontalPadding,
+    required this.copy,
+    required this.subjectChoices,
+    required this.selectedSubjectCode,
+    required this.isCheckingActive,
+    required this.activeGoal,
+    required this.controller,
+    required this.resolution,
+    required this.onBack,
+    required this.onSubjectSelected,
+    required this.onRefine,
+    required this.onOpenGraph,
+    required this.onRecommendedSelected,
+    required this.onAlternativeSelected,
+    required this.onViewDetail,
+  });
+
+  final double pageWidth;
+  final double horizontalPadding;
+  final OnboardingCopy copy;
+  final List<_SubjectChoice> subjectChoices;
+  final String selectedSubjectCode;
+  final bool isCheckingActive;
+  final ActiveLearningGoal? activeGoal;
+  final TextEditingController controller;
+  final LearningGoalResolution resolution;
+  final VoidCallback onBack;
+  final ValueChanged<String> onSubjectSelected;
+  final VoidCallback onRefine;
+  final VoidCallback onOpenGraph;
+  final VoidCallback onRecommendedSelected;
+  final ValueChanged<LearningConceptSuggestion> onAlternativeSelected;
+  final void Function(
+    LearningConceptSuggestion concept,
+    LearningGoalResolution resolution,
+  )
+  onViewDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: pageWidth,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            10,
+            horizontalPadding,
+            12,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.chevron_left_rounded),
+                    iconSize: 33,
+                    color: WicaraColors.ink,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 38,
+                      height: 38,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      copy.learningGoalTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: WicaraColors.text,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: WicaraColors.line, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: WicaraColors.shadowBlue.withValues(alpha: 0.1),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isCheckingActive || activeGoal != null) ...[
+                      _ExistingGoalNotice(
+                        activeGoal: activeGoal,
+                        copy: copy,
+                        isChecking: isCheckingActive,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    Text(
+                      copy.learningTopicLabel,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 11),
+                    _SubjectSelector(
+                      choices: subjectChoices,
+                      selectedCode: selectedSubjectCode,
+                      isIndonesian: copy.isIndonesian,
+                      onSelected: onSubjectSelected,
+                    ),
+                    const SizedBox(height: 12),
+                    _LearningGoalField(
+                      controller: controller,
+                      copy: copy,
+                      isLocked: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _ResolutionNotice(
+                    resolution: resolution,
+                    isIndonesian: copy.isIndonesian,
+                    onRecommendedSelected: onRecommendedSelected,
+                    onAlternativeSelected: onAlternativeSelected,
+                    onViewDetail: onViewDetail,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _ResolutionActionBar(
+                isIndonesian: copy.isIndonesian,
+                onRefine: onRefine,
+                onOpenGraph: onOpenGraph,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LearningGoalField extends StatefulWidget {
-  const _LearningGoalField({required this.controller, required this.copy});
+  const _LearningGoalField({
+    required this.controller,
+    required this.copy,
+    required this.isLocked,
+  });
 
   final TextEditingController controller;
   final OnboardingCopy copy;
+  final bool isLocked;
 
   @override
   State<_LearningGoalField> createState() => _LearningGoalFieldState();
@@ -642,6 +1096,7 @@ class _LearningGoalFieldState extends State<_LearningGoalField> {
       ),
       child: TextField(
         controller: widget.controller,
+        readOnly: widget.isLocked,
         minLines: 1,
         maxLines: 4,
         textAlign: TextAlign.center,
@@ -669,10 +1124,15 @@ class _LearningGoalFieldState extends State<_LearningGoalField> {
 }
 
 class _SubjectChoice {
-  const _SubjectChoice({required this.code, required this.label});
+  const _SubjectChoice({
+    required this.code,
+    required this.label,
+    this.isLocked = false,
+  });
 
   final String code;
   final String label;
+  final bool isLocked;
 }
 
 class _SubjectSelector extends StatelessWidget {
@@ -694,51 +1154,130 @@ class _SubjectSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          isIndonesian
-              ? 'Pilih subject dulu supaya node tidak melenceng'
-              : 'Choose the subject first so matching stays scoped',
-          textAlign: TextAlign.center,
+          isIndonesian ? 'Mata pelajaran' : 'Subject',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: WicaraColors.muted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            height: 1.25,
+            color: WicaraColors.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
           ),
         ),
         const SizedBox(height: 9),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 7,
-          runSpacing: 7,
-          children: [
-            for (final choice in choices)
-              ChoiceChip(
-                label: Text(choice.label),
-                selected: choice.code == selectedCode,
-                onSelected: (_) => onSelected(choice.code),
-                showCheckmark: false,
-                visualDensity: VisualDensity.compact,
-                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: choice.code == selectedCode
-                      ? Colors.white
-                      : WicaraColors.text,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-                selectedColor: WicaraColors.primaryDeep,
-                backgroundColor: WicaraColors.fieldFill,
-                side: BorderSide(
-                  color: choice.code == selectedCode
-                      ? WicaraColors.primaryDeep
-                      : WicaraColors.line,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 8.0;
+            final itemWidth = math.max(
+              0.0,
+              (constraints.maxWidth - spacing) / 2,
+            );
+            return Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (final choice in choices)
+                  SizedBox(
+                    width: itemWidth,
+                    child: _SubjectChoiceTile(
+                      choice: choice,
+                      isSelected: choice.code == selectedCode,
+                      isIndonesian: isIndonesian,
+                      onTap: choice.isLocked
+                          ? null
+                          : () => onSelected(choice.code),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ],
+    );
+  }
+}
+
+class _SubjectChoiceTile extends StatelessWidget {
+  const _SubjectChoiceTile({
+    required this.choice,
+    required this.isSelected,
+    required this.isIndonesian,
+    required this.onTap,
+  });
+
+  final _SubjectChoice choice;
+  final bool isSelected;
+  final bool isIndonesian;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _subjectColor(choice.code);
+    final isLocked = choice.isLocked;
+    return Material(
+      color: isLocked
+          ? WicaraColors.fieldFill
+          : isSelected
+          ? color.withValues(alpha: 0.14)
+          : WicaraColors.fieldFill,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isLocked
+              ? WicaraColors.line
+              : isSelected
+              ? color
+              : WicaraColors.line,
+          width: isSelected ? 1.4 : 1.1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: isSelected ? 0.2 : 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(
+                  isLocked
+                      ? Icons.lock_outline_rounded
+                      : _subjectIcon(choice.code),
+                  color: isLocked ? WicaraColors.softMuted : color,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  choice.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isLocked ? WicaraColors.muted : WicaraColors.text,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (isLocked) ...[
+                const SizedBox(width: 6),
+                Text(
+                  isIndonesian ? 'Kunci' : 'Lock',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.softMuted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -783,21 +1322,24 @@ class _ResolutionNotice extends StatelessWidget {
   const _ResolutionNotice({
     required this.resolution,
     required this.isIndonesian,
-    required this.onRefine,
-    required this.onOpenGraph,
+    required this.onRecommendedSelected,
     required this.onAlternativeSelected,
+    required this.onViewDetail,
   });
 
   final LearningGoalResolution resolution;
   final bool isIndonesian;
-  final VoidCallback onRefine;
-  final VoidCallback onOpenGraph;
+  final VoidCallback onRecommendedSelected;
   final ValueChanged<LearningConceptSuggestion> onAlternativeSelected;
+  final void Function(
+    LearningConceptSuggestion concept,
+    LearningGoalResolution resolution,
+  )
+  onViewDetail;
 
   @override
   Widget build(BuildContext context) {
     final concept = resolution.suggestedConcept;
-    final confidence = (resolution.confidence * 100).round();
     if (concept == null) {
       return Container(
         key: ValueKey(resolution.resolutionId),
@@ -848,31 +1390,15 @@ class _ResolutionNotice extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               for (final alternative in resolution.alternatives.take(4)) ...[
-                _AlternativeNodeButton(
+                _NodeOptionCard(
                   suggestion: alternative,
                   isIndonesian: isIndonesian,
-                  onSelected: onAlternativeSelected,
+                  onSelected: () => onAlternativeSelected(alternative),
+                  onViewDetail: () => onViewDetail(alternative, resolution),
                 ),
                 const SizedBox(height: 7),
               ],
             ],
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton.icon(
-                  onPressed: onRefine,
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text(isIndonesian ? 'Perjelas query' : 'Refine query'),
-                ),
-                TextButton.icon(
-                  onPressed: onOpenGraph,
-                  icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  label: Text(isIndonesian ? 'Lihat graph' : 'Open graph'),
-                ),
-              ],
-            ),
           ],
         ),
       );
@@ -898,77 +1424,21 @@ class _ResolutionNotice extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  isIndonesian ? 'Node yang ditemukan' : 'Suggested node',
+                  isIndonesian ? 'Node rekomendasi' : 'Recommended node',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.text,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              Text(
-                '$confidence%',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.primaryDeep,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            concept.title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: WicaraColors.text,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            concept.descriptionFor(isIndonesian: isIndonesian).isNotEmpty
-                ? concept.descriptionFor(isIndonesian: isIndonesian)
-                : isIndonesian
-                ? 'Node ini dipakai sebagai learning goal utama untuk pretest adaptif.'
-                : 'This node will be used as the main learning goal for the adaptive pretest.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: WicaraColors.muted,
-              fontWeight: FontWeight.w600,
-              height: 1.32,
-            ),
-          ),
-          const SizedBox(height: 9),
-          Text(
-            '${concept.subject}${concept.gradeBand == null ? '' : ' • ${concept.gradeBand}'} • ${concept.conceptCode}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: WicaraColors.softMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (concept.levelNote != null) ...[
-            const SizedBox(height: 11),
-            _LevelNoteBox(
-              note: concept.levelNote!,
-              relation: concept.gradeRelation,
-            ),
-          ],
-          if (resolution.searchScopeReason != null) ...[
-            const SizedBox(height: 10),
-            _SearchScopeNote(text: resolution.searchScopeReason!),
-          ],
-          const SizedBox(height: 11),
-          Text(
-            isIndonesian
-                ? 'Pastikan node ini benar dulu. Kalau sudah cocok, tekan tombol mulai pretest di bawah.'
-                : 'Confirm this node first. If it looks right, press the start pretest button below.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: WicaraColors.text,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
-            ),
+          _NodeOptionCard(
+            suggestion: concept,
+            isIndonesian: isIndonesian,
+            onSelected: onRecommendedSelected,
+            onViewDetail: () => onViewDetail(concept, resolution),
           ),
           if (resolution.alternatives.isNotEmpty) ...[
             const SizedBox(height: 13),
@@ -981,32 +1451,249 @@ class _ResolutionNotice extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             for (final alternative in resolution.alternatives.take(3)) ...[
-              _AlternativeNodeButton(
+              _NodeOptionCard(
                 suggestion: alternative,
                 isIndonesian: isIndonesian,
-                onSelected: onAlternativeSelected,
+                onSelected: () => onAlternativeSelected(alternative),
+                onViewDetail: () => onViewDetail(alternative, resolution),
               ),
               const SizedBox(height: 7),
             ],
           ],
-          const SizedBox(height: 7),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              TextButton.icon(
+        ],
+      ),
+    );
+  }
+}
+
+class _ResolutionActionBar extends StatelessWidget {
+  const _ResolutionActionBar({
+    required this.isIndonesian,
+    required this.onRefine,
+    required this.onOpenGraph,
+  });
+
+  final bool isIndonesian;
+  final VoidCallback onRefine;
+  final VoidCallback onOpenGraph;
+
+  @override
+  Widget build(BuildContext context) {
+    final actionTextStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
+      fontSize: 12,
+      fontWeight: FontWeight.w800,
+      height: 1.15,
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: WicaraColors.line),
+        boxShadow: [
+          BoxShadow(
+            color: WicaraColors.shadowBlue.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
                 onPressed: onRefine,
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                label: Text(
-                  isIndonesian ? 'Belum cocok? Perjelas' : 'Not right? Refine',
+                label: Text(isIndonesian ? 'Ubah prompt' : 'Edit prompt'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  foregroundColor: WicaraColors.text,
+                  side: const BorderSide(color: WicaraColors.line),
+                  textStyle: actionTextStyle,
                 ),
               ),
-              TextButton.icon(
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
                 onPressed: onOpenGraph,
                 icon: const Icon(Icons.account_tree_outlined, size: 18),
-                label: Text(isIndonesian ? 'Lihat graph' : 'Open graph'),
+                label: Text(isIndonesian ? 'Lihat graph' : 'See graph'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  backgroundColor: WicaraColors.primary,
+                  foregroundColor: Colors.white,
+                  textStyle: actionTextStyle,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NodeOptionCard extends StatelessWidget {
+  const _NodeOptionCard({
+    required this.suggestion,
+    required this.isIndonesian,
+    required this.onSelected,
+    required this.onViewDetail,
+  });
+
+  final LearningConceptSuggestion suggestion;
+  final bool isIndonesian;
+  final VoidCallback onSelected;
+  final VoidCallback onViewDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = _nodeDescription(
+      suggestion,
+      isIndonesian: isIndonesian,
+    );
+    final gradeFit = _gradeFitDescription(
+      suggestion,
+      isIndonesian: isIndonesian,
+    );
+    return Material(
+      color: Colors.white.withValues(alpha: 0.78),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: WicaraColors.line),
+      ),
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 9),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                suggestion.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: WicaraColors.text,
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                description,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  height: 1.28,
+                ),
+              ),
+              if (gradeFit.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+                  decoration: BoxDecoration(
+                    color: _levelNoteColor(
+                      suggestion.gradeRelation,
+                    ).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _levelNoteColor(
+                        suggestion.gradeRelation,
+                      ).withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        _levelNoteIcon(suggestion.gradeRelation),
+                        color: _levelNoteColor(suggestion.gradeRelation),
+                        size: 15,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          gradeFit,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: WicaraColors.text,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onViewDetail,
+                  icon: const Icon(Icons.info_outline_rounded, size: 17),
+                  label: Text(isIndonesian ? 'Lihat detail' : 'View detail'),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 34),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NodeDetailRow extends StatelessWidget {
+  const _NodeDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    if (value.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 104,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.softMuted,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w700,
+                height: 1.28,
+              ),
+            ),
           ),
         ],
       ),
@@ -1014,95 +1701,70 @@ class _ResolutionNotice extends StatelessWidget {
   }
 }
 
-class _AlternativeNodeButton extends StatelessWidget {
-  const _AlternativeNodeButton({
-    required this.suggestion,
-    required this.isIndonesian,
-    required this.onSelected,
-  });
-
-  final LearningConceptSuggestion suggestion;
-  final bool isIndonesian;
-  final ValueChanged<LearningConceptSuggestion> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () => onSelected(suggestion),
-      style: OutlinedButton.styleFrom(
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-        side: const BorderSide(color: WicaraColors.line),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  suggestion.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.text,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  suggestion
-                          .descriptionFor(isIndonesian: isIndonesian)
-                          .isNotEmpty
-                      ? suggestion.descriptionFor(isIndonesian: isIndonesian)
-                      : isIndonesian
-                      ? 'Lihat apakah node ini lebih cocok dengan tujuanmu.'
-                      : 'Check whether this node better matches your goal.',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${suggestion.subject}${suggestion.gradeBand == null ? '' : ' • ${suggestion.gradeBand}'}${suggestion.conceptCode.isEmpty ? '' : ' • ${suggestion.conceptCode}'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: WicaraColors.softMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (suggestion.levelNote != null) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    suggestion.levelNote!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: _levelNoteColor(suggestion.gradeRelation),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.search_rounded, size: 17),
-        ],
-      ),
-    );
+String _nodeDescription(
+  LearningConceptSuggestion suggestion, {
+  required bool isIndonesian,
+}) {
+  final description = _courseDescriptionOnly(
+    suggestion.descriptionFor(isIndonesian: isIndonesian),
+  );
+  if (description.isNotEmpty) {
+    return description;
   }
+  return isIndonesian
+      ? 'Node ini akan dipakai sebagai goal utama untuk pretest adaptif.'
+      : 'This node will be used as the main goal for the adaptive pretest.';
+}
+
+String _courseDescriptionOnly(String value) {
+  var description = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (description.isEmpty) {
+    return '';
+  }
+  final patterns = <RegExp>[
+    RegExp(
+      r'\s+aligned with Kurikulum Merdeka(?:\s+[A-Z]+)?\s+Phase\s+[A-F]'
+      r'(?:/[A-F])?(?:\s+[A-Z]+)?\s+learning outcomes\.?',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'\s+sesuai Capaian Pembelajaran Kurikulum Merdeka(?:\s+SD)?'
+      r'\s+Fase\s+[A-F](?:/[A-F])?(?:\s+[A-Z]+)?\.?',
+      caseSensitive: false,
+    ),
+  ];
+  for (final pattern in patterns) {
+    description = description.replaceAll(pattern, '').trim();
+  }
+  if (description.isNotEmpty && !RegExp(r'[.!?]$').hasMatch(description)) {
+    description = '$description.';
+  }
+  return description;
+}
+
+String _gradeFitDescription(
+  LearningConceptSuggestion suggestion, {
+  required bool isIndonesian,
+}) {
+  final note = suggestion.levelNote?.trim();
+  if (note != null && note.isNotEmpty) {
+    return note;
+  }
+  return switch (suggestion.gradeRelation) {
+    'below_current_level' =>
+      isIndonesian
+          ? 'Node ini lebih rendah dari level kelasmu; cocok untuk memperkuat fondasi.'
+          : 'This node is below your grade level; it can strengthen foundations.',
+    'above_current_level' =>
+      isIndonesian
+          ? 'Node ini lebih tinggi dari level kelasmu; mungkin terasa lebih menantang.'
+          : 'This node is above your grade level; it may feel more challenging.',
+    'at_current_level' =>
+      isIndonesian
+          ? 'Node ini sesuai dengan level kelasmu.'
+          : 'This node fits your grade level.',
+    _ => '',
+  };
 }
 
 class _NoticeHeader extends StatelessWidget {
@@ -1250,21 +1912,18 @@ class _ExistingGoalNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = activeGoal?.targetConcept?.title ?? activeGoal?.rawTopic;
     final description = isChecking
         ? copy.isIndonesian
               ? 'Mengecek goal aktif yang sudah ada.'
               : 'Checking your existing active goals.'
         : copy.isIndonesian
-        ? 'Kamu masih bisa membuat goal baru selama nodenya berbeda'
-              '${title == null ? '.' : ' dari "$title".'}'
-        : 'You can still create a new goal as long as it uses a different node'
-              '${title == null ? '.' : ' from "$title".'}';
+        ? 'Kamu bisa membuat goal lain selama node itu belum aktif.'
+        : 'You can create another goal as long as that node is not active.';
     return _NoticeBox(
       icon: Icons.info_outline_rounded,
       title: copy.isIndonesian
-          ? 'Goal aktif tidak dibatalkan'
-          : 'Existing goals stay active',
+          ? 'Goal baru harus memakai node berbeda'
+          : 'New goals need a different node',
       description: description,
       color: WicaraColors.secondary,
     );
@@ -1327,91 +1986,28 @@ class _NoticeBox extends StatelessWidget {
   }
 }
 
-String? _preferredSubjectCode(List<String> subjects) {
-  if (subjects.isEmpty) {
-    return null;
-  }
-  final selected = subjects.first.toLowerCase();
-  if (selected.contains('math') || selected.contains('matematika')) {
-    return 'math';
-  }
-  if (selected.contains('ipas')) {
-    return 'ipas';
-  }
-  if (selected == 'ipa' ||
-      selected.contains('science') ||
-      selected.contains('sains')) {
-    return 'ipa';
-  }
-  if (selected.contains('physics') || selected.contains('fisika')) {
-    return 'physics';
-  }
-  if (selected.contains('chemistry') || selected.contains('kimia')) {
-    return 'chemistry';
-  }
-  if (selected.contains('biology') || selected.contains('biologi')) {
-    return 'biology';
-  }
-  return subjects.first;
-}
+const _learningGoalSubjectCodes = <String>[
+  'math',
+  'physics',
+  'biology',
+  'chemistry',
+];
 
-String _defaultSubjectCode(List<String> subjects) {
-  return _preferredSubjectCode([if (subjects.isNotEmpty) subjects.first]) ??
-      'math';
-}
-
-List<_SubjectChoice> _subjectChoices(
-  List<String> selectedSubjects, {
-  required bool isIndonesian,
-}) {
-  final choices = <_SubjectChoice>[];
-
-  void add(String code) {
-    final normalized = _normalizeSubjectCode(code);
-    if (choices.any((choice) => choice.code == normalized)) {
-      return;
-    }
-    choices.add(
+List<_SubjectChoice> _subjectChoices({required bool isIndonesian}) {
+  return [
+    for (final code in _learningGoalSubjectCodes)
       _SubjectChoice(
-        code: normalized,
-        label: _subjectLabel(normalized, isIndonesian: isIndonesian),
+        code: code,
+        label: _subjectLabel(code, isIndonesian: isIndonesian),
+        isLocked: code != 'math',
       ),
-    );
-  }
-
-  for (final subject in selectedSubjects) {
-    final mapped = _preferredSubjectCode([subject]);
-    if (mapped != null && mapped.trim().isNotEmpty) {
-      add(mapped);
-    }
-  }
-
-  for (final fallback in const [
-    'math',
-    'ipas',
-    'ipa',
-    'physics',
-    'chemistry',
-    'biology',
-  ]) {
-    add(fallback);
-  }
-
-  return choices;
+  ];
 }
 
 String _normalizeSubjectCode(String code) {
   final normalized = code.trim().toLowerCase();
   if (normalized.contains('math') || normalized.contains('matematika')) {
     return 'math';
-  }
-  if (normalized.contains('ipas')) {
-    return 'ipas';
-  }
-  if (normalized == 'science' ||
-      normalized == 'ipa' ||
-      normalized.contains('sains')) {
-    return 'ipa';
   }
   if (normalized.contains('physics') || normalized.contains('fisika')) {
     return 'physics';
@@ -1428,12 +2024,30 @@ String _normalizeSubjectCode(String code) {
 String _subjectLabel(String code, {required bool isIndonesian}) {
   return switch (_normalizeSubjectCode(code)) {
     'math' => isIndonesian ? 'Matematika' : 'Math',
-    'ipas' => 'IPAS',
-    'ipa' => isIndonesian ? 'IPA' : 'Science',
     'physics' => isIndonesian ? 'Fisika' : 'Physics',
     'chemistry' => isIndonesian ? 'Kimia' : 'Chemistry',
     'biology' => isIndonesian ? 'Biologi' : 'Biology',
     final value => value,
+  };
+}
+
+Color _subjectColor(String code) {
+  return switch (_normalizeSubjectCode(code)) {
+    'math' => WicaraColors.math,
+    'physics' => WicaraColors.physics,
+    'chemistry' => WicaraColors.chemistry,
+    'biology' => WicaraColors.biology,
+    _ => WicaraColors.primary,
+  };
+}
+
+IconData _subjectIcon(String code) {
+  return switch (_normalizeSubjectCode(code)) {
+    'math' => Icons.calculate_outlined,
+    'physics' => Icons.bolt_outlined,
+    'chemistry' => Icons.science_outlined,
+    'biology' => Icons.biotech_outlined,
+    _ => Icons.menu_book_outlined,
   };
 }
 
@@ -1453,4 +2067,10 @@ IconData _levelNoteIcon(String? relation) {
     'at_current_level' => Icons.check_circle_outline_rounded,
     _ => Icons.info_outline_rounded,
   };
+}
+
+bool _sameLooseText(String left, String right) {
+  final normalizedLeft = left.trim().toLowerCase();
+  final normalizedRight = right.trim().toLowerCase();
+  return normalizedLeft.isNotEmpty && normalizedLeft == normalizedRight;
 }
