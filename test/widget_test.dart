@@ -556,21 +556,12 @@ class _FakeLearningGoalRepository implements LearningGoalRepository {
   }
 
   @override
-  Future<List<LearningConceptSuggestion>> searchMaterials({
-    required String query,
+  Future<LearningGoalBootstrap> createLearningGoalFromConcept({
+    String? conceptId,
+    String? conceptCode,
     String? subjectCode,
   }) async {
-    return const [
-      LearningConceptSuggestion(
-        conceptId: 'concept-1',
-        conceptCode: 'math.multiplication',
-        title: 'Perkalian',
-        subject: 'Matematika',
-        description: 'Memahami perkalian sebagai kelompok sama banyak.',
-        subjectCode: 'math',
-        gradeBand: 'primary',
-      ),
-    ];
+    return const LearningGoalBootstrap(learningGoalId: 'goal-1');
   }
 
   @override

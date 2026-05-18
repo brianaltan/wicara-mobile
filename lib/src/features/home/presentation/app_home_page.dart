@@ -14,6 +14,7 @@ import '../../../core/widgets/language_chip.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
 import '../../curriculum/domain/curriculum_repository.dart';
+import '../../learning_goal/domain/learning_goal_repository.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../onboarding/domain/onboarding_options.dart';
@@ -75,6 +76,7 @@ bool _shouldOpenGoalHistory(Object? arguments) {
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.homeRepository,
     required this.authController,
     required this.onboardingController,
@@ -83,6 +85,7 @@ class AppHomePage extends StatefulWidget {
   });
 
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final HomeRepository homeRepository;
   final AuthController authController;
   final OnboardingController onboardingController;
@@ -866,6 +869,7 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         homeRepository: widget.homeRepository,
         curriculumRepository: widget.curriculumRepository,
+        learningGoalRepository: widget.learningGoalRepository,
         preferredLanguage:
             widget.onboardingController.profile.preferredLanguage,
         onBack: _openHome,
@@ -7097,6 +7101,7 @@ class _ProgressHub extends StatelessWidget {
     required this.constraints,
     required this.homeRepository,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.preferredLanguage,
     required this.onBack,
     required this.showLearningReport,
@@ -7111,6 +7116,7 @@ class _ProgressHub extends StatelessWidget {
   final BoxConstraints constraints;
   final HomeRepository homeRepository;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final String preferredLanguage;
   final VoidCallback onBack;
   final bool showLearningReport;
@@ -7136,6 +7142,7 @@ class _ProgressHub extends StatelessWidget {
       return _KnowledgeMapDetail(
         constraints: constraints,
         curriculumRepository: curriculumRepository,
+        learningGoalRepository: learningGoalRepository,
         preferredLanguage: preferredLanguage,
         onBack: onCloseKnowledgeMap,
       );
@@ -8365,12 +8372,14 @@ class _KnowledgeMapDetail extends StatefulWidget {
   const _KnowledgeMapDetail({
     required this.constraints,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.preferredLanguage,
     required this.onBack,
   });
 
   final BoxConstraints constraints;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final String preferredLanguage;
   final VoidCallback onBack;
 
@@ -8396,6 +8405,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
   bool _isLoadingCurriculum = true;
   bool _isLoadingMoreSections = false;
   bool _isUsingFallbackGraph = true;
+  bool _isCreatingGoal = false;
   int _curriculumRequestSerial = 0;
 
   @override
@@ -8566,6 +8576,10 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
             detailFuture: _loadConceptDetail(node, fallback),
             fallback: fallback,
             onClose: () => Navigator.of(sheetContext).pop(),
+            onUseAsGoal: () async {
+              Navigator.of(sheetContext).pop();
+              await _confirmGraphGoal(node);
+            },
           ),
         );
       },
@@ -8590,6 +8604,143 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
     } catch (_) {
       return fallback;
     }
+  }
+
+  Future<void> _confirmGraphGoal(_KnowledgeNode node) async {
+    if (_isCreatingGoal) {
+      return;
+    }
+    final copy = _HomeCopyScope.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          copy.isIndonesian
+              ? 'Gunakan node ini sebagai goal?'
+              : 'Use this as your learning goal?',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              node.label,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              copy.isIndonesian
+                  ? 'WICARA akan membuat goal baru dari node graph ini dan membuka pretest adaptif.'
+                  : 'WICARA will create a new goal from this graph node and open the adaptive pretest.',
+              style: const TextStyle(fontSize: 13, height: 1.35),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              copy.isIndonesian ? 'Pilih node lain' : 'Choose another node',
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(copy.isIndonesian ? 'Mulai pretest' : 'Start pretest'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) {
+      return;
+    }
+
+    setState(() => _isCreatingGoal = true);
+    try {
+      await widget.learningGoalRepository.createLearningGoalFromConcept(
+        conceptCode: node.id,
+        subjectCode: _selectedSubjectCode,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+    } on ActiveGoalConflictException catch (conflict) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      await _showGraphGoalConflictDialog(conflict);
+    } on LearningGoalException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  Future<void> _showGraphGoalConflictDialog(
+    ActiveGoalConflictException conflict,
+  ) async {
+    final copy = _HomeCopyScope.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          copy.isIndonesian
+              ? 'Goal ini sudah aktif'
+              : 'This goal is already active',
+        ),
+        content: Text(
+          copy.isIndonesian
+              ? 'Kamu sudah punya goal aktif untuk "${conflict.existingTopic}". Lanjutkan goal itu atau pilih node lain.'
+              : 'You already have an active goal for "${conflict.existingTopic}". Continue that goal or choose another node.',
+          style: const TextStyle(fontSize: 13, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(
+              copy.isIndonesian ? 'Pilih node lain' : 'Choose another node',
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _continueExistingGraphGoal(conflict);
+            },
+            child: Text(
+              copy.isIndonesian
+                  ? 'Lanjutkan goal ini'
+                  : 'Continue existing goal',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _continueExistingGraphGoal(ActiveGoalConflictException conflict) {
+    if (conflict.existingNextAction == 'continue_learning' ||
+        conflict.existingNextAction == 'enter_workspace') {
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.home,
+        arguments: {'open_goal_history': true},
+      );
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
   }
 
   @override
@@ -9690,11 +9841,13 @@ class _ConceptDetailBottomSheet extends StatelessWidget {
     required this.detailFuture,
     required this.fallback,
     required this.onClose,
+    required this.onUseAsGoal,
   });
 
   final Future<_ConceptDetailData> detailFuture;
   final _ConceptDetailData fallback;
   final VoidCallback onClose;
+  final VoidCallback onUseAsGoal;
 
   @override
   Widget build(BuildContext context) {
@@ -9732,6 +9885,7 @@ class _ConceptDetailBottomSheet extends StatelessWidget {
                       isLoading:
                           snapshot.connectionState == ConnectionState.waiting,
                       onClose: onClose,
+                      onUseAsGoal: onUseAsGoal,
                     ),
                   ],
                 ),
@@ -9856,11 +10010,13 @@ class _KnowledgeConceptDetailPanel extends StatefulWidget {
     required this.detail,
     required this.isLoading,
     required this.onClose,
+    required this.onUseAsGoal,
   });
 
   final _ConceptDetailData detail;
   final bool isLoading;
   final VoidCallback onClose;
+  final VoidCallback onUseAsGoal;
 
   @override
   State<_KnowledgeConceptDetailPanel> createState() =>
@@ -9999,6 +10155,16 @@ class _KnowledgeConceptDetailPanelState
                   fontWeight: FontWeight.w600,
                   height: 1.55,
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: widget.isLoading ? null : widget.onUseAsGoal,
+              icon: const Icon(Icons.flag_outlined, size: 18),
+              label: Text(
+                copy.isIndonesian
+                    ? 'Gunakan sebagai goal baru'
+                    : 'Use as new goal',
               ),
             ),
             const SizedBox(height: 16),

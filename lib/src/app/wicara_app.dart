@@ -173,6 +173,7 @@ class _WicaraAppState extends State<WicaraApp> {
         ),
         AppRoutes.home => AppHomePage(
           curriculumRepository: widget.curriculumRepository,
+          learningGoalRepository: widget.learningGoalRepository,
           homeRepository:
               widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
