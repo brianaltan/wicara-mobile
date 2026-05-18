@@ -9,6 +9,10 @@ abstract class HomeRepository {
     required String artifactId,
   });
 
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  });
+
   Future<DailyEvaluationSession> fetchDailyEvaluation();
 
   Future<DailyEvaluationAnswerResult> submitDailyEvaluationAnswer({
@@ -32,11 +36,12 @@ abstract class HomeRepository {
     required String questionId,
     required String optionId,
     required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
   });
 
-  Future<DailyEvaluationResult> finalizePosttest({
-    required String sessionId,
-  });
+  Future<AdaptivePosttestResult> finalizePosttest({required String sessionId});
 
   Future<WeeklyLearningReport> fetchWeeklyLearningReport({
     DateTime? start,

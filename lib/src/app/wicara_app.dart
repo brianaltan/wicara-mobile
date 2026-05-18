@@ -340,6 +340,13 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
   Future<DailyEvaluationSession> fetchDailyEvaluation() {
     throw UnimplementedError('HomeRepository is not configured.');
   }
@@ -375,14 +382,15 @@ class _UnavailableHomeRepository implements HomeRepository {
     required String questionId,
     required String optionId,
     required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 
   @override
-  Future<DailyEvaluationResult> finalizePosttest({
-    required String sessionId,
-  }) {
+  Future<AdaptivePosttestResult> finalizePosttest({required String sessionId}) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 

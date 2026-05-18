@@ -178,8 +178,12 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
   final targetTitle = target is Map ? _string(target['title']) : '';
   final recommendedPath = _string(diagnosis['recommended_path']);
   final pathOptions = diagnosis['path_options'];
-  final strengths = analysis is Map ? _stringList(analysis['strengths']) : const <String>[];
-  final gaps = analysis is Map ? _stringList(analysis['gaps']) : const <String>[];
+  final strengths = analysis is Map
+      ? _stringList(analysis['strengths'])
+      : const <String>[];
+  final gaps = analysis is Map
+      ? _stringList(analysis['gaps'])
+      : const <String>[];
   final evidenceNotes = analysis is Map
       ? _stringList(analysis['evidence_notes'])
       : const <String>[];
@@ -192,17 +196,15 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
   final confidence = target is Map
       ? _double(target['confidence'])
       : _percentToUnit(diagnosis['confidence_percent']);
-  final overallMasteryPercent = _int(diagnosis['overall_mastery_percent']) ??
+  final overallMasteryPercent =
+      _int(diagnosis['overall_mastery_percent']) ??
       (analysis is Map ? _int(analysis['overall_mastery_percent']) : null);
   return KnowledgeState(
     skill: targetTitle.isNotEmpty ? targetTitle : 'Adaptive diagnosis',
     gapLabel: target is Map ? _string(target['status']).toUpperCase() : 'DONE',
     message: _string(diagnosis['summary']),
     pathTitle: 'Personalized path generated',
-    pathMeta: _scoreMeta(
-      masteryScore: masteryScore,
-      confidence: confidence,
-    ),
+    pathMeta: _scoreMeta(masteryScore: masteryScore, confidence: confidence),
     pathDescription: _pathDescription(recommendedPath),
     recommendedPath: recommendedPath.isEmpty
         ? 'target_from_basics'
@@ -282,29 +284,38 @@ List<PretestNodeReport> _nodeReports(Object? value) {
   if (value is! List) {
     return const [];
   }
-  return value.whereType<Map>().map((node) {
-    final evidenceSummary = node['evidence_summary'];
-    final summary = evidenceSummary is Map ? evidenceSummary : const {};
-    return PretestNodeReport(
-      title: _string(node['title']).isNotEmpty
-          ? _string(node['title'])
-          : _string(node['concept_code']),
-      role: _string(node['role']),
-      status: _string(node['status']),
-      difficultyReached: _string(node['difficulty_reached']),
-      masteryScore: _double(node['mastery_score']),
-      confidence: _double(node['confidence']),
-      reasoningQuality: _string(summary['reasoning_quality']).isNotEmpty
-          ? _string(summary['reasoning_quality'])
-          : 'not_provided',
-      avgReasoningScore: _double(summary['avg_reasoning_score']),
-      attemptCount: _int(summary['attempt_count']) ?? 0,
-      correctCount: _int(summary['correct_count']) ?? 0,
-      diagnosticSignals: _stringList(summary['diagnostic_signals']),
-      carelessMistakePossible: summary['careless_mistake_possible'] == true,
-      misconceptionDetected: summary['misconception_detected'] == true,
-    );
-  }).where((node) => node.status != 'not_tested').toList(growable: false);
+  return value
+      .whereType<Map>()
+      .map((node) {
+        final evidenceSummary = node['evidence_summary'];
+        final summary = evidenceSummary is Map ? evidenceSummary : const {};
+        return PretestNodeReport(
+          title: _string(node['title']).isNotEmpty
+              ? _string(node['title'])
+              : _string(node['concept_code']),
+          role: _string(node['role']),
+          status: _string(node['status']),
+          difficultyReached: _string(node['difficulty_reached']),
+          masteryScore: _double(node['mastery_score']),
+          confidence: _double(node['confidence']),
+          reasoningQuality: _string(summary['reasoning_quality']).isNotEmpty
+              ? _string(summary['reasoning_quality'])
+              : 'not_provided',
+          avgReasoningScore: _double(summary['avg_reasoning_score']),
+          attemptCount: _int(summary['attempt_count']) ?? 0,
+          correctCount: _int(summary['correct_count']) ?? 0,
+          answerPercent: _double(node['answer_percent']),
+          evidencePercent: _double(node['evidence_percent']),
+          scorePercent: _double(node['score_percent']),
+          confidencePercent: _double(node['confidence_percent']),
+          metricSource: _string(node['metric_source']),
+          diagnosticSignals: _stringList(summary['diagnostic_signals']),
+          carelessMistakePossible: summary['careless_mistake_possible'] == true,
+          misconceptionDetected: summary['misconception_detected'] == true,
+        );
+      })
+      .where((node) => node.status != 'not_tested')
+      .toList(growable: false);
 }
 
 String _scoreMeta({double? masteryScore, double? confidence}) {

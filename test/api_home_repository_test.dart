@@ -43,7 +43,7 @@ void main() {
       sessionStore: sessionStore,
     );
 
-    await repository.fetchWeeklyLearningReport(
+    final report = await repository.fetchWeeklyLearningReport(
       start: DateTime(2026, 5, 11),
       end: DateTime(2026, 5, 17),
     );
@@ -54,6 +54,122 @@ void main() {
       'end': '2026-05-17',
     });
     expect(requestedUri.toString(), isNot(contains('%3F')));
+    expect(report.pretestScorePercent, 72);
+    expect(report.posttestScorePercent, 88);
+    expect(report.learningGainPercent, 16);
+    expect(report.pairedConceptCount, 1);
+  });
+
+  test('posttest answer sends reasoning and canvas evidence fields', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sessionStore = AuthSessionStore();
+    await sessionStore.save(
+      session: const AuthSession(
+        userId: 'learner-test',
+        displayName: 'Learner Test',
+        role: AuthRole.learner,
+        onboardingCompleted: true,
+        token: 'token-test',
+      ),
+      lastProtectedRoute: '/home',
+    );
+
+    late Map<String, dynamic> body;
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'attempt_id': 'attempt-1',
+            'is_correct': true,
+            'completed': false,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final repository = ApiHomeRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+    );
+
+    await repository.submitPosttestAnswer(
+      sessionId: 'posttest-1',
+      questionId: 'question-1',
+      optionId: 'option-1',
+      confidence: 7,
+      typedReasoning: '6 groups of 7',
+      canvasAssetId: 'canvas-1',
+      usedCanvas: true,
+    );
+
+    expect(body['question_id'], 'question-1');
+    expect(body['selected_option_id'], 'option-1');
+    expect(body['typed_reasoning'], '6 groups of 7');
+    expect(body['canvas_asset_id'], 'canvas-1');
+    expect(body['used_canvas'], isTrue);
+  });
+
+  test('posttest finalize parses node-level metrics', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sessionStore = AuthSessionStore();
+    await sessionStore.save(
+      session: const AuthSession(
+        userId: 'learner-test',
+        displayName: 'Learner Test',
+        role: AuthRole.learner,
+        onboardingCompleted: true,
+        token: 'token-test',
+      ),
+      lastProtectedRoute: '/home',
+    );
+
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'session_id': 'posttest-1',
+            'status': 'completed',
+            'retake_required_concepts': ['math.multiplication'],
+            'node_results': [
+              {
+                'concept_id': 'concept-1',
+                'concept_code': 'math.multiplication',
+                'concept_title': 'Perkalian',
+                'total_questions': 3,
+                'answered_count': 3,
+                'correct_count': 2,
+                'answer_percent': 66.67,
+                'evidence_percent': 76.67,
+                'score_percent': 76.67,
+                'confidence_percent': 68,
+                'scaled_score': 7.67,
+                'passed': false,
+                'retake_required': true,
+                'metric_source': 'adaptive_posttest_evidence',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final repository = ApiHomeRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+    );
+
+    final result = await repository.finalizePosttest(sessionId: 'posttest-1');
+
+    expect(result.passed, isFalse);
+    expect(result.answerPercent, 66.67);
+    expect(result.evidencePercent, 76.67);
+    expect(result.retakeRequiredConcepts, ['math.multiplication']);
+    expect(result.nodeResults.single.retakeRequired, isTrue);
   });
 }
 
@@ -65,6 +181,10 @@ Map<String, Object?> _weeklyReportJson() {
     'status': 'complete',
     'source': 'test',
     'score': 88,
+    'pretest_score_percent': 72,
+    'posttest_score_percent': 88,
+    'learning_gain_percent': 16,
+    'paired_concept_count': 1,
     'fixed_gaps': 4,
     'fixed_gaps_delta': 2,
     'remaining_gaps': 1,

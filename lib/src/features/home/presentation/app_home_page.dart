@@ -102,7 +102,7 @@ class _AppHomePageState extends State<AppHomePage> {
   String? _dailyEvaluationSessionId;
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
-  DailyEvaluationResult? _posttestResult;
+  AdaptivePosttestResult? _posttestResult;
   String? _posttestSessionId;
   DailyEvaluationSession? _posttestSessionData;
   List<PretestQuestion> _backendPosttestQuestions = const [];
@@ -150,7 +150,9 @@ class _AppHomePageState extends State<AppHomePage> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             const SnackBar(
-              content: Text('Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.'),
+              content: Text(
+                'Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -559,7 +561,9 @@ class _AppHomePageState extends State<AppHomePage> {
     if (session.questions.isEmpty) {
       return 0;
     }
-    return session.progress.completed.clamp(0, session.questions.length - 1).toInt();
+    return session.progress.completed
+        .clamp(0, session.questions.length - 1)
+        .toInt();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -690,8 +694,11 @@ class _AppHomePageState extends State<AppHomePage> {
       if (_posttestError != null || _backendPosttestQuestions.isEmpty) {
         return _DashboardStatePage(
           constraints: constraints,
-          title: copy.isIndonesian ? 'Posttest tidak tersedia' : 'Posttest unavailable',
-          message: _posttestError ??
+          title: copy.isIndonesian
+              ? 'Posttest tidak tersedia'
+              : 'Posttest unavailable',
+          message:
+              _posttestError ??
               (copy.isIndonesian
                   ? 'Backend tidak mengembalikan soal posttest.'
                   : 'Backend returned no posttest questions.'),
@@ -723,11 +730,10 @@ class _AppHomePageState extends State<AppHomePage> {
     }
 
     if (_showPosttestResult) {
-      return _EvaluationCompletePage(
+      return _PosttestAnalysisPage(
         constraints: constraints,
         result: _posttestResult,
         onBackHome: _openHome,
-        onActionSelected: _handleRecommendedAction,
       );
     }
 
@@ -3265,6 +3271,311 @@ class _EvaluationCompletePage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PosttestAnalysisPage extends StatelessWidget {
+  const _PosttestAnalysisPage({
+    required this.constraints,
+    required this.result,
+    required this.onBackHome,
+  });
+
+  final BoxConstraints constraints;
+  final AdaptivePosttestResult? result;
+  final VoidCallback onBackHome;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final resolved = result;
+    final passed = resolved?.passed ?? false;
+    final scoreFraction =
+        ((resolved?.scorePercent ?? 0).clamp(0, 100).toDouble()) / 100;
+    final nodes = resolved?.nodeResults ?? const <PosttestNodeResult>[];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _LearningSurfaceHeader(
+              title: 'Posttest Analysis',
+              languageCode: 'EN',
+              onBack: onBackHome,
+            ),
+            const SizedBox(height: 25),
+            Text(
+              passed
+                  ? (copy.isIndonesian
+                        ? 'Mastery terkonfirmasi'
+                        : 'Mastery confirmed')
+                  : (copy.isIndonesian
+                        ? 'Perlu retake node lemah'
+                        : 'Retake weak nodes'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              copy.isIndonesian
+                  ? 'Posttest memakai MCQ sebagai anchor. Evidence dan confidence membantu analisis, tapi tidak mengubah benar/salah.'
+                  : 'MCQ correctness is the anchor. Evidence and confidence improve analysis, but do not flip correctness.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 26),
+            _Panel(
+              padding: const EdgeInsets.fromLTRB(18, 17, 18, 18),
+              child: Row(
+                children: [
+                  Expanded(child: _EvaluationScoreRing(score: scoreFraction)),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _EvaluationStat(
+                          value: _percentText(resolved?.answerPercent ?? 0),
+                          label: copy.isIndonesian
+                              ? 'Correctness'
+                              : 'Correctness',
+                        ),
+                        const SizedBox(height: 17),
+                        _EvaluationStat(
+                          value: _percentText(resolved?.evidencePercent ?? 0),
+                          label: copy.isIndonesian ? 'Evidence' : 'Evidence',
+                        ),
+                        const SizedBox(height: 17),
+                        _EvaluationStat(
+                          value:
+                              '${resolved?.passedNodeCount ?? 0}/${resolved?.totalNodeCount ?? 0}',
+                          label: copy.isIndonesian
+                              ? 'Nodes passed'
+                              : 'Nodes passed',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _PosttestNodeResultsPanel(nodes: nodes),
+            const SizedBox(height: 18),
+            _Panel(
+              padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+              child: Row(
+                children: [
+                  Icon(
+                    passed
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.refresh_rounded,
+                    color: passed
+                        ? WicaraColors.secondary
+                        : WicaraColors.accentCoral,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      passed
+                          ? (copy.isIndonesian
+                                ? 'Semua node melewati mastery gate. Kamu bisa lanjut ke materi berikutnya.'
+                                : 'All nodes passed the mastery gate. Continue to the next material.')
+                          : (copy.isIndonesian
+                                ? 'Review node yang belum lulus, lalu retake posttest.'
+                                : 'Review the nodes that did not pass, then retake the posttest.'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.text,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+            _BackHomeButton(
+              label: passed
+                  ? (copy.isIndonesian ? 'Lanjut belajar' : 'Continue learning')
+                  : (copy.isIndonesian
+                        ? 'Review node lemah'
+                        : 'Review weak nodes'),
+              onPressed: onBackHome,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PosttestNodeResultsPanel extends StatelessWidget {
+  const _PosttestNodeResultsPanel({required this.nodes});
+
+  final List<PosttestNodeResult> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            copy.isIndonesian ? 'Hasil per node' : 'Node results',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (nodes.isEmpty)
+            Text(
+              copy.isIndonesian
+                  ? 'Belum ada node posttest yang dinilai.'
+                  : 'No posttest nodes have been evaluated yet.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            for (var index = 0; index < nodes.length; index++) ...[
+              _PosttestNodeResultRow(node: nodes[index]),
+              if (index != nodes.length - 1) const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PosttestNodeResultRow extends StatelessWidget {
+  const _PosttestNodeResultRow({required this.node});
+
+  final PosttestNodeResult node;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final statusColor = node.passed
+        ? WicaraColors.secondary
+        : WicaraColors.accentCoral;
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  node.conceptTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _SoftBadge(node.passed ? 'Passed' : 'Retake'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _PosttestMetricChip(
+                label: copy.isIndonesian ? 'Benar' : 'Correct',
+                value: _percentText(node.answerPercent),
+              ),
+              _PosttestMetricChip(
+                label: 'Evidence',
+                value: _percentText(node.evidencePercent),
+              ),
+              _PosttestMetricChip(
+                label: 'Confidence',
+                value: _percentText(node.confidencePercent),
+              ),
+              _PosttestMetricChip(
+                label: copy.isIndonesian ? 'Skor' : 'Score',
+                value: node.scaledScore.toStringAsFixed(1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            node.passed
+                ? (copy.isIndonesian
+                      ? '${node.correctCount}/${node.totalQuestions} jawaban benar. Node ini lulus gate.'
+                      : '${node.correctCount}/${node.totalQuestions} correct. This node passed the gate.')
+                : (copy.isIndonesian
+                      ? '${node.correctCount}/${node.totalQuestions} jawaban benar. Correctness harus minimal 70%.'
+                      : '${node.correctCount}/${node.totalQuestions} correct. Correctness must be at least 70%.'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: statusColor,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PosttestMetricChip extends StatelessWidget {
+  const _PosttestMetricChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Text(
+        '$label $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+String _percentText(double value) {
+  final clamped = value.clamp(0.0, 100.0);
+  return clamped == clamped.roundToDouble()
+      ? '${clamped.round()}%'
+      : '${clamped.toStringAsFixed(1)}%';
 }
 
 class _EvaluationScoreRing extends StatefulWidget {
@@ -6600,6 +6911,8 @@ class _LearningReportContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
+            _LearningGainCard(report: report),
+            const SizedBox(height: 18),
             _ReportPerformancePanel(report: report),
             const SizedBox(height: 18),
             Row(
@@ -6730,6 +7043,124 @@ String _reportRangeOptionLabel(_ReportRangeOption option) {
     _ReportRangeOption.last4Weeks => 'Last 4 weeks',
   };
 }
+
+class _LearningGainCard extends StatelessWidget {
+  const _LearningGainCard({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPairedEvidence = report.pairedConceptCount > 0;
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.trending_up_rounded,
+                color: WicaraColors.secondary,
+                size: 21,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Learning gain',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (hasPairedEvidence)
+                _SoftBadge('${report.pairedConceptCount} paired'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (!hasPairedEvidence)
+            Text(
+              'Not enough paired pretest and posttest evidence yet.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Pretest',
+                    value: '${report.pretestScorePercent ?? 0}%',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Posttest',
+                    value: '${report.posttestScorePercent ?? 0}%',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Gain',
+                    value: _signedPercent(report.learningGainPercent ?? 0),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningGainMetric extends StatelessWidget {
+  const _LearningGainMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: WicaraColors.text,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _signedPercent(int value) => value > 0 ? '+$value%' : '$value%';
 
 class _ReportPerformancePanel extends StatelessWidget {
   const _ReportPerformancePanel({required this.report});

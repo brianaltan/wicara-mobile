@@ -114,6 +114,11 @@ class PretestNodeReport {
     this.avgReasoningScore,
     this.attemptCount = 0,
     this.correctCount = 0,
+    this.answerPercent,
+    this.evidencePercent,
+    this.scorePercent,
+    this.confidencePercent,
+    this.metricSource = '',
     this.diagnosticSignals = const [],
     this.carelessMistakePossible = false,
     this.misconceptionDetected = false,
@@ -129,6 +134,11 @@ class PretestNodeReport {
   final double? avgReasoningScore;
   final int attemptCount;
   final int correctCount;
+  final double? answerPercent;
+  final double? evidencePercent;
+  final double? scorePercent;
+  final double? confidencePercent;
+  final String metricSource;
   final List<String> diagnosticSignals;
   final bool carelessMistakePossible;
   final bool misconceptionDetected;
