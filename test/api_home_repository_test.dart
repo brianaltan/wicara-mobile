@@ -112,6 +112,50 @@ void main() {
     expect(body['used_canvas'], isTrue);
   });
 
+  test('posttest start sends module focus when provided', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sessionStore = AuthSessionStore();
+    await sessionStore.save(
+      session: const AuthSession(
+        userId: 'learner-test',
+        displayName: 'Learner Test',
+        role: AuthRole.learner,
+        onboardingCompleted: true,
+        token: 'token-test',
+      ),
+      lastProtectedRoute: '/home',
+    );
+
+    late Map<String, dynamic> body;
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'session_id': 'posttest-1',
+            'status': 'active',
+            'question_count': 0,
+            'total_questions': 0,
+            'questions': [],
+            'node_results': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final repository = ApiHomeRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+    );
+
+    await repository.startPosttest(trackId: 'track-1', moduleId: 'module-1');
+
+    expect(body['track_id'], 'track-1');
+    expect(body['module_id'], 'module-1');
+  });
+
   test('posttest finalize parses node-level metrics', () async {
     SharedPreferences.setMockInitialValues({});
     final sessionStore = AuthSessionStore();

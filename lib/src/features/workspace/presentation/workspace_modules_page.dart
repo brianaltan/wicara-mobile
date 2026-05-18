@@ -17,7 +17,6 @@ import '../domain/workspace_repository.dart';
 
 enum _WorkspaceContentMode {
   choosing,
-  explanation,
   videoProcessing,
   videoReady,
   videoFailed,
@@ -301,25 +300,6 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
   }
 
-  void _chooseExplanation() {
-    _stopVideoPolling = true;
-    _isVideoGenerating = false;
-    setState(() {
-      _contentMode = _WorkspaceContentMode.explanation;
-      _quizState = _WorkspaceQuizState.unanswered;
-      _selectedQuizAnswer = null;
-    });
-    _appendWorkspaceEvent(
-      eventType: 'text',
-      textPayload: 'Please give me a full explanation of this topic.',
-      metadata: const {
-        'stage': 'explain',
-        'triggered_by': 'explanation_choice',
-      },
-    );
-    _scrollToBottom();
-  }
-
   Future<void> _generateVideo() async {
     if (_isVideoGenerating) {
       return;
@@ -477,6 +457,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
   }
 
+  // ignore: unused_element
   _VideoGenerationPayload? _buildPayloadForWorkspace(
     WorkspaceSession workspace,
   ) {
@@ -1515,13 +1496,57 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
     if (isCorrect && mounted) {
       setState(() => _moduleCompleted = true);
-      _finishModuleAndOpenPosttest();
+      _openPosttestFromWorkspace(
+        moduleCompleted: true,
+        requestedEarlyPosttest: false,
+      );
       return;
     }
     _scrollToBottom();
   }
 
-  void _finishModuleAndOpenPosttest() {
+  Future<void> _requestPosttest() async {
+    if (_moduleCompleted) {
+      _openPosttestFromWorkspace(
+        moduleCompleted: true,
+        requestedEarlyPosttest: false,
+      );
+      return;
+    }
+
+    final shouldStart = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Workspace not finished yet'),
+          content: const Text(
+            'You have not finished this workspace module. Starting the posttest now may skip practice evidence for this concept.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep learning'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Start posttest'),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldStart == true && mounted) {
+      _openPosttestFromWorkspace(
+        moduleCompleted: false,
+        requestedEarlyPosttest: true,
+      );
+    }
+  }
+
+  void _openPosttestFromWorkspace({
+    required bool moduleCompleted,
+    required bool requestedEarlyPosttest,
+  }) {
     final arguments = widget.routeArguments;
     final assessmentPack = _assessmentPack;
     Navigator.of(context).pop(
@@ -1529,6 +1554,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         trackId: arguments?.trackId ?? _workspace?.trackId ?? '',
         moduleId: arguments?.moduleId ?? _workspace?.moduleId ?? '',
         moduleTitle: assessmentPack.topicTitle,
+        moduleCompleted: moduleCompleted,
+        requestedEarlyPosttest: requestedEarlyPosttest,
       ),
     );
   }
@@ -1567,6 +1594,35 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       _chatEntries.add(_WorkspaceChatEntry.text(text: message, isUser: true));
     });
     await _appendWorkspaceEvent(eventType: 'text', textPayload: message);
+    _scrollToBottom();
+  }
+
+  Future<void> _startLearningChat() async {
+    if (_chatEntries.isNotEmpty) {
+      return;
+    }
+    if (_isLoadingWorkspace || _workspace == null) {
+      setState(() {
+        _workspaceError = 'Chat session is still loading.';
+      });
+      return;
+    }
+
+    final topic = _assessmentPack.topicTitle;
+    final message = _normalizedLanguageCode() == 'id'
+        ? 'Saya siap mulai belajar $topic.'
+        : "I'm ready to start learning $topic.";
+    setState(() {
+      _chatEntries.add(_WorkspaceChatEntry.text(text: message, isUser: true));
+    });
+    await _appendWorkspaceEvent(
+      eventType: 'text',
+      textPayload: message,
+      metadata: const {
+        'triggered_by': 'workspace_start_chat_button',
+        'stage_intent': 'engage',
+      },
+    );
     _scrollToBottom();
   }
 
@@ -1804,6 +1860,18 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _isLoadingWorkspace
+                                ? null
+                                : () {
+                                    unawaited(_requestPosttest());
+                                  },
+                            icon: const Icon(
+                              Icons.assignment_turned_in_outlined,
+                            ),
+                            label: const Text('Start Posttest'),
+                          ),
                         ],
                       ),
                     ),
@@ -1826,7 +1894,6 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 assessmentPack: _assessmentPack,
                                 isLoadingWorkspace: _isLoadingWorkspace,
                                 isAppendingEvent: _isAppendingEvent,
-                                moduleCompleted: _moduleCompleted,
                                 isVideoGenerating: _isVideoGenerating,
                                 workspaceError: _workspaceError,
                                 latestVideoStatus: _latestVideoStatus,
@@ -1842,12 +1909,13 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 onDismissReport: () {
                                   setState(() => _reportCardDismissed = true);
                                 },
-                                onChooseExplanation: _chooseExplanation,
                                 onGenerateVideo: () {
                                   unawaited(_generateVideo());
                                 },
                                 onAnswerQuiz: _answerQuiz,
-                                onStartPosttest: _finishModuleAndOpenPosttest,
+                                onStartChat: () {
+                                  unawaited(_startLearningChat());
+                                },
                                 onOpenCanvas: _openCanvas,
                               ),
                             ),
@@ -2019,7 +2087,6 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.assessmentPack,
     required this.isLoadingWorkspace,
     required this.isAppendingEvent,
-    required this.moduleCompleted,
     required this.isVideoGenerating,
     required this.workspaceError,
     required this.latestVideoStatus,
@@ -2028,10 +2095,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.videoErrorMessage,
     required this.canGenerateVideo,
     required this.videoTemplateHint,
-    required this.onChooseExplanation,
     required this.onGenerateVideo,
     required this.onAnswerQuiz,
-    required this.onStartPosttest,
+    required this.onStartChat,
     required this.onOpenCanvas,
     this.weeklyReport,
     this.onDismissReport,
@@ -2045,7 +2111,6 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final HardcodedAssessmentPack assessmentPack;
   final bool isLoadingWorkspace;
   final bool isAppendingEvent;
-  final bool moduleCompleted;
   final bool isVideoGenerating;
   final String? workspaceError;
   final WorkspaceAnimationJobStatus? latestVideoStatus;
@@ -2054,10 +2119,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final String? videoErrorMessage;
   final bool canGenerateVideo;
   final String? videoTemplateHint;
-  final VoidCallback onChooseExplanation;
   final VoidCallback onGenerateVideo;
   final ValueChanged<String> onAnswerQuiz;
-  final VoidCallback onStartPosttest;
+  final VoidCallback onStartChat;
   final VoidCallback onOpenCanvas;
   final WeeklyLearningReport? weeklyReport;
   final VoidCallback? onDismissReport;
@@ -2113,12 +2177,6 @@ class _WorkspaceChatPanel extends StatelessWidget {
               text: 'Saving workspace evidence...',
             ),
           ],
-          const SizedBox(height: 14),
-          _WorkspaceChoiceGrid(
-            contentMode: contentMode,
-            isVideoGenerating: isVideoGenerating,
-            onChooseExplanation: onChooseExplanation,
-          ),
           if (videoTemplateHint != null) ...[
             const SizedBox(height: 10),
             _WorkspaceSyncNotice(
@@ -2127,27 +2185,21 @@ class _WorkspaceChatPanel extends StatelessWidget {
               isError: true,
             ),
           ],
-          if (contentMode == _WorkspaceContentMode.explanation) ...[
+          if (!isLoadingWorkspace &&
+              workspaceError == null &&
+              chatEntries.isEmpty) ...[
             const SizedBox(height: 14),
-            const _WorkspaceBubble(
-              text: 'Long explanation, please.',
-              isUser: true,
-            ),
-            const SizedBox(height: 9),
-            _ConceptExplanationBubble(
-              explanationText: assessmentPack.workspaceExplanation,
-            ),
+            _WorkspaceStartChatCard(onStartChat: onStartChat),
           ],
-          if (contentMode == _WorkspaceContentMode.explanation ||
-              contentMode == _WorkspaceContentMode.videoReady) ...[
+          if (!isLoadingWorkspace &&
+              workspaceError == null &&
+              chatEntries.isNotEmpty) ...[
             const SizedBox(height: 14),
             _WorkspaceQuizCard(
               quizState: quizState,
               selectedAnswer: selectedQuizAnswer,
               onAnswer: onAnswerQuiz,
               assessmentPack: assessmentPack,
-              moduleCompleted: moduleCompleted,
-              onStartPosttest: onStartPosttest,
             ),
           ],
           const SizedBox(height: 14),
@@ -2250,29 +2302,6 @@ class _WorkspaceCanvasDialog extends StatelessWidget {
   }
 }
 
-class _WorkspaceChoiceGrid extends StatelessWidget {
-  const _WorkspaceChoiceGrid({
-    required this.contentMode,
-    required this.isVideoGenerating,
-    required this.onChooseExplanation,
-  });
-
-  final _WorkspaceContentMode contentMode;
-  final bool isVideoGenerating;
-  final VoidCallback onChooseExplanation;
-
-  @override
-  Widget build(BuildContext context) {
-    return _WorkspaceChoiceButton(
-      label: 'Long explanation',
-      icon: Icons.notes_rounded,
-      isSelected: contentMode == _WorkspaceContentMode.explanation,
-      onPressed: onChooseExplanation,
-      isEnabled: !isVideoGenerating,
-    );
-  }
-}
-
 class _WorkspaceSyncNotice extends StatelessWidget {
   const _WorkspaceSyncNotice({
     required this.icon,
@@ -2309,64 +2338,6 @@ class _WorkspaceSyncNotice extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _WorkspaceChoiceButton extends StatelessWidget {
-  const _WorkspaceChoiceButton({
-    required this.label,
-    required this.icon,
-    required this.isSelected,
-    required this.onPressed,
-    this.isEnabled = true,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onPressed;
-  final bool isEnabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final background = isSelected ? WicaraColors.speechBlue : Colors.white;
-    final borderColor = isSelected ? WicaraColors.primary : WicaraColors.line;
-
-    return Material(
-      color: isEnabled ? background : background.withValues(alpha: 0.72),
-      borderRadius: BorderRadius.circular(13),
-      child: InkWell(
-        onTap: isEnabled ? onPressed : null,
-        borderRadius: BorderRadius.circular(13),
-        child: Container(
-          height: 78,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: borderColor, width: 1.2),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(icon, color: WicaraColors.primaryDeep, size: 20),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: WicaraColors.ink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -2651,28 +2622,6 @@ class _WorkspaceCanvasQuickActionButton extends StatelessWidget {
   }
 }
 
-class _ConceptExplanationBubble extends StatelessWidget {
-  const _ConceptExplanationBubble({required this.explanationText});
-
-  final String explanationText;
-
-  @override
-  Widget build(BuildContext context) {
-    return _WorkspaceRichBubble(
-      icon: Icons.lightbulb_outline_rounded,
-      title: 'Concept explanation',
-      child: Text(
-        explanationText,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.text,
-          fontWeight: FontWeight.w600,
-          height: 1.42,
-        ),
-      ),
-    );
-  }
-}
-
 class _WorkspaceVideoLoadingCard extends StatelessWidget {
   const _WorkspaceVideoLoadingCard({
     required this.progress,
@@ -2891,16 +2840,30 @@ class _WorkspaceVideoPreviewPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, background);
 
-    final circlePaint = Paint()..color = const Color(0xFFBBD8FF).withValues(alpha: 0.45);
-    canvas.drawCircle(Offset(size.width * 0.2, size.height * 0.28), size.shortestSide * 0.16, circlePaint);
-    canvas.drawCircle(Offset(size.width * 0.82, size.height * 0.76), size.shortestSide * 0.2, circlePaint);
+    final circlePaint = Paint()
+      ..color = const Color(0xFFBBD8FF).withValues(alpha: 0.45);
+    canvas.drawCircle(
+      Offset(size.width * 0.2, size.height * 0.28),
+      size.shortestSide * 0.16,
+      circlePaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.82, size.height * 0.76),
+      size.shortestSide * 0.2,
+      circlePaint,
+    );
 
     final framePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = const Color(0xFF9EC3F8);
     final frameRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.14, size.height * 0.2, size.width * 0.72, size.height * 0.6),
+      Rect.fromLTWH(
+        size.width * 0.14,
+        size.height * 0.2,
+        size.width * 0.72,
+        size.height * 0.6,
+      ),
       const Radius.circular(12),
     );
     canvas.drawRRect(frameRect, framePaint);
@@ -3416,25 +3379,25 @@ class _WorkspaceQuizCard extends StatelessWidget {
     required this.selectedAnswer,
     required this.onAnswer,
     required this.assessmentPack,
-    required this.moduleCompleted,
-    required this.onStartPosttest,
   });
 
   final _WorkspaceQuizState quizState;
   final String? selectedAnswer;
   final ValueChanged<String> onAnswer;
   final HardcodedAssessmentPack assessmentPack;
-  final bool moduleCompleted;
-  final VoidCallback onStartPosttest;
 
   @override
   Widget build(BuildContext context) {
     return _WorkspaceRichBubble(
       icon: Icons.quiz_outlined,
-      title: 'Sudden check',
+      title: 'Check understanding',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _WorkspaceMaterialRecap(
+            explanationText: assessmentPack.workspaceExplanation,
+          ),
+          const SizedBox(height: 12),
           Text(
             assessmentPack.workspaceQuizQuestion,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3469,24 +3432,79 @@ class _WorkspaceQuizCard extends StatelessWidget {
                 height: 1.3,
               ),
             ),
-            if (moduleCompleted) ...[
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
-                onPressed: onStartPosttest,
-                icon: const Icon(Icons.assignment_turned_in_outlined),
-                label: const Text('Mulai Posttest'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: WicaraColors.secondary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceStartChatCard extends StatelessWidget {
+  const _WorkspaceStartChatCard({required this.onStartChat});
+
+  final VoidCallback onStartChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return _WorkspaceRichBubble(
+      icon: Icons.auto_awesome_rounded,
+      title: 'Start the 5E chat',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Begin with the tutor opening question. This starts the Engage step and creates the first workspace evidence.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: onStartChat,
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            label: const Text('Start learning chat'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceMaterialRecap extends StatelessWidget {
+  const _WorkspaceMaterialRecap({required this.explanationText});
+
+  final String explanationText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: WicaraColors.speechBlue,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.primaryLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Material recap',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: WicaraColors.primaryDeep,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            explanationText,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w600,
+              height: 1.38,
+            ),
+          ),
         ],
       ),
     );

@@ -17,11 +17,15 @@ class WorkspaceCompletionResult {
     required this.trackId,
     required this.moduleId,
     required this.moduleTitle,
+    required this.moduleCompleted,
+    required this.requestedEarlyPosttest,
   });
 
   final String trackId;
   final String moduleId;
   final String moduleTitle;
+  final bool moduleCompleted;
+  final bool requestedEarlyPosttest;
 }
 
 class WorkspaceSession {

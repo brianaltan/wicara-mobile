@@ -29,6 +29,7 @@ abstract class HomeRepository {
   Future<DailyEvaluationSession> startPosttest({
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   });
 
   Future<DailyEvaluationAnswerResult> submitPosttestAnswer({

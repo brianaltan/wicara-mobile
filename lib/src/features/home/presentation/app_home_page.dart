@@ -116,7 +116,8 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _isLoadingPosttest = false;
   bool _isSubmittingPosttest = false;
   String? _posttestError;
-  String _lastCompletedTrackId = '';
+  String _lastPosttestTrackId = '';
+  String _lastPosttestModuleId = '';
   String? _selectedGoalSubject;
   String? _expandedGoalTrackId;
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
@@ -131,9 +132,7 @@ class _AppHomePageState extends State<AppHomePage> {
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
-    final shouldOpenGoalHistory = _shouldOpenGoalHistory(
-      widget.routeArguments,
-    );
+    final shouldOpenGoalHistory = _shouldOpenGoalHistory(widget.routeArguments);
     _autoOpenWorkspacePending =
         _shouldAutoOpenWorkspace(widget.routeArguments) &&
         !shouldOpenGoalHistory;
@@ -444,12 +443,13 @@ class _AppHomePageState extends State<AppHomePage> {
     if (!mounted) return;
     _retryHomeSnapshot();
     if (result is WorkspaceCompletionResult) {
-      _lastCompletedTrackId = result.trackId;
-      _openPosttest(trackId: result.trackId);
+      _lastPosttestTrackId = result.trackId;
+      _lastPosttestModuleId = result.moduleId;
+      _openPosttest(trackId: result.trackId, moduleId: result.moduleId);
     }
   }
 
-  Future<void> _openPosttest({String? trackId}) async {
+  Future<void> _openPosttest({String? trackId, String? moduleId}) async {
     setState(() {
       _selectedTab = _HomeTab.home;
       _showGalleryDetail = false;
@@ -469,10 +469,11 @@ class _AppHomePageState extends State<AppHomePage> {
       _isLoadingPosttest = true;
     });
     try {
+      final resolvedTrackId = trackId ?? _lastPosttestTrackId;
+      final resolvedModuleId = moduleId ?? _lastPosttestModuleId;
       final session = await widget.homeRepository.startPosttest(
-        trackId: (trackId ?? _lastCompletedTrackId).isEmpty
-            ? null
-            : (trackId ?? _lastCompletedTrackId),
+        trackId: resolvedTrackId.isEmpty ? null : resolvedTrackId,
+        moduleId: resolvedModuleId.isEmpty ? null : resolvedModuleId,
       );
       if (!mounted) {
         return;
@@ -865,7 +866,8 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         homeRepository: widget.homeRepository,
         curriculumRepository: widget.curriculumRepository,
-        preferredLanguage: widget.onboardingController.profile.preferredLanguage,
+        preferredLanguage:
+            widget.onboardingController.profile.preferredLanguage,
         onBack: _openHome,
         showLearningReport: _showLearningReport,
         showKnowledgeMap: _showKnowledgeMap,
@@ -1565,9 +1567,7 @@ class _GoalHistoryCard extends StatelessWidget {
                                   track.title,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(
                                         fontSize: 15,
                                         height: 1.18,
@@ -1799,9 +1799,7 @@ String? _resolveExpandedGoalTrackId({
   return goals.first.id;
 }
 
-LearningTrackModuleSummary? _currentModuleForGoal(
-  LearningTrackSummary track,
-) {
+LearningTrackModuleSummary? _currentModuleForGoal(LearningTrackSummary track) {
   for (final status in const ['active', 'ready', 'in_progress']) {
     for (final module in track.modules) {
       if (module.status.toLowerCase() == status) {
@@ -1843,9 +1841,7 @@ String _goalStatusLabel(String status, OnboardingCopy copy) {
     case 'needs review':
       return copy.isIndonesian ? 'Perlu review' : 'Needs review';
     default:
-      return status.isEmpty
-          ? (copy.isIndonesian ? 'Aktif' : 'Active')
-          : status;
+      return status.isEmpty ? (copy.isIndonesian ? 'Aktif' : 'Active') : status;
   }
 }
 
@@ -8683,10 +8679,9 @@ class _SubjectMapTabs extends StatelessWidget {
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
         final columns = width >= 420 ? 3 : 2;
-        final itemWidth = ((width - (8 * (columns - 1))) / columns).clamp(
-          104.0,
-          140.0,
-        ).toDouble();
+        final itemWidth = ((width - (8 * (columns - 1))) / columns)
+            .clamp(104.0, 140.0)
+            .toDouble();
 
         return Wrap(
           spacing: 8,
@@ -9289,7 +9284,7 @@ class _KnowledgeGraphLayout {
             return sectionCompare;
           }
           return a.y.compareTo(b.y);
-      });
+        });
       final headerLabel = _levelLabel(levelNodes, sectionLabelByNodeId);
       final headerWidth = math.min(
         maxWidth,

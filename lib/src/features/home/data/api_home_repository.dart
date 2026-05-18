@@ -178,6 +178,7 @@ class ApiHomeRepository implements HomeRepository {
   Future<DailyEvaluationSession> startPosttest({
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) async {
     final token = _requireToken();
     final body = <String, dynamic>{};
@@ -186,6 +187,9 @@ class ApiHomeRepository implements HomeRepository {
     }
     if ((trackId ?? '').isNotEmpty) {
       body['track_id'] = trackId;
+    }
+    if ((moduleId ?? '').isNotEmpty) {
+      body['module_id'] = moduleId;
     }
     final json = await _apiClient.postJson(
       '/api/v1/posttests/start',

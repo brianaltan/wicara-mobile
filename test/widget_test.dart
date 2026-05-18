@@ -174,9 +174,16 @@ void main() {
     await tester.tap(find.text('Continue session'));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Long explanation'));
-    await tester.tap(find.text('Long explanation'));
+    expect(find.text('Long explanation'), findsNothing);
+    expect(find.text('Sudden check'), findsNothing);
+    expect(find.text('Start learning chat'), findsOneWidget);
+    expect(find.text('Check understanding'), findsNothing);
+
+    await tester.tap(find.text('Start learning chat'));
     await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Check understanding'));
+    expect(find.text('Material recap'), findsOneWidget);
 
     await tester.ensureVisible(find.text('12'));
     await tester.tap(find.text('12'));
@@ -221,6 +228,47 @@ void main() {
     expect(find.text('Posttest Analysis'), findsNothing);
     expect(find.text('Continue session'), findsOneWidget);
     expect(preferences.getString('auth.lastProtectedRoute'), '/home');
+  });
+
+  testWidgets('workspace start posttest warns before module completion', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final workspaceRepository = _RecordingWorkspaceRepository();
+    await tester.pumpWidget(
+      await _buildSignedInTestApp(
+        homeRepository: const _WorkspaceReadyHomeRepository(),
+        workspaceRepository: workspaceRepository,
+        educationLevel: 'elementary',
+        gradeLevel: '4',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Continue session'));
+    await tester.tap(find.text('Continue session'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Start Posttest'));
+    await tester.tap(find.text('Start Posttest'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Workspace not finished yet'), findsOneWidget);
+    expect(find.text('Keep learning'), findsOneWidget);
+    expect(find.text('Start posttest'), findsOneWidget);
+
+    await tester.tap(find.text('Start posttest'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Posttest Perkalian'), findsWidgets);
+    expect(
+      workspaceRepository.moduleStateUpdates,
+      isNot(contains('completed')),
+    );
   });
 
   testWidgets('learning report detail renders backend payload', (tester) async {
@@ -770,6 +818,7 @@ class _FakeHomeRepository implements HomeRepository {
   Future<DailyEvaluationSession> startPosttest({
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) async {
     return DailyEvaluationSession(
       sessionId: 'posttest-widget-test',
@@ -1069,6 +1118,21 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     required String moduleId,
     required String status,
   }) async {}
+}
+
+class _RecordingWorkspaceRepository extends _FakeWorkspaceRepository {
+  _RecordingWorkspaceRepository();
+
+  final List<String> moduleStateUpdates = [];
+
+  @override
+  Future<void> updateModuleState({
+    required String trackId,
+    required String moduleId,
+    required String status,
+  }) async {
+    moduleStateUpdates.add(status);
+  }
 }
 
 class _PrematureCompletedDailyRepository extends _FakeHomeRepository {

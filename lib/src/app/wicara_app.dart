@@ -372,6 +372,7 @@ class _UnavailableHomeRepository implements HomeRepository {
   Future<DailyEvaluationSession> startPosttest({
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
