@@ -41,6 +41,7 @@ class PretestAnswer {
     required this.confidence,
     this.typedReasoning = '',
     this.canvasAssetId,
+    this.canvasStrokeCount,
     this.usedCanvas = false,
   });
 
@@ -49,6 +50,7 @@ class PretestAnswer {
   final int confidence;
   final String typedReasoning;
   final String? canvasAssetId;
+  final int? canvasStrokeCount;
   final bool usedCanvas;
 }
 
@@ -115,6 +117,9 @@ class PretestNodeReport {
     this.attemptCount = 0,
     this.correctCount = 0,
     this.diagnosticSignals = const [],
+    this.hasCanvasEvidence = false,
+    this.canvasStrokeCount,
+    this.canvasSnapshotPath,
     this.carelessMistakePossible = false,
     this.misconceptionDetected = false,
   });
@@ -130,6 +135,9 @@ class PretestNodeReport {
   final int attemptCount;
   final int correctCount;
   final List<String> diagnosticSignals;
+  final bool hasCanvasEvidence;
+  final int? canvasStrokeCount;
+  final String? canvasSnapshotPath;
   final bool carelessMistakePossible;
   final bool misconceptionDetected;
 }

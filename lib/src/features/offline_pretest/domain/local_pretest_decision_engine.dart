@@ -3,6 +3,7 @@ import 'dart:collection';
 class LocalPretestDecisionEngine {
   Map<String, dynamic> recordAttempt(
     Map<String, dynamic> state, {
+    required String attemptId,
     required String conceptCode,
     required String difficulty,
     required bool isCorrect,
@@ -16,6 +17,9 @@ class LocalPretestDecisionEngine {
     double? answerScore,
     double? reasoningScore,
     double? canvasScore,
+    bool canvasUsed = false,
+    int? canvasStrokeCount,
+    String? canvasSnapshotPath,
     String diagnosticSignal = '',
     String reasoningSignal = '',
     String reasoningSource = '',
@@ -40,6 +44,7 @@ class LocalPretestDecisionEngine {
 
     nodeState[difficulty] = isCorrect ? 'correct' : 'wrong';
     attempts.add(<String, dynamic>{
+      'attempt_id': attemptId,
       'difficulty': difficulty,
       'is_correct': isCorrect,
       'question_stem': questionStem,
@@ -52,6 +57,9 @@ class LocalPretestDecisionEngine {
           ? null
           : _round4(reasoningScore),
       'canvas_score': canvasScore == null ? null : _round4(canvasScore),
+      'canvas_used': canvasUsed,
+      'canvas_stroke_count': canvasStrokeCount,
+      'canvas_snapshot_path': canvasSnapshotPath,
       'evidence_score': _round4(evidenceScore),
       'confidence': _round4(confidence),
       'diagnostic_signal': diagnosticSignal,

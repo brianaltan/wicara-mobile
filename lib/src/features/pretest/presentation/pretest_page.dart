@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../edge_ai/data/litert_gemma_runtime.dart';
+import '../../offline_pretest/domain/local_pretest_engine.dart';
 import '../../offline_pretest/domain/local_pretest_question_generator.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
@@ -38,6 +41,8 @@ class _PretestPageState extends State<PretestPage> {
   final _reasoningController = TextEditingController(text: '');
   StreamSubscription<LocalQuestionGenerationProgress>?
   _questionGenerationProgressSubscription;
+  StreamSubscription<LocalDiagnosisGenerationProgress>?
+  _diagnosisProgressSubscription;
 
   _PretestStage _stage = _PretestStage.question;
   PretestQuestion? _question;
@@ -49,6 +54,8 @@ class _PretestPageState extends State<PretestPage> {
   KnowledgeState? _knowledgeState;
   final List<CanvasWorkSnapshot> _canvasSnapshots = [];
   LocalQuestionGenerationProgress? _questionGenerationProgress;
+  bool _isDiagnosisNarrativeLoading = false;
+  String _diagnosisNarrativeMessage = '';
 
   @override
   void initState() {
@@ -63,12 +70,28 @@ class _PretestPageState extends State<PretestPage> {
             _questionGenerationProgress = progress.active ? progress : null;
           });
         });
+    _diagnosisProgressSubscription = LocalPretestEngine.diagnosisProgressStream
+        .listen((progress) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _isDiagnosisNarrativeLoading = progress.active;
+            _diagnosisNarrativeMessage = progress.message;
+            if (!progress.active &&
+                progress.status == 'completed' &&
+                progress.knowledgeState != null) {
+              _knowledgeState = progress.knowledgeState;
+            }
+          });
+        });
     _loadQuestion();
   }
 
   @override
   void dispose() {
     _questionGenerationProgressSubscription?.cancel();
+    _diagnosisProgressSubscription?.cancel();
     _reasoningController.dispose();
     super.dispose();
   }
@@ -82,6 +105,8 @@ class _PretestPageState extends State<PretestPage> {
       _knowledgeState = null;
       _canvasSnapshots.clear();
       _isLoadingQuestion = true;
+      _isDiagnosisNarrativeLoading = false;
+      _diagnosisNarrativeMessage = '';
     });
     try {
       final question = await widget.pretestRepository.fetchCurrentQuestion();
@@ -108,16 +133,27 @@ class _PretestPageState extends State<PretestPage> {
       _showMessage('Pilih jawaban sebelum lanjut.');
       return;
     }
+    final usedCanvas = _canvasSnapshots.isNotEmpty;
+    final canvasStrokeCount = usedCanvas
+        ? _canvasSnapshots.last.elementCount
+        : null;
+    final canvasSnapshotPath = usedCanvas
+        ? await _saveCanvasSnapshotIfNeeded(_canvasSnapshots.last)
+        : null;
 
     await _submitCurrentAnswer(
       typedReasoning: _reasoningController.text,
-      usedCanvas: _canvasSnapshots.isNotEmpty,
+      usedCanvas: usedCanvas,
+      canvasSnapshotPath: canvasSnapshotPath,
+      canvasStrokeCount: canvasStrokeCount,
     );
   }
 
   Future<void> _submitCurrentAnswer({
     required String typedReasoning,
     required bool usedCanvas,
+    String? canvasSnapshotPath,
+    int? canvasStrokeCount,
   }) async {
     setState(() => _isSubmitting = true);
     try {
@@ -127,6 +163,8 @@ class _PretestPageState extends State<PretestPage> {
           optionId: _selectedOptionId,
           confidence: _confidence,
           typedReasoning: typedReasoning,
+          canvasAssetId: canvasSnapshotPath,
+          canvasStrokeCount: canvasStrokeCount,
           usedCanvas: usedCanvas,
         ),
       );
@@ -156,6 +194,30 @@ class _PretestPageState extends State<PretestPage> {
       if (mounted) {
         setState(() => _isSubmitting = false);
       }
+    }
+  }
+
+  Future<String?> _saveCanvasSnapshotIfNeeded(
+    CanvasWorkSnapshot snapshot,
+  ) async {
+    try {
+      final bytes = await renderCanvasSnapshotPng(snapshot);
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      final baseDir = Directory(
+        path.join(Directory.systemTemp.path, 'wicara_canvas_evidence'),
+      );
+      if (!await baseDir.exists()) {
+        await baseDir.create(recursive: true);
+      }
+      final filename =
+          'pretest_canvas_${DateTime.now().microsecondsSinceEpoch}.png';
+      final outputFile = File(path.join(baseDir.path, filename));
+      await outputFile.writeAsBytes(bytes, flush: true);
+      return outputFile.path;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -372,6 +434,8 @@ class _PretestPageState extends State<PretestPage> {
         constraints: constraints,
         copy: copy,
         result: _knowledgeState,
+        isNarrativeLoading: _isDiagnosisNarrativeLoading,
+        narrativeMessage: _diagnosisNarrativeMessage,
         onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
       ),
     };
@@ -801,8 +865,8 @@ class _QuestionStage extends StatelessWidget {
                     maxLines: 5,
                     decoration: InputDecoration(
                       hintText: copy.isIndonesian
-                          ? 'Contoh: pakai aturan turunan pangkat...'
-                          : 'Example: using derivative power rule...',
+                          ? '1) Tulis langkah pertama...\n2) Lanjutkan hitungannya...\n3) Simpulkan jawabanmu...'
+                          : '1) Write your first step...\n2) Continue the calculation...\n3) Conclude your answer...',
                       filled: true,
                       fillColor: WicaraColors.fieldFill,
                       contentPadding: const EdgeInsets.symmetric(
@@ -824,6 +888,17 @@ class _QuestionStage extends StatelessWidget {
                           width: 1.4,
                         ),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    copy.isIndonesian
+                        ? 'Tulis sedikit langkahmu biar diagnosis nanti lebih akurat ke kamu.'
+                        : 'Add short steps so the diagnosis can be more personal to you.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: WicaraColors.softMuted,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -900,6 +975,7 @@ class _QuestionStage extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ReasoningStage extends StatelessWidget {
   const _ReasoningStage({
     required this.constraints,
@@ -1119,12 +1195,16 @@ class _ResultStage extends StatelessWidget {
     required this.constraints,
     required this.copy,
     required this.result,
+    required this.isNarrativeLoading,
+    required this.narrativeMessage,
     required this.onContinue,
   });
 
   final BoxConstraints constraints;
   final OnboardingCopy copy;
   final KnowledgeState? result;
+  final bool isNarrativeLoading;
+  final String narrativeMessage;
   final VoidCallback onContinue;
 
   @override
@@ -1186,6 +1266,10 @@ class _ResultStage extends StatelessWidget {
               evidenceNotes: state.evidenceNotes,
               copy: copy,
             ),
+            if (isNarrativeLoading) ...[
+              const SizedBox(height: 14),
+              _NarrativeLoadingCard(copy: copy, message: narrativeMessage),
+            ],
             if (state.nodeReports.isNotEmpty) ...[
               const SizedBox(height: 18),
               _NodeBreakdownCard(nodes: state.nodeReports, copy: copy),
@@ -1463,6 +1547,54 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
   }
 }
 
+class _NarrativeLoadingCard extends StatelessWidget {
+  const _NarrativeLoadingCard({required this.copy, required this.message});
+
+  final OnboardingCopy copy;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = message.trim().isNotEmpty
+        ? message.trim()
+        : (copy.isIndonesian
+              ? 'AI sedang menulis catatan personal...'
+              : 'AI is writing a personalized note...');
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              valueColor: AlwaysStoppedAnimation<Color>(WicaraColors.secondary),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReportInsightList extends StatelessWidget {
   const _ReportInsightList({
     required this.title,
@@ -1640,7 +1772,82 @@ class _NodeBreakdownRow extends StatelessWidget {
               ),
             ),
           ],
+          if (node.hasCanvasEvidence) ...[
+            const SizedBox(height: 9),
+            _NodeCanvasEvidencePreview(node: node, copy: copy),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _NodeCanvasEvidencePreview extends StatelessWidget {
+  const _NodeCanvasEvidencePreview({required this.node, required this.copy});
+
+  final PretestNodeReport node;
+  final OnboardingCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    final pathValue = node.canvasSnapshotPath;
+    final hasFile = pathValue != null && pathValue.trim().isNotEmpty;
+    final label = copy.isIndonesian
+        ? 'Canvas digunakan${node.canvasStrokeCount == null ? '' : ' • ${node.canvasStrokeCount} coretan'}'
+        : 'Canvas used${node.canvasStrokeCount == null ? '' : ' • ${node.canvasStrokeCount} strokes'}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: WicaraColors.softMuted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 7),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            height: 112,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: WicaraColors.pageBackground,
+              border: Border.all(color: WicaraColors.line),
+            ),
+            child: hasFile
+                ? Image.file(
+                    File(pathValue),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) {
+                      return _CanvasMissingPreview(copy: copy);
+                    },
+                  )
+                : _CanvasMissingPreview(copy: copy),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CanvasMissingPreview extends StatelessWidget {
+  const _CanvasMissingPreview({required this.copy});
+
+  final OnboardingCopy copy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        copy.isIndonesian
+            ? 'Preview canvas tidak tersedia'
+            : 'Canvas preview unavailable',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.softMuted,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

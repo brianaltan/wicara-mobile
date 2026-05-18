@@ -346,6 +346,8 @@ Buat soal pretest adaptif singkat dalam Bahasa Indonesia.
 Hanya keluarkan key difficulty berikut: ${requiredKeys.join(', ')}.
 Setiap soal wajib punya 4 opsi unik dan 1 jawaban benar.
 Hindari penjelasan panjang. Tetap ringkas.
+Field "explanation" WAJIB berupa langkah konkret bernomor (mis. "1) ... 2) ... 3) ..."),
+bukan definisi konsep umum.
 
 Return valid JSON only:
 {
@@ -354,7 +356,7 @@ Return valid JSON only:
     "helper_text": "...",
     "options": ["...", "...", "...", "..."],
     "correct_index": 0,
-    "explanation": "..."
+    "explanation": "1) ... 2) ... 3) ..."
   }
 }
 
@@ -413,7 +415,7 @@ Map<String, dynamic>? _normalizeQuestion(Object? raw) {
   }
   final prompt = _trimToNull(node['prompt'], maxLength: 260);
   final helperText = _trimToNull(node['helper_text'], maxLength: 140);
-  final explanation = _trimToNull(node['explanation'], maxLength: 260);
+  final explanation = _trimToNull(node['explanation'], maxLength: 320);
   if (prompt == null) {
     return null;
   }
@@ -433,7 +435,7 @@ Map<String, dynamic>? _normalizeQuestion(Object? raw) {
     'correct_option': correctOption,
     'explanation':
         explanation ??
-        'Gunakan langkah konsep dasar untuk memeriksa pilihan yang benar.',
+        '1) Urai informasi soal. 2) Terapkan aturan konsep. 3) Hitung hasil dan cek opsi.',
   };
 }
 

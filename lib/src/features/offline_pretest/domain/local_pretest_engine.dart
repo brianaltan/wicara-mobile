@@ -17,6 +17,22 @@ import '../../pretest/domain/pretest_repository.dart';
 import '../../pretest/data/api_pretest_repository.dart';
 import '../../pretest/data/pretest_session_store.dart';
 
+class LocalDiagnosisGenerationProgress {
+  const LocalDiagnosisGenerationProgress({
+    required this.active,
+    required this.sessionId,
+    required this.status,
+    this.message = '',
+    this.knowledgeState,
+  });
+
+  final bool active;
+  final String sessionId;
+  final String status;
+  final String message;
+  final KnowledgeState? knowledgeState;
+}
+
 class LocalPretestEngine {
   LocalPretestEngine({
     required LocalWicaraDatabase localDatabase,
@@ -75,6 +91,11 @@ class LocalPretestEngine {
   final int maxDepth;
   final int maxQuestions;
   final int maxNodesVisited;
+  static final _diagnosisProgressController =
+      StreamController<LocalDiagnosisGenerationProgress>.broadcast();
+
+  static Stream<LocalDiagnosisGenerationProgress> get diagnosisProgressStream =>
+      _diagnosisProgressController.stream;
 
   String? _activeLocalSessionId;
   String? _lastCompletedLocalSessionId;
@@ -222,15 +243,20 @@ class LocalPretestEngine {
             )
             .where((code) => code.isNotEmpty)
             .toSet();
+    final attemptId = 'local_attempt_${DateTime.now().microsecondsSinceEpoch}';
+    final canvasSnapshotPath = _nullableString(answer.canvasAssetId);
+    final canvasStrokeCount = answer.canvasStrokeCount;
     final evaluation = await _evidenceEvaluator.evaluate(
       question: question,
       selectedOption: selectedOption,
       typedReasoning: answer.typedReasoning,
       usedCanvas: answer.usedCanvas,
+      canvasSnapshotPath: canvasSnapshotPath,
+      canvasStrokeCount: canvasStrokeCount,
       knownConceptCodes: knownConceptCodes,
+      allowLiteRtReasoning: false,
     );
 
-    final attemptId = 'local_attempt_${DateTime.now().microsecondsSinceEpoch}';
     final event = await _localSessions.appendInputEvent(
       sessionId: active.id,
       conceptId: question.conceptCode,
@@ -238,10 +264,19 @@ class LocalPretestEngine {
       actorType: 'learner',
       textPayload: answer.typedReasoning.trim(),
       selectedOptionId: answer.optionId,
+      canvasSnapshot: answer.usedCanvas
+          ? <String, dynamic>{
+              'path': canvasSnapshotPath,
+              'stroke_count': canvasStrokeCount,
+            }
+          : null,
       aiAudit: <String, dynamic>{
         'runtime_target': 'litert_gemma4',
         'execution_location': 'device',
         'reasoning_source': evaluation.reasoningEvaluationSource,
+        'reasoning_status': answer.typedReasoning.trim().isEmpty
+            ? 'no_reasoning_provided'
+            : 'quick_heuristic_pending_litert',
         'reasoning_signal': evaluation.reasoningSignal,
         'diagnostic_signal': evaluation.diagnosticSignal,
         'confidence': evaluation.confidence,
@@ -260,6 +295,7 @@ class LocalPretestEngine {
 
     final nextDecisionState = _decisionEngine.recordAttempt(
       state,
+      attemptId: attemptId,
       conceptCode: question.conceptCode,
       difficulty: question.difficulty,
       isCorrect: evaluation.isCorrect,
@@ -275,6 +311,9 @@ class LocalPretestEngine {
       answerScore: evaluation.answerScore,
       reasoningScore: evaluation.reasoningScore,
       canvasScore: evaluation.canvasScore,
+      canvasUsed: answer.usedCanvas,
+      canvasStrokeCount: evaluation.canvasStrokeCount,
+      canvasSnapshotPath: evaluation.canvasSnapshotPath,
       diagnosticSignal: evaluation.diagnosticSignal,
       reasoningSignal: evaluation.reasoningSignal,
       reasoningSource: evaluation.reasoningEvaluationSource,
@@ -291,15 +330,18 @@ class LocalPretestEngine {
     if (_string(nextAction['type']) == 'finalize') {
       final stopReason = _string(nextAction['reason'], fallback: 'completed');
       final runtimeAuditBase = _buildRuntimeAudit(stateAfterDecision);
-      final diagnosis = await _diagnosisService.finalize(
+      final diagnosis = _diagnosisService.deterministicDiagnosis(
         graphScope: graphScope,
         decisionState: stateAfterDecision,
         stopReason: stopReason,
         runtimeAudit: runtimeAuditBase,
       );
-      final runtimeAudit =
-          (diagnosis['runtime_audit'] as Map?)?.cast<String, dynamic>() ??
-          runtimeAuditBase;
+      final runtimeAudit = <String, dynamic>{
+        ...(diagnosis['runtime_audit'] as Map?)?.cast<String, dynamic>() ??
+            runtimeAuditBase,
+        'diagnosis_report_source': 'pending_local_generation',
+      };
+      diagnosis['runtime_audit'] = runtimeAudit;
       final completedMetadata = <String, dynamic>{
         ...metadata,
         'status': 'completed',
@@ -331,6 +373,26 @@ class LocalPretestEngine {
       _latestDiagnosis = diagnosis;
       _lastCompletedLocalSessionId = active.id;
       _activeLocalSessionId = null;
+      _scheduleReasoningEvaluationUpdate(
+        sessionId: active.id,
+        graphScope: graphScope,
+        stopReason: stopReason,
+        attemptId: attemptId,
+        conceptCode: question.conceptCode,
+        difficulty: question.difficulty,
+        question: question,
+        selectedOption: selectedOption,
+        typedReasoning: answer.typedReasoning.trim(),
+        usedCanvas: answer.usedCanvas,
+        canvasSnapshotPath: canvasSnapshotPath,
+        canvasStrokeCount: canvasStrokeCount,
+        knownConceptCodes: knownConceptCodes,
+      );
+      _scheduleDiagnosisNarrative(
+        sessionId: active.id,
+        graphScope: graphScope,
+        stopReason: stopReason,
+      );
       return PretestAnswerResult(
         completed: true,
         diagnosis: knowledgeStateFromDiagnosis(diagnosis),
@@ -372,6 +434,21 @@ class LocalPretestEngine {
       dirty: true,
     );
     _activeLocalSessionId = active.id;
+    _scheduleReasoningEvaluationUpdate(
+      sessionId: active.id,
+      graphScope: graphScope,
+      stopReason: _string(progressedState['stop_reason'], fallback: 'ongoing'),
+      attemptId: attemptId,
+      conceptCode: question.conceptCode,
+      difficulty: question.difficulty,
+      question: question,
+      selectedOption: selectedOption,
+      typedReasoning: answer.typedReasoning.trim(),
+      usedCanvas: answer.usedCanvas,
+      canvasSnapshotPath: canvasSnapshotPath,
+      canvasStrokeCount: canvasStrokeCount,
+      knownConceptCodes: knownConceptCodes,
+    );
     return PretestAnswerResult(
       completed: false,
       nextQuestion: _toPretestQuestion(nextQuestion),
@@ -461,6 +538,312 @@ class LocalPretestEngine {
         },
       );
     }
+  }
+
+  void _scheduleReasoningEvaluationUpdate({
+    required String sessionId,
+    required Map<String, dynamic> graphScope,
+    required String stopReason,
+    required String attemptId,
+    required String conceptCode,
+    required String difficulty,
+    required LocalPretestQuestion question,
+    required LocalPretestOption selectedOption,
+    required String typedReasoning,
+    required bool usedCanvas,
+    required String? canvasSnapshotPath,
+    required int? canvasStrokeCount,
+    required Set<String> knownConceptCodes,
+  }) {
+    if (typedReasoning.trim().isEmpty) {
+      return;
+    }
+    unawaited(
+      _runReasoningEvaluationUpdate(
+        sessionId: sessionId,
+        graphScope: graphScope,
+        stopReason: stopReason,
+        attemptId: attemptId,
+        conceptCode: conceptCode,
+        difficulty: difficulty,
+        question: question,
+        selectedOption: selectedOption,
+        typedReasoning: typedReasoning,
+        usedCanvas: usedCanvas,
+        canvasSnapshotPath: canvasSnapshotPath,
+        canvasStrokeCount: canvasStrokeCount,
+        knownConceptCodes: knownConceptCodes,
+      ),
+    );
+  }
+
+  Future<void> _runReasoningEvaluationUpdate({
+    required String sessionId,
+    required Map<String, dynamic> graphScope,
+    required String stopReason,
+    required String attemptId,
+    required String conceptCode,
+    required String difficulty,
+    required LocalPretestQuestion question,
+    required LocalPretestOption selectedOption,
+    required String typedReasoning,
+    required bool usedCanvas,
+    required String? canvasSnapshotPath,
+    required int? canvasStrokeCount,
+    required Set<String> knownConceptCodes,
+  }) async {
+    try {
+      final refinedEvaluation = await _evidenceEvaluator.evaluate(
+        question: question,
+        selectedOption: selectedOption,
+        typedReasoning: typedReasoning,
+        usedCanvas: usedCanvas,
+        canvasSnapshotPath: canvasSnapshotPath,
+        canvasStrokeCount: canvasStrokeCount,
+        knownConceptCodes: knownConceptCodes,
+        allowLiteRtReasoning: true,
+      );
+      final reasoningSource = refinedEvaluation.reasoningEvaluationSource
+          .toLowerCase();
+      if (!reasoningSource.contains('litert')) {
+        return;
+      }
+
+      final session = await _localSessions.getSessionById(sessionId);
+      if (session == null) {
+        return;
+      }
+      final metadata = _sessionMetadata(session.metadata);
+      final state = _map(metadata['decision_state']);
+      if (state.isEmpty) {
+        return;
+      }
+      final updated = _replaceAttemptEvaluation(
+        decisionState: state,
+        conceptCode: conceptCode,
+        difficulty: difficulty,
+        attemptId: attemptId,
+        evaluation: refinedEvaluation,
+      );
+      if (!updated) {
+        return;
+      }
+      metadata['decision_state'] = state;
+      metadata['last_evaluation'] = refinedEvaluation.toJson();
+
+      if (session.status == 'completed') {
+        final effectiveStopReason = _string(
+          state['stop_reason'],
+          fallback: stopReason,
+        );
+        final runtimeAudit = _buildRuntimeAudit(state);
+        final previousDiagnosis = _map(metadata['diagnosis']);
+        final recomputed = _diagnosisService.deterministicDiagnosis(
+          graphScope: graphScope,
+          decisionState: state,
+          stopReason: effectiveStopReason,
+          runtimeAudit: runtimeAudit,
+        );
+        final previousSummary = _string(previousDiagnosis['summary']);
+        if (previousSummary.isNotEmpty) {
+          recomputed['summary'] = previousSummary;
+        }
+        final previousAnalysis = _map(previousDiagnosis['analysis']);
+        if (previousAnalysis.isNotEmpty) {
+          recomputed['analysis'] = previousAnalysis;
+        }
+        final previousAudit = _map(previousDiagnosis['runtime_audit']);
+        if (_string(previousAudit['diagnosis_report_source']) ==
+            'litert_gemma4') {
+          recomputed['runtime_audit'] = <String, dynamic>{
+            ...runtimeAudit,
+            ...previousAudit,
+          };
+        } else {
+          recomputed['runtime_audit'] = <String, dynamic>{
+            ...runtimeAudit,
+            'diagnosis_report_source': 'pending_local_generation',
+          };
+        }
+        metadata['diagnosis'] = recomputed;
+        metadata['runtime_audit'] = recomputed['runtime_audit'];
+        _latestDiagnosis = recomputed;
+      }
+
+      await _localSessions.updateSession(
+        sessionId: sessionId,
+        metadata: metadata,
+        dirty: true,
+      );
+    } catch (_) {
+      // Background refinement failure should not block user progression.
+    }
+  }
+
+  void _scheduleDiagnosisNarrative({
+    required String sessionId,
+    required Map<String, dynamic> graphScope,
+    required String stopReason,
+  }) {
+    _emitDiagnosisProgress(
+      LocalDiagnosisGenerationProgress(
+        active: true,
+        sessionId: sessionId,
+        status: 'running',
+        message: 'AI sedang menulis catatan personal...',
+      ),
+    );
+    unawaited(
+      _runDiagnosisNarrative(
+        sessionId: sessionId,
+        graphScope: graphScope,
+        stopReason: stopReason,
+      ),
+    );
+  }
+
+  Future<void> _runDiagnosisNarrative({
+    required String sessionId,
+    required Map<String, dynamic> graphScope,
+    required String stopReason,
+  }) async {
+    try {
+      final session = await _localSessions.getSessionById(sessionId);
+      if (session == null) {
+        _emitDiagnosisProgress(
+          LocalDiagnosisGenerationProgress(
+            active: false,
+            sessionId: sessionId,
+            status: 'failed',
+            message: 'Session pretest tidak ditemukan.',
+          ),
+        );
+        return;
+      }
+
+      final metadata = _sessionMetadata(session.metadata);
+      final state = _map(metadata['decision_state']);
+      if (state.isEmpty) {
+        _emitDiagnosisProgress(
+          LocalDiagnosisGenerationProgress(
+            active: false,
+            sessionId: sessionId,
+            status: 'failed',
+            message: 'State pretest tidak valid.',
+          ),
+        );
+        return;
+      }
+
+      final effectiveStopReason = _string(
+        state['stop_reason'],
+        fallback: stopReason,
+      );
+      final baseDiagnosis = (_map(metadata['diagnosis']).isEmpty
+          ? _diagnosisService.deterministicDiagnosis(
+              graphScope: graphScope,
+              decisionState: state,
+              stopReason: effectiveStopReason,
+              runtimeAudit: _buildRuntimeAudit(state),
+            )
+          : _map(metadata['diagnosis']));
+      final enriched = await _diagnosisService.enrichNarrative(baseDiagnosis);
+      final runtimeAudit = _map(enriched['runtime_audit']);
+      if (_string(runtimeAudit['diagnosis_report_source']) ==
+          'pending_local_generation') {
+        enriched['runtime_audit'] = <String, dynamic>{
+          ...runtimeAudit,
+          'diagnosis_report_source': 'deterministic_local',
+        };
+      }
+      metadata['diagnosis'] = enriched;
+      metadata['runtime_audit'] = _map(enriched['runtime_audit']);
+      await _localSessions.updateSession(
+        sessionId: sessionId,
+        metadata: metadata,
+        dirty: true,
+      );
+      _latestDiagnosis = enriched;
+      _emitDiagnosisProgress(
+        LocalDiagnosisGenerationProgress(
+          active: false,
+          sessionId: sessionId,
+          status: 'completed',
+          message: 'Catatan personal AI selesai.',
+          knowledgeState: knowledgeStateFromDiagnosis(enriched),
+        ),
+      );
+    } catch (_) {
+      _emitDiagnosisProgress(
+        LocalDiagnosisGenerationProgress(
+          active: false,
+          sessionId: sessionId,
+          status: 'failed',
+          message: 'AI belum bisa menulis catatan personal untuk sesi ini.',
+        ),
+      );
+    }
+  }
+
+  bool _replaceAttemptEvaluation({
+    required Map<String, dynamic> decisionState,
+    required String conceptCode,
+    required String difficulty,
+    required String attemptId,
+    required LocalPretestEvaluation evaluation,
+  }) {
+    final nodeResults = _map(decisionState['node_results']);
+    final node = _map(nodeResults[conceptCode]);
+    if (node.isEmpty) {
+      return false;
+    }
+    final attempts =
+        (node['attempts'] as List?)
+            ?.whereType<Map>()
+            .map((item) => item.cast<String, dynamic>())
+            .toList(growable: true) ??
+        <Map<String, dynamic>>[];
+    final index = attempts.lastIndexWhere((attempt) {
+      final byAttemptId = _string(attempt['attempt_id']);
+      if (byAttemptId.isNotEmpty) {
+        return byAttemptId == attemptId;
+      }
+      return _string(attempt['difficulty']) == difficulty;
+    });
+    if (index < 0) {
+      return false;
+    }
+    final existing = attempts[index];
+    attempts[index] = <String, dynamic>{
+      ...existing,
+      'reasoning_score': evaluation.reasoningScore == null
+          ? null
+          : _round4(evaluation.reasoningScore!),
+      'reasoning_signal': evaluation.reasoningSignal,
+      'reasoning_feedback': evaluation.reasoningFeedback,
+      'reasoning_source': evaluation.reasoningEvaluationSource,
+      'canvas_score': evaluation.canvasScore == null
+          ? null
+          : _round4(evaluation.canvasScore!),
+      'canvas_status': evaluation.canvasStatus,
+      'canvas_snapshot_path': evaluation.canvasSnapshotPath,
+      'canvas_stroke_count': evaluation.canvasStrokeCount,
+      'evidence_score': _round4(evaluation.evidenceScore),
+      'confidence': _round4(evaluation.confidence),
+      'diagnostic_signal': evaluation.diagnosticSignal,
+      'prerequisite_gap_candidate': evaluation.prerequisiteGapCandidate,
+    };
+    node['attempts'] = attempts;
+    nodeResults[conceptCode] = node;
+    decisionState['node_results'] = nodeResults;
+    return true;
+  }
+
+  void _emitDiagnosisProgress(LocalDiagnosisGenerationProgress progress) {
+    if (_diagnosisProgressController.isClosed) {
+      return;
+    }
+    _diagnosisProgressController.add(progress);
   }
 
   Map<String, dynamic> _buildRuntimeAudit(Map<String, dynamic> decisionState) {
@@ -1059,21 +1442,22 @@ _QuestionTemplate _templateForConcept({
           '26 km/jam per jam',
         ],
         explanation:
-            'Laju perubahan rata-rata = (16 - 10) / 3 = 2 km/jam per jam.',
+            '1) Hitung selisih kecepatan: 16-10=6. 2) Bagi dengan selang waktu 3 jam: 6/3=2. 3) Jadi laju perubahan 2 km/jam per jam.',
       ),
       medium: _QuestionSeed(
         prompt: 'Jika f(x)=3x^2-4x+5, maka turunan pertamanya adalah ...',
         correctOption: '6x - 4',
         options: <String>['3x - 4', '6x - 4', '6x + 5', 'x^2 - 4'],
         explanation:
-            'Turunkan tiap suku: 3x^2 menjadi 6x, -4x menjadi -4, konstanta 5 menjadi 0.',
+            '1) Turunkan 3x^2 menjadi 6x. 2) Turunkan -4x menjadi -4. 3) Turunkan konstanta 5 menjadi 0, jadi hasil 6x-4.',
       ),
       hard: _QuestionSeed(
         prompt:
             'Kemiringan garis singgung kurva f(x)=x^3-2x pada x=2 adalah ...',
         correctOption: '10',
         options: <String>['6', '8', '10', '12'],
-        explanation: 'f\'(x)=3x^2-2. Saat x=2, f\'(2)=12-2=10.',
+        explanation:
+            '1) Turunan f(x)=x^3-2x adalah f\'(x)=3x^2-2. 2) Substitusi x=2: 3(2^2)-2=12-2. 3) Hasilnya 10.',
       ),
     );
   }
@@ -1083,19 +1467,22 @@ _QuestionTemplate _templateForConcept({
         prompt: 'Jika f(x)=2x+1, maka nilai f(3) adalah ...',
         correctOption: '7',
         options: <String>['5', '6', '7', '8'],
-        explanation: 'Substitusi x=3: 2(3)+1 = 7.',
+        explanation:
+            '1) Tulis fungsi f(x)=2x+1. 2) Ganti x dengan 3: 2(3)+1. 3) Hitung hasilnya 7.',
       ),
       medium: _QuestionSeed(
         prompt: 'Jika g(x)=x^2-1, maka nilai g(4) adalah ...',
         correctOption: '15',
         options: <String>['7', '12', '15', '17'],
-        explanation: 'Substitusi x=4: 4^2 - 1 = 15.',
+        explanation:
+            '1) Substitusi x=4 ke g(x)=x^2-1. 2) Hitung 4^2=16. 3) Kurangi 1 sehingga hasilnya 15.',
       ),
       hard: _QuestionSeed(
         prompt: 'Jika f(x)=3x-2 dan g(x)=x+5, maka f(g(2)) adalah ...',
         correctOption: '19',
         options: <String>['7', '13', '19', '21'],
-        explanation: 'g(2)=7, lalu f(7)=3(7)-2=19.',
+        explanation:
+            '1) Hitung g(2)=2+5=7. 2) Masukkan ke f: f(7)=3(7)-2. 3) Hasil akhirnya 19.',
       ),
     );
   }
@@ -1105,13 +1492,15 @@ _QuestionTemplate _templateForConcept({
         prompt: 'Hasil dari 2x + 3x adalah ...',
         correctOption: '5x',
         options: <String>['5', '5x', '6x', 'x^2'],
-        explanation: 'Gabungkan suku sejenis: 2x + 3x = 5x.',
+        explanation:
+            '1) Identifikasi suku sejenis: 2x dan 3x. 2) Jumlahkan koefisien 2+3=5. 3) Tulis hasil 5x.',
       ),
       medium: _QuestionSeed(
         prompt: 'Bentuk sederhana dari 3(x+2)-x adalah ...',
         correctOption: '2x + 6',
         options: <String>['2x + 6', '3x + 2', '2x + 2', 'x + 6'],
-        explanation: '3(x+2)=3x+6, lalu dikurangi x menjadi 2x+6.',
+        explanation:
+            '1) Distribusikan 3 ke (x+2): 3x+6. 2) Kurangi dengan x: (3x+6)-x. 3) Gabungkan menjadi 2x+6.',
       ),
       hard: _QuestionSeed(
         prompt: 'Faktorkan x^2 + 5x + 6.',
@@ -1123,7 +1512,7 @@ _QuestionTemplate _templateForConcept({
           '(x+5)(x+1)',
         ],
         explanation:
-            'Dua angka yang jumlahnya 5 dan hasil kali 6 adalah 2 dan 3.',
+            '1) Cari dua angka yang hasil kalinya 6. 2) Pilih pasangan yang jumlahnya 5: 2 dan 3. 3) Bentuk faktornya (x+2)(x+3).',
       ),
     );
   }
@@ -1134,21 +1523,24 @@ _QuestionTemplate _templateForConcept({
             'Jika rasio buku:pena = 2:3 dan jumlah buku 8, maka jumlah pena adalah ...',
         correctOption: '12',
         options: <String>['10', '12', '14', '16'],
-        explanation: '2 ke 8 berarti dikali 4, jadi pena 3x4=12.',
+        explanation:
+            '1) Dari 2 menjadi 8 artinya dikali 4. 2) Terapkan faktor yang sama ke bagian pena: 3x4. 3) Hasilnya 12.',
       ),
       medium: _QuestionSeed(
         prompt:
             'Peta berskala 1:100.000. Jarak pada peta 4 cm. Jarak sebenarnya adalah ...',
         correctOption: '4 km',
         options: <String>['400 m', '4 km', '40 km', '0.4 km'],
-        explanation: '4 cm x 100.000 = 400.000 cm = 4 km.',
+        explanation:
+            '1) Kalikan 4 cm dengan 100.000 menjadi 400.000 cm. 2) Ubah 400.000 cm ke meter: 4.000 m. 3) Ubah ke kilometer: 4 km.',
       ),
       hard: _QuestionSeed(
         prompt:
             'Campuran sirup:air = 1:5. Jika total campuran 18 liter, volume sirup adalah ...',
         correctOption: '3 liter',
         options: <String>['2 liter', '3 liter', '4 liter', '5 liter'],
-        explanation: 'Total bagian 6. Sirup 1/6 x 18 = 3 liter.',
+        explanation:
+            '1) Total rasio 1+5=6 bagian. 2) Sirup adalah 1 dari 6 bagian, jadi 1/6x18. 3) Hasilnya 3 liter.',
       ),
     );
   }
@@ -1157,20 +1549,22 @@ _QuestionTemplate _templateForConcept({
       prompt: 'Dalam topik $title, nilai 12 ditambah 5 menjadi ...',
       correctOption: '17',
       options: const <String>['15', '16', '17', '18'],
-      explanation: 'Perhitungan langsung: 12+5=17.',
+      explanation: '1) Ambil angka 12. 2) Tambahkan 5. 3) Hasil akhirnya 17.',
     ),
     medium: _QuestionSeed(
       prompt: 'Dalam konteks $title, selisih tetap antara 18 dan 24 adalah ...',
       correctOption: '6',
       options: const <String>['4', '6', '8', '12'],
-      explanation: 'Selisih 24-18=6.',
+      explanation:
+          '1) Tentukan dua angka: 24 dan 18. 2) Kurangi 24-18. 3) Selisihnya 6.',
     ),
     hard: _QuestionSeed(
       prompt:
           'Untuk latihan $title, jika 6 kelompok masing-masing 4 lalu dikurangi 2, hasilnya ...',
       correctOption: '22',
       options: const <String>['20', '22', '24', '26'],
-      explanation: '6x4=24, kemudian 24-2=22.',
+      explanation:
+          '1) Hitung 6x4=24. 2) Kurangi hasilnya dengan 2. 3) Nilai akhir 22.',
     ),
   );
 }
@@ -1221,3 +1615,10 @@ String _string(Object? value, {String fallback = ''}) {
   final text = (value ?? '').toString().trim();
   return text.isEmpty ? fallback : text;
 }
+
+String? _nullableString(Object? value) {
+  final text = _string(value);
+  return text.isEmpty ? null : text;
+}
+
+double _round4(double value) => (value * 10000).round() / 10000;

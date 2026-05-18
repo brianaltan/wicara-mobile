@@ -127,6 +127,7 @@ class _AppHomePageState extends State<AppHomePage> {
   String? _lastSyncedProfileFingerprint;
   late Future<HomeSnapshot> _homeSnapshotFuture;
   bool _autoOpenWorkspacePending = false;
+  int _edgeAiStatusRefreshTick = 0;
 
   @override
   void initState() {
@@ -436,8 +437,14 @@ class _AppHomePageState extends State<AppHomePage> {
     Navigator.of(context).pushNamed(AppRoutes.learningGoal);
   }
 
-  void _openEdgeAiSettings() {
-    Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+  Future<void> _openEdgeAiSettings() async {
+    await Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _edgeAiStatusRefreshTick += 1;
+    });
   }
 
   Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
@@ -894,6 +901,7 @@ class _AppHomePageState extends State<AppHomePage> {
             onboardingController: widget.onboardingController,
             onProfileSaved: _retryHomeSnapshot,
             onOpenEdgeAiSettings: _openEdgeAiSettings,
+            edgeAiStatusRefreshTick: _edgeAiStatusRefreshTick,
           );
         },
       ),
@@ -6013,6 +6021,7 @@ class _ProfilePage extends StatelessWidget {
     required this.onboardingController,
     required this.onProfileSaved,
     required this.onOpenEdgeAiSettings,
+    required this.edgeAiStatusRefreshTick,
   });
 
   final BoxConstraints constraints;
@@ -6021,7 +6030,8 @@ class _ProfilePage extends StatelessWidget {
   final AuthController authController;
   final OnboardingController onboardingController;
   final VoidCallback onProfileSaved;
-  final VoidCallback onOpenEdgeAiSettings;
+  final Future<void> Function() onOpenEdgeAiSettings;
+  final int edgeAiStatusRefreshTick;
 
   Future<void> _persistProfileUpdate(
     BuildContext context,
@@ -6287,6 +6297,7 @@ class _ProfilePage extends StatelessWidget {
               snapshot: snapshot,
               roleLabel: copy.learnerLabel,
               onOpenEdgeAiSettings: onOpenEdgeAiSettings,
+              edgeAiStatusRefreshTick: edgeAiStatusRefreshTick,
             ),
             const SizedBox(height: 22),
             _ProfileSection(
@@ -6338,7 +6349,9 @@ class _ProfilePage extends StatelessWidget {
                   value: copy.isIndonesian
                       ? 'Install / initialize model LiteRT'
                       : 'Install / initialize LiteRT model',
-                  onTap: onOpenEdgeAiSettings,
+                  onTap: () {
+                    onOpenEdgeAiSettings();
+                  },
                 ),
                 _ProfileSettingTile(
                   icon: Icons.track_changes_rounded,
@@ -6398,11 +6411,13 @@ class _ProfileHeaderCard extends StatelessWidget {
     required this.snapshot,
     required this.roleLabel,
     required this.onOpenEdgeAiSettings,
+    required this.edgeAiStatusRefreshTick,
   });
 
   final HomeSnapshot snapshot;
   final String roleLabel;
-  final VoidCallback onOpenEdgeAiSettings;
+  final Future<void> Function() onOpenEdgeAiSettings;
+  final int edgeAiStatusRefreshTick;
 
   @override
   Widget build(BuildContext context) {
@@ -6449,10 +6464,17 @@ class _ProfileHeaderCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    EdgeAiStatusChip(onTap: onOpenEdgeAiSettings),
+                    EdgeAiStatusChip(
+                      refreshTick: edgeAiStatusRefreshTick,
+                      onTap: () {
+                        onOpenEdgeAiSettings();
+                      },
+                    ),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: onOpenEdgeAiSettings,
+                      onPressed: () {
+                        onOpenEdgeAiSettings();
+                      },
                       style: TextButton.styleFrom(
                         minimumSize: const Size(0, 32),
                         padding: const EdgeInsets.symmetric(horizontal: 10),

@@ -11,11 +11,7 @@ class LocalPretestOption {
   final String text;
   final bool isCorrect;
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'label': label,
-    'text': text,
-  };
+  Map<String, dynamic> toJson() => {'id': id, 'label': label, 'text': text};
 }
 
 class LocalPretestQuestion {
@@ -56,10 +52,7 @@ class LocalPretestQuestion {
     'prompt': prompt,
     'helper': helper,
     'options': options.map((option) => option.toJson()).toList(growable: false),
-    'progress': {
-      'current': progressCurrent,
-      'max': progressMax,
-    },
+    'progress': {'current': progressCurrent, 'max': progressMax},
   };
 }
 
@@ -76,6 +69,8 @@ class LocalPretestEvaluation {
     required this.confidence,
     required this.diagnosticSignal,
     required this.canvasStatus,
+    required this.canvasSnapshotPath,
+    required this.canvasStrokeCount,
     required this.prerequisiteGapCandidate,
   });
 
@@ -90,6 +85,8 @@ class LocalPretestEvaluation {
   final double confidence;
   final String diagnosticSignal;
   final String? canvasStatus;
+  final String? canvasSnapshotPath;
+  final int? canvasStrokeCount;
   final String? prerequisiteGapCandidate;
 
   Map<String, dynamic> toJson() => {
@@ -104,6 +101,8 @@ class LocalPretestEvaluation {
     'confidence': confidence,
     'diagnostic_signal': diagnosticSignal,
     'canvas_status': canvasStatus,
+    'canvas_snapshot_path': canvasSnapshotPath,
+    'canvas_stroke_count': canvasStrokeCount,
     'prerequisite_gap_candidate': prerequisiteGapCandidate,
   };
 }

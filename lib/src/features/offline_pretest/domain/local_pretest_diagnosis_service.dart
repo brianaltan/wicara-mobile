@@ -23,24 +23,48 @@ class LocalPretestDiagnosisService {
     required Map<String, dynamic> decisionState,
     required String stopReason,
     Map<String, dynamic>? runtimeAudit,
+    bool includeNarrative = true,
   }) async {
-    final diagnosis = _deterministicDiagnosis(
+    final diagnosis = deterministicDiagnosis(
       graphScope: graphScope,
       decisionState: decisionState,
       stopReason: stopReason,
       runtimeAudit: runtimeAudit,
     );
+    if (!includeNarrative) {
+      return diagnosis;
+    }
+    return enrichNarrative(diagnosis);
+  }
 
+  Map<String, dynamic> deterministicDiagnosis({
+    required Map<String, dynamic> graphScope,
+    required Map<String, dynamic> decisionState,
+    required String stopReason,
+    Map<String, dynamic>? runtimeAudit,
+  }) {
+    return _deterministicDiagnosis(
+      graphScope: graphScope,
+      decisionState: decisionState,
+      stopReason: stopReason,
+      runtimeAudit: runtimeAudit,
+    );
+  }
+
+  Future<Map<String, dynamic>> enrichNarrative(
+    Map<String, dynamic> diagnosis,
+  ) async {
+    final enriched = <String, dynamic>{...diagnosis};
     final llmNarrative = await _synthesizeNarrative(diagnosis);
     if (llmNarrative == null) {
-      return diagnosis;
+      return enriched;
     }
 
     if (llmNarrative.summary != null && llmNarrative.summary!.isNotEmpty) {
-      diagnosis['summary'] = llmNarrative.summary;
+      enriched['summary'] = llmNarrative.summary;
     }
     final analysis =
-        (diagnosis['analysis'] as Map?)?.cast<String, dynamic>() ??
+        (enriched['analysis'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};
     if (llmNarrative.strengths.isNotEmpty) {
       analysis['strengths'] = llmNarrative.strengths;
@@ -54,16 +78,16 @@ class LocalPretestDiagnosisService {
     if (llmNarrative.recommendedFocus.isNotEmpty) {
       analysis['recommended_focus'] = llmNarrative.recommendedFocus;
     }
-    diagnosis['analysis'] = analysis;
+    enriched['analysis'] = analysis;
 
     final audit =
-        (diagnosis['runtime_audit'] as Map?)?.cast<String, dynamic>() ??
+        (enriched['runtime_audit'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};
-    diagnosis['runtime_audit'] = <String, dynamic>{
+    enriched['runtime_audit'] = <String, dynamic>{
       ...audit,
       ...llmNarrative.auditPatch,
     };
-    return diagnosis;
+    return enriched;
   }
 
   Map<String, dynamic> _deterministicDiagnosis({
@@ -134,7 +158,7 @@ class LocalPretestDiagnosisService {
       final parsed = parsedPrimary.isNotEmpty
           ? parsedPrimary
           : _parseJsonObject(response.rawText);
-      final summary = _trimToNull(parsed['summary'], maxLength: 320);
+      final summary = _trimToNull(parsed['summary'], maxLength: 600);
       final strengths = _sanitizeNarrativeList(parsed['strengths']);
       final gaps = _sanitizeNarrativeList(parsed['gaps']);
       final evidenceNotes = _sanitizeNarrativeList(parsed['evidence_notes']);
@@ -192,29 +216,38 @@ class LocalPretestDiagnosisService {
               const <Map<String, dynamic>>[];
           final correctQuestions = <Map<String, dynamic>>[];
           final wrongQuestions = <Map<String, dynamic>>[];
-          for (final attempt in attempts) {
+          for (var index = 0; index < attempts.length; index++) {
+            final attempt = attempts[index];
             final stem = _string(attempt['question_stem']);
             final selectedOption = _string(attempt['selected_option_text']);
             final correctOption = _string(attempt['correct_option_text']);
             final typedReasoning = _string(attempt['typed_reasoning']);
             final expectedReasoning = _string(attempt['expected_reasoning']);
+            final canvasUsed = attempt['canvas_used'] == true;
+            final strokeCount = _int(attempt['canvas_stroke_count']);
             if (stem.isEmpty) {
               continue;
             }
             if (attempt['is_correct'] == true) {
               correctQuestions.add(<String, dynamic>{
+                'index': index + 1,
                 'stem': stem,
                 'siswa_pilih': selectedOption,
                 'reasoning_siswa': typedReasoning,
+                'siswa_pakai_canvas': canvasUsed,
+                if (strokeCount > 0) 'stroke_count': strokeCount,
               });
               continue;
             }
             wrongQuestions.add(<String, dynamic>{
+              'index': index + 1,
               'stem': stem,
               'jawaban_benar': correctOption,
               'siswa_pilih': selectedOption,
               'reasoning_siswa': typedReasoning,
               'expected_reasoning': expectedReasoning,
+              'siswa_pakai_canvas': canvasUsed,
+              if (strokeCount > 0) 'stroke_count': strokeCount,
             });
           }
           return <String, dynamic>{
@@ -237,19 +270,29 @@ class LocalPretestDiagnosisService {
     };
 
     return '''
-Kamu menulis ringkasan diagnostik untuk SISWA setelah pretest singkat.
-Gunakan HANYA data yang diberikan. Jangan menebak konsep di luar data.
-Bahasa: santai, langsung ke siswa ("Kamu..."), tanpa jargon.
-Jangan bocorkan jawaban soal yang belum dia coba.
+Tulis diagnosa pretest siswa. Bukan ringkasan, bukan motivasi - DIAGNOSA.
+Gunakan HANYA data di "nodes" di bawah.
+Bahasa: santai, langsung ke siswa ("Kamu ..."), tanpa jargon.
+Jika siswa_pakai_canvas=true, sebutkan bahwa siswa menulis/mencoret saat mengerjakan (sinyal effort).
 
-Cara menulis setiap field:
-- "summary": 2-3 kalimat. Sebut konsep target spesifik + apa yang sudah dipahami + apa yang masih kurang.
-- "strengths": maks 3 poin. Setiap poin harus merujuk ke SOAL BENAR pada data.
-- "gaps": maks 3 poin. Setiap poin harus merujuk ke SOAL SALAH dan jelaskan kesalahannya spesifik.
-- "evidence_notes": maks 3 poin. Catat pola penting (misalnya reasoning tidak ditulis, salah konsisten di level tertentu).
-- "recommended_focus": maks 3 poin. Beri latihan konkret yang langsung memperbaiki gaps.
+Aturan menulis tiap field:
+- "summary" (2-3 kalimat, kira-kira 80-120 kata):
+  sebut konsep target spesifik + 1 hal yang sudah dipahami (rujuk soal benar) + 1 hal yang masih kurang (rujuk soal salah).
+  Hindari kalimat motivasi ("semangat", "kamu pasti bisa").
+- "strengths" (1-3 poin, tiap poin 1-2 kalimat penuh):
+  format: "Di soal [inti pertanyaan], kamu [langkah yang benar]."
+  Wajib rujuk reasoning_siswa jika tersedia.
+- "gaps" (1-3 poin, tiap poin 2-3 kalimat penuh):
+  format: "Di soal [inti pertanyaan], kamu pilih [siswa_pilih] padahal benar [jawaban_benar]. [Kontraskan reasoning_siswa vs expected_reasoning atau jelaskan salahnya]."
+- "evidence_notes" (0-2 poin):
+  tulis pola lintas-soal yang konkret (mis. reasoning kosong di soal sulit, effort canvas muncul, dst).
+- "recommended_focus" (1-3 poin):
+  latihan konkret yang langsung memperbaiki gap (sebut sub-topik latihan, bukan "latihan lagi").
 
-Return valid JSON only:
+DILARANG: kalimat generik ("perlu latihan lagi", "konsep belum kuat").
+Selalu sebut konten soal dari data.
+
+Output JSON valid saja:
 {
   "summary": "...",
   "strengths": ["..."],
@@ -258,7 +301,7 @@ Return valid JSON only:
   "recommended_focus": ["..."]
 }
 
-Data:
+nodes:
 ${jsonEncode(payload)}
 ''';
   }
@@ -647,20 +690,24 @@ Map<String, dynamic> _parseJsonObject(String raw) {
   return const <String, dynamic>{};
 }
 
-List<String> _sanitizeNarrativeList(Object? value) {
+List<String> _sanitizeNarrativeList(
+  Object? value, {
+  int maxLength = 320,
+  int maxItems = 5,
+}) {
   if (value is! List) {
     return const <String>[];
   }
   final unique = <String>{};
   final result = <String>[];
   for (final item in value) {
-    final normalized = _trimToNull(item, maxLength: 160);
+    final normalized = _trimToNull(item, maxLength: maxLength);
     if (normalized == null || unique.contains(normalized)) {
       continue;
     }
     unique.add(normalized);
     result.add(normalized);
-    if (result.length >= 4) {
+    if (result.length >= maxItems) {
       break;
     }
   }

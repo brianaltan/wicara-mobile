@@ -7,11 +7,13 @@ import '../domain/edge_ai_runtime.dart';
 class EdgeAiStatusChip extends StatefulWidget {
   const EdgeAiStatusChip({
     this.runtime = defaultEdgeAiRuntime,
+    this.refreshTick = 0,
     this.onTap,
     super.key,
   });
 
   final EdgeAiRuntime runtime;
+  final int refreshTick;
   final VoidCallback? onTap;
 
   @override
@@ -26,6 +28,15 @@ class _EdgeAiStatusChipState extends State<EdgeAiStatusChip> {
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant EdgeAiStatusChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtime != widget.runtime ||
+        oldWidget.refreshTick != widget.refreshTick) {
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {
@@ -83,7 +94,6 @@ class _EdgeAiStatusChipState extends State<EdgeAiStatusChip> {
     return InkWell(
       onTap: () {
         widget.onTap?.call();
-        _refresh();
       },
       borderRadius: BorderRadius.circular(999),
       child: chip,

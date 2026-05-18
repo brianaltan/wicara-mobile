@@ -66,6 +66,7 @@ class ApiPretestRepository implements PretestRepository {
           'confidence': answer.confidence,
           'typed_reasoning': answer.typedReasoning,
           'canvas_asset_id': answer.canvasAssetId,
+          'canvas_stroke_count': answer.canvasStrokeCount,
           'used_canvas': answer.usedCanvas,
         },
       );
@@ -271,6 +272,11 @@ String? _runtimeAuditNote(Object? value) {
 
 String _string(Object? value) => (value ?? '').toString().trim();
 
+String? _nullableString(Object? value) {
+  final text = _string(value);
+  return text.isEmpty ? null : text;
+}
+
 double? _double(Object? value) {
   if (value is num) {
     return value.toDouble();
@@ -332,6 +338,23 @@ List<PretestNodeReport> _nodeReports(Object? value) {
       .map((node) {
         final evidenceSummary = node['evidence_summary'];
         final summary = evidenceSummary is Map ? evidenceSummary : const {};
+        final attempts =
+            (node['evidence'] as List?)
+                ?.whereType<Map>()
+                .map((item) => item.cast<String, dynamic>())
+                .toList(growable: false) ??
+            const <Map<String, dynamic>>[];
+        Map<String, dynamic>? latestCanvasAttempt;
+        for (final attempt in attempts.reversed) {
+          final canvasPath = _string(attempt['canvas_snapshot_path']);
+          if (attempt['canvas_used'] == true || canvasPath.isNotEmpty) {
+            latestCanvasAttempt = attempt;
+            break;
+          }
+        }
+        final canvasSnapshotPath = latestCanvasAttempt == null
+            ? null
+            : _nullableString(latestCanvasAttempt['canvas_snapshot_path']);
         return PretestNodeReport(
           title: _string(node['title']).isNotEmpty
               ? _string(node['title'])
@@ -348,6 +371,11 @@ List<PretestNodeReport> _nodeReports(Object? value) {
           attemptCount: _int(summary['attempt_count']) ?? 0,
           correctCount: _int(summary['correct_count']) ?? 0,
           diagnosticSignals: _stringList(summary['diagnostic_signals']),
+          hasCanvasEvidence: latestCanvasAttempt != null,
+          canvasStrokeCount: latestCanvasAttempt == null
+              ? null
+              : _int(latestCanvasAttempt['canvas_stroke_count']),
+          canvasSnapshotPath: canvasSnapshotPath,
           carelessMistakePossible: summary['careless_mistake_possible'] == true,
           misconceptionDetected: summary['misconception_detected'] == true,
         );

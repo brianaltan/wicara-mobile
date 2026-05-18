@@ -24,7 +24,10 @@ class LocalEvidenceEvaluator {
     required LocalPretestOption selectedOption,
     required String typedReasoning,
     required bool usedCanvas,
+    String? canvasSnapshotPath,
+    int? canvasStrokeCount,
     required Set<String> knownConceptCodes,
+    bool allowLiteRtReasoning = true,
   }) async {
     final isCorrect = selectedOption.isCorrect;
     final answerScore = isCorrect ? 1.0 : 0.0;
@@ -34,8 +37,14 @@ class LocalEvidenceEvaluator {
       typedReasoning: typedReasoning,
       isCorrect: isCorrect,
       knownConceptCodes: knownConceptCodes,
+      allowLiteRtReasoning: allowLiteRtReasoning,
     );
-    final canvasStatus = usedCanvas ? 'stored_not_evaluated' : null;
+    final normalizedCanvasPath = _nullableString(canvasSnapshotPath);
+    final canvasStatus = usedCanvas
+        ? (normalizedCanvasPath != null
+              ? 'used_image_stored'
+              : 'stored_not_evaluated')
+        : null;
     final canvasScore = null;
     final evidenceScore = _evidenceScore(
       answerScore: answerScore,
@@ -67,6 +76,8 @@ class LocalEvidenceEvaluator {
       confidence: confidence,
       diagnosticSignal: diagnosticSignal,
       canvasStatus: canvasStatus,
+      canvasSnapshotPath: normalizedCanvasPath,
+      canvasStrokeCount: canvasStrokeCount,
       prerequisiteGapCandidate: reasoning.prerequisiteGapCandidate,
     );
   }
@@ -77,6 +88,7 @@ class LocalEvidenceEvaluator {
     required String typedReasoning,
     required bool isCorrect,
     required Set<String> knownConceptCodes,
+    required bool allowLiteRtReasoning,
   }) async {
     final text = typedReasoning.trim();
     if (text.isEmpty) {
@@ -88,20 +100,32 @@ class LocalEvidenceEvaluator {
         prerequisiteGapCandidate: null,
       );
     }
-    final aiResult = await _evaluateWithLiteRt(
-      question: question,
-      selectedOption: selectedOption,
-      typedReasoning: text,
-      isCorrect: isCorrect,
-      knownConceptCodes: knownConceptCodes,
-    );
-    if (aiResult != null) {
-      return aiResult;
+    if (allowLiteRtReasoning) {
+      final aiResult = await _evaluateWithLiteRt(
+        question: question,
+        selectedOption: selectedOption,
+        typedReasoning: text,
+        isCorrect: isCorrect,
+        knownConceptCodes: knownConceptCodes,
+      );
+      if (aiResult != null) {
+        return aiResult;
+      }
     }
-    return _heuristicReasoning(
+    final heuristic = _heuristicReasoning(
       typedReasoning: text,
       expectedReasoning: question.expectedReasoning,
       isCorrect: isCorrect,
+    );
+    if (allowLiteRtReasoning) {
+      return heuristic;
+    }
+    return _ReasoningResult(
+      reasoningScore: heuristic.reasoningScore,
+      reasoningSignal: heuristic.reasoningSignal,
+      feedback: heuristic.feedback,
+      source: '${heuristic.source}_fast',
+      prerequisiteGapCandidate: heuristic.prerequisiteGapCandidate,
     );
   }
 
@@ -119,7 +143,8 @@ class LocalEvidenceEvaluator {
       }
       final response = await runtime.generateJson(
         EdgeJsonGenerationRequest(
-          requestId: 'pretest_reasoning_${DateTime.now().microsecondsSinceEpoch}',
+          requestId:
+              'pretest_reasoning_${DateTime.now().microsecondsSinceEpoch}',
           schemaName: 'pretest_reasoning_v1',
           system:
               "You are WICARA's on-device assessment evaluator. Return valid JSON only. Do not reveal answers. Grade learner reasoning while keeping MCQ correctness as the anchor.",
@@ -182,7 +207,8 @@ class LocalEvidenceEvaluator {
       return const _ReasoningResult(
         reasoningScore: 0.78,
         reasoningSignal: 'possible_careless_mistake',
-        feedback: 'MCQ salah, tapi ada sinyal penalaran parsial yang cukup kuat.',
+        feedback:
+            'MCQ salah, tapi ada sinyal penalaran parsial yang cukup kuat.',
         source: 'heuristic',
         prerequisiteGapCandidate: null,
       );
@@ -191,7 +217,8 @@ class LocalEvidenceEvaluator {
       return const _ReasoningResult(
         reasoningScore: 0.45,
         reasoningSignal: 'partial_reasoning',
-        feedback: 'Penalaran parsial, tetapi belum cukup untuk mendukung jawaban.',
+        feedback:
+            'Penalaran parsial, tetapi belum cukup untuk mendukung jawaban.',
         source: 'heuristic',
         prerequisiteGapCandidate: null,
       );
@@ -214,9 +241,7 @@ class LocalEvidenceEvaluator {
     final hasCanvas = canvasScore != null;
     if (hasReasoning && hasCanvas) {
       return _round4(
-        (0.60 * answerScore) +
-            (0.25 * reasoningScore) +
-            (0.15 * canvasScore),
+        (0.60 * answerScore) + (0.25 * reasoningScore) + (0.15 * canvasScore),
       );
     }
     if (hasReasoning) {
