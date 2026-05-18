@@ -223,7 +223,7 @@ class _PretestPageState extends State<PretestPage> {
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.home,
       (route) => false,
-      arguments: const {'open_goal_history': true},
+      arguments: const {'auto_open_workspace': true},
     );
   }
 
@@ -322,14 +322,15 @@ class _PretestPageState extends State<PretestPage> {
       return _PretestStateView(
         constraints: constraints,
         title: 'Loading pretest',
-        message: 'Fetching adaptive questions from backend.',
+        message: 'Generating adaptive questions on local AI...',
       );
     }
     if (_questionError != null || _question == null) {
       return _PretestStateView(
         constraints: constraints,
         title: 'Pretest unavailable',
-        message: _questionError ?? 'Backend returned no question.',
+        message:
+            _questionError ?? 'Local pretest generator returned no question.',
         actionLabel: 'Try again',
         onAction: _loadQuestion,
       );

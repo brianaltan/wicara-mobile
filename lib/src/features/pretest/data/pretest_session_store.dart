@@ -1,9 +1,32 @@
+class LocalTrackDraft {
+  const LocalTrackDraft({
+    required this.trackId,
+    required this.learningGoalId,
+    required this.conceptCode,
+    required this.conceptTitle,
+    required this.subjectCode,
+    required this.moduleId,
+    required this.moduleTitle,
+    required this.createdAtIso,
+  });
+
+  final String trackId;
+  final String learningGoalId;
+  final String conceptCode;
+  final String conceptTitle;
+  final String subjectCode;
+  final String moduleId;
+  final String moduleTitle;
+  final String createdAtIso;
+}
+
 class PretestSessionStore {
   String? learningGoalId;
   String? pretestSessionId;
   String? trackId;
   String? targetConceptCode;
   String? targetSubjectCode;
+  final List<LocalTrackDraft> localTrackHistory = <LocalTrackDraft>[];
 
   void saveBootstrap({
     required String learningGoalId,
@@ -36,6 +59,11 @@ class PretestSessionStore {
     trackId = null;
     targetConceptCode = null;
     targetSubjectCode = null;
+  }
+
+  void upsertLocalTrack(LocalTrackDraft draft) {
+    localTrackHistory.removeWhere((item) => item.trackId == draft.trackId);
+    localTrackHistory.insert(0, draft);
   }
 }
 

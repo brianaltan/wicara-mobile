@@ -114,6 +114,7 @@ class LocalPretestDiagnosisService {
       stopReason: stopReason,
       recommendedPath: recommendedPath,
     );
+    final pureAnswer = _pureAnswerMetrics(nodes);
     return <String, dynamic>{
       'summary': _summary(target: target, recommendedPath: recommendedPath),
       'target': target,
@@ -123,6 +124,9 @@ class LocalPretestDiagnosisService {
       'score_percent': ((target?['mastery_score'] as num? ?? 0) * 100).round(),
       'confidence_percent': ((target?['confidence'] as num? ?? 0) * 100)
           .round(),
+      'pure_answer_total': pureAnswer.total,
+      'pure_answer_score': pureAnswer.correct,
+      'pure_answer_percent': pureAnswer.percent,
       'overall_mastery_percent': _int(analysis['overall_mastery_percent']),
       'recommended_path': recommendedPath,
       'path_options': pathOptions,
@@ -134,6 +138,27 @@ class LocalPretestDiagnosisService {
             'execution_location': 'device',
           },
     };
+  }
+
+  ({int total, int correct, int percent}) _pureAnswerMetrics(
+    List<Map<String, dynamic>> nodes,
+  ) {
+    var total = 0;
+    var correct = 0;
+    for (final node in nodes) {
+      final attempts =
+          (node['evidence'] as List?)
+              ?.whereType<Map>()
+              .map((item) => item.cast<String, dynamic>())
+              .toList(growable: false) ??
+          const <Map<String, dynamic>>[];
+      total += attempts.length;
+      correct += attempts
+          .where((attempt) => attempt['is_correct'] == true)
+          .length;
+    }
+    final percent = total <= 0 ? 0 : ((correct / total) * 100).round();
+    return (total: total, correct: correct, percent: percent);
   }
 
   Future<_DiagnosisNarrative?> _synthesizeNarrative(

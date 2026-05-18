@@ -234,7 +234,8 @@ class AuthController extends ChangeNotifier {
       return false;
     }
     return routeName != AppRoutes.pretest &&
-        routeName != AppRoutes.edgeAiSettings;
+        routeName != AppRoutes.edgeAiSettings &&
+        routeName != AppRoutes.workspaceModules;
   }
 
   String? _normalizeRestorableRoute(String? routeName) {

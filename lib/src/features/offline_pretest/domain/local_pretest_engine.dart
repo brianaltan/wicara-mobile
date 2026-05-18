@@ -468,9 +468,43 @@ class LocalPretestEngine {
       return;
     }
     final metadata = _sessionMetadata(session.metadata);
+    final goalId = _string(_pretestSessionStore.learningGoalId);
+    final conceptCode = _string(_pretestSessionStore.targetConceptCode);
+    final subjectCode = _string(_pretestSessionStore.targetSubjectCode);
+    final target =
+        (diagnosis['target'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    final conceptTitle = _string(
+      target['title'],
+      fallback: _string(metadata['target_title'], fallback: conceptCode),
+    );
+    final trackId = _ensureLocalTrackId(
+      existingTrackId: _pretestSessionStore.trackId,
+      goalId: goalId,
+      sessionId: activeId,
+      conceptCode: conceptCode,
+    );
+    _pretestSessionStore.trackId = trackId;
+    final module = _fallbackModuleForSubject(subjectCode);
+    _pretestSessionStore.upsertLocalTrack(
+      LocalTrackDraft(
+        trackId: trackId,
+        learningGoalId: goalId,
+        conceptCode: conceptCode,
+        conceptTitle: conceptTitle,
+        subjectCode: subjectCode,
+        moduleId: module.moduleId,
+        moduleTitle: module.moduleTitle,
+        createdAtIso: DateTime.now().toUtc().toIso8601String(),
+      ),
+    );
+
     metadata['selected_path'] = pathOption;
     metadata['diagnosis'] = diagnosis;
     metadata['selected_path_at'] = DateTime.now().toUtc().toIso8601String();
+    metadata['track_id'] = trackId;
+    metadata['module_id'] = module.moduleId;
+    metadata['module_title'] = module.moduleTitle;
     await _localSessions.updateSession(
       sessionId: activeId,
       metadata: metadata,
@@ -480,7 +514,42 @@ class LocalPretestEngine {
       entityType: 'learning_goal_path_selection',
       entityId: activeId,
       operation: 'insert',
-      payload: <String, dynamic>{'path_option': pathOption},
+      payload: <String, dynamic>{
+        'path_option': pathOption,
+        'track_id': trackId,
+        'module_id': module.moduleId,
+      },
+    );
+  }
+
+  String _ensureLocalTrackId({
+    required String? existingTrackId,
+    required String goalId,
+    required String sessionId,
+    required String conceptCode,
+  }) {
+    final existing = _string(existingTrackId);
+    if (existing.isNotEmpty) {
+      return existing;
+    }
+    final safeGoal = goalId.isNotEmpty ? goalId : 'local_goal';
+    final safeConcept = conceptCode.isNotEmpty
+        ? conceptCode.replaceAll(RegExp(r'[^a-zA-Z0-9_]+'), '_')
+        : 'concept';
+    return 'local_track_${safeGoal}_${safeConcept}_${sessionId.substring(0, sessionId.length > 8 ? 8 : sessionId.length)}';
+  }
+
+  _LocalModuleFallback _fallbackModuleForSubject(String subjectCode) {
+    final normalized = subjectCode.trim().toLowerCase();
+    if (normalized.contains('sd') || normalized.contains('mi')) {
+      return const _LocalModuleFallback(
+        moduleId: 'demo-module-perkalian',
+        moduleTitle: 'Perkalian',
+      );
+    }
+    return const _LocalModuleFallback(
+      moduleId: 'demo-module-aljabar',
+      moduleTitle: 'Aljabar dan pembuktian Al-Khawarizmi',
     );
   }
 
@@ -1394,6 +1463,16 @@ class _QuestionTemplate {
   final _QuestionSeed easy;
   final _QuestionSeed medium;
   final _QuestionSeed hard;
+}
+
+class _LocalModuleFallback {
+  const _LocalModuleFallback({
+    required this.moduleId,
+    required this.moduleTitle,
+  });
+
+  final String moduleId;
+  final String moduleTitle;
 }
 
 class _QuestionSeed {

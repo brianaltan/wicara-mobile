@@ -1888,9 +1888,18 @@ class _GoalMetaPill extends StatelessWidget {
 }
 
 List<String> _goalHistorySubjects(HomeSnapshot snapshot) {
-  final source = snapshot.selectedSubjects.isNotEmpty
-      ? snapshot.selectedSubjects
-      : snapshot.availableSubjects;
+  final source = <String>[
+    ...(snapshot.selectedSubjects.isNotEmpty
+        ? snapshot.selectedSubjects
+        : snapshot.availableSubjects),
+    ...snapshot.activeTracks.map((track) {
+      final code = track.subjectCode.trim();
+      if (code.isNotEmpty) {
+        return code;
+      }
+      return track.subjectName;
+    }),
+  ];
   final seen = <String>{};
   final subjects = <String>[];
   for (final subject in source) {
