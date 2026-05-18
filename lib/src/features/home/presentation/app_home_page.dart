@@ -7578,41 +7578,544 @@ class _LearningReportContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
+            _DataTrustPanel(report: report),
+            const SizedBox(height: 18),
+            _OutcomeSnapshotPanel(
+              report: report,
+              fixed: fixed,
+              remaining: remaining,
+            ),
+            const SizedBox(height: 18),
             _LearningGainCard(report: report),
+            const SizedBox(height: 18),
+            _WeeklyTimelinePanel(report: report),
             const SizedBox(height: 18),
             _ReportPerformancePanel(report: report),
             const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: _ReportMetric(
-                    label: copy.fixedGapsLabel,
-                    value: '${fixed.count}',
-                    delta: fixed.deltaLabel,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _ReportMetric(
-                    label: copy.remainingGapsLabel,
-                    value: '${remaining.count}',
-                    delta: remaining.deltaLabel,
-                  ),
-                ),
-              ],
-            ),
+            _EffortImpactPanel(report: report),
+            const SizedBox(height: 18),
+            _ConceptMoversPanel(report: report),
             const SizedBox(height: 18),
             _UnlockedThisWeekCard(summary: report.unlockedThisWeek),
             const SizedBox(height: 18),
             _UpcomingRecommendationsPanel(
               recommendations: report.upcomingRecommendations,
               onRecommendationSelected: onRecommendationSelected,
+              title: '7-day action plan',
+              subtitle: 'Highest leverage actions for the next week.',
             ),
+            const SizedBox(height: 18),
+            _WeeklyNarrativePanel(narrative: report.weeklyNarrative),
             const SizedBox(height: 18),
             _ConsistencySummaryCard(summary: report.consistencySummary),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DataTrustPanel extends StatelessWidget {
+  const _DataTrustPanel({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final quality = report.dataQuality;
+    final notes = quality.notes.take(2).toList(growable: false);
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.verified_outlined,
+                color: WicaraColors.primaryDeep,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Data trust',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _SoftBadge(_coverageStatusLabel(quality.coverageStatus)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Confidence',
+                  value: '${quality.confidenceScore}%',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Attempts',
+                  value: '${quality.attemptsCovered}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Paired',
+                  value: '${quality.pairedConcepts}',
+                ),
+              ),
+            ],
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (final note in notes) ...[
+              Text(
+                '• $note',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (note != notes.last) const SizedBox(height: 4),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OutcomeSnapshotPanel extends StatelessWidget {
+  const _OutcomeSnapshotPanel({
+    required this.report,
+    required this.fixed,
+    required this.remaining,
+  });
+
+  final WeeklyLearningReport report;
+  final GapMetric fixed;
+  final GapMetric remaining;
+
+  @override
+  Widget build(BuildContext context) {
+    final gain = report.learningGainPercent ?? 0;
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Outcome snapshot',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _ReportMetric(
+                  label: 'Score',
+                  value: '${report.score}%',
+                  delta: _signedPercent(gain),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ReportMetric(
+                  label: 'Fixed gaps',
+                  value: '${fixed.count}',
+                  delta: fixed.deltaLabel,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ReportMetric(
+                  label: 'Remaining',
+                  value: '${remaining.count}',
+                  delta: remaining.deltaLabel,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyTimelinePanel extends StatelessWidget {
+  const _WeeklyTimelinePanel({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final timeline = report.weeklyTimeline;
+    if (timeline.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '4-week trend',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Score, attempts, and gap movement by week.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final point in timeline) ...[
+            _TimelineWeekRow(point: point),
+            if (point != timeline.last) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelineWeekRow extends StatelessWidget {
+  const _TimelineWeekRow({required this.point});
+
+  final WeeklyTimelinePoint point;
+
+  @override
+  Widget build(BuildContext context) {
+    final scoreRatio = (point.score.clamp(0, 100)) / 100;
+    return Column(
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: 34,
+              child: Text(
+                point.label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 8,
+                  value: scoreRatio.toDouble(),
+                  backgroundColor: WicaraColors.fieldFill,
+                  valueColor: const AlwaysStoppedAnimation(
+                    WicaraColors.secondary,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '${point.score}%',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.text,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const SizedBox(width: 42),
+            Expanded(
+              child: Text(
+                '${point.attemptCount} attempts • ${point.fixedGaps} fixed • ${point.remainingGaps} remaining',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _EffortImpactPanel extends StatelessWidget {
+  const _EffortImpactPanel({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final effort = report.effortImpact;
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Effort vs impact',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              _SoftBadge(_efficiencyLabel(effort.efficiencyLabel)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Attempts',
+                  value: '${effort.attemptCount}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Active days',
+                  value: '${effort.activeDays}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _LearningGainMetric(
+                  label: 'Impact',
+                  value: _signedPercent(effort.impactScoreDelta),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            effort.narrative,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConceptMoversPanel extends StatelessWidget {
+  const _ConceptMoversPanel({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final movers = report.conceptMovers;
+    if (movers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Concept movers',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Top improvements and concepts at risk.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final mover in movers) ...[
+            _ConceptMoverTile(mover: mover),
+            if (mover != movers.last) const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ConceptMoverTile extends StatelessWidget {
+  const _ConceptMoverTile({required this.mover});
+
+  final ReportConceptMover mover;
+
+  @override
+  Widget build(BuildContext context) {
+    final improving = mover.movementType == 'improved';
+    final color = improving
+        ? WicaraColors.accentMint
+        : WicaraColors.secondaryDeep;
+    final bg = improving
+        ? WicaraColors.accentMint.withValues(alpha: 0.16)
+        : WicaraColors.accentAmber.withValues(alpha: 0.18);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              improving
+                  ? Icons.trending_up_rounded
+                  : Icons.warning_amber_rounded,
+              color: color,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  mover.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${_signedPercent(mover.masteryDeltaPercent)} • ${mover.status.toUpperCase()}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  mover.reason,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: WicaraColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyNarrativePanel extends StatelessWidget {
+  const _WeeklyNarrativePanel({required this.narrative});
+
+  final WeeklyNarrative narrative;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Weekly narrative',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _NarrativeRow(label: 'Improved', text: narrative.improved),
+          const SizedBox(height: 8),
+          _NarrativeRow(label: 'Stagnant', text: narrative.stagnant),
+          const SizedBox(height: 8),
+          _NarrativeRow(label: 'Focus', text: narrative.focus),
+        ],
+      ),
+    );
+  }
+}
+
+class _NarrativeRow extends StatelessWidget {
+  const _NarrativeRow({required this.label, required this.text});
+
+  final String label;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 66,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.secondaryDeep,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -7828,6 +8331,25 @@ class _LearningGainMetric extends StatelessWidget {
 }
 
 String _signedPercent(int value) => value > 0 ? '+$value%' : '$value%';
+
+String _coverageStatusLabel(String value) {
+  return switch (value) {
+    'evidence_backed' => 'Evidence-backed',
+    'partial_history' => 'Partial history',
+    'seeded_baseline' => 'Seeded baseline',
+    _ => value.replaceAll('_', ' '),
+  };
+}
+
+String _efficiencyLabel(String value) {
+  return switch (value) {
+    'high_leverage' => 'High leverage',
+    'steady' => 'Steady',
+    'needs_focus' => 'Needs focus',
+    'no_signal' => 'No signal',
+    _ => value.replaceAll('_', ' '),
+  };
+}
 
 class _ReportPerformancePanel extends StatelessWidget {
   const _ReportPerformancePanel({required this.report});
@@ -8047,10 +8569,14 @@ class _UpcomingRecommendationsPanel extends StatelessWidget {
   const _UpcomingRecommendationsPanel({
     required this.recommendations,
     required this.onRecommendationSelected,
+    this.title = 'Upcoming recommendations',
+    this.subtitle,
   });
 
   final List<RecommendedNextAction> recommendations;
   final ValueChanged<RecommendedNextAction> onRecommendationSelected;
+  final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -8069,12 +8595,22 @@ class _UpcomingRecommendationsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Upcoming recommendations',
+            title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (subtitle?.isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           for (final recommendation in rows) ...[
             _ReportRecommendationTile(
