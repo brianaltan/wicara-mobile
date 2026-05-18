@@ -120,7 +120,7 @@ class ApiHomeRepository implements HomeRepository {
         : (parsedQuestions.isEmpty ? null : parsedQuestions.first);
     return DailyEvaluationSession(
       sessionId: _string(json['session_id']),
-      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      title: _string(json['title']),
       status: _string(json['status']),
       language: _stringWithFallback(json['language'], 'en'),
       source: _string(json['source']),
@@ -320,10 +320,10 @@ class ApiHomeRepository implements HomeRepository {
   ReviewDueSummary _reviewDueFromJson(Object? value) {
     final json = _map(value);
     return ReviewDueSummary(
-      title: _stringWithFallback(json['title'], 'Review due'),
+      title: _string(json['title']),
       dueCount: _int(json['due_count']),
       summary: _string(json['summary']),
-      actionLabel: _stringWithFallback(json['action_label'], 'Start'),
+      actionLabel: _string(json['action_label']),
     );
   }
 
@@ -349,7 +349,7 @@ class ApiHomeRepository implements HomeRepository {
     final json = _map(value);
     final rawPoints = json['points'];
     return RetentionForecast(
-      title: _stringWithFallback(json['title'], 'Your retention forecast'),
+      title: _string(json['title']),
       basis: _string(json['basis']),
       points: rawPoints is List
           ? rawPoints
@@ -370,10 +370,10 @@ class ApiHomeRepository implements HomeRepository {
   RecommendationCallout _recommendationCalloutFromJson(Object? value) {
     final json = _map(value);
     return RecommendationCallout(
-      title: _stringWithFallback(json['title'], 'Review now'),
+      title: _string(json['title']),
       message: _string(json['message']),
       impactLabel: _string(json['impact_label']),
-      actionLabel: _stringWithFallback(json['action_label'], 'Review now'),
+      actionLabel: _string(json['action_label']),
     );
   }
 
@@ -382,7 +382,7 @@ class ApiHomeRepository implements HomeRepository {
   ) {
     return DailyEvaluationResult(
       sessionId: _string(json['session_id']),
-      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      title: _string(json['title']),
       status: _string(json['status']),
       source: _string(json['source']),
       scorePercent: _int(json['score_percent']),
@@ -397,7 +397,7 @@ class ApiHomeRepository implements HomeRepository {
       ),
       backToHome: _actionTargetFromJson(
         json['back_to_home'],
-        fallbackLabel: 'Back to Home',
+        fallbackLabel: '',
       ),
     );
   }
@@ -678,8 +678,8 @@ class ApiHomeRepository implements HomeRepository {
             conceptId: _string(json['concept_id']).isEmpty
                 ? null
                 : _string(json['concept_id']),
-            title: _stringWithFallback(json['title'], 'Reviewed concept'),
-            statusLabel: _stringWithFallback(json['status_label'], 'Review'),
+            title: _string(json['title']),
+            statusLabel: _string(json['status_label']),
             masteryScore: _double(json['mastery_score']),
           ),
         )
@@ -712,7 +712,7 @@ class ApiHomeRepository implements HomeRepository {
         .whereType<Map<String, dynamic>>()
         .map(
           (json) => RecommendedNextAction(
-            title: _stringWithFallback(json['title'], 'Recommended action'),
+            title: _string(json['title']),
             actionType: _string(json['action_type']),
             reason: _string(json['reason']),
             dueDate: _string(json['due_date']).isEmpty
