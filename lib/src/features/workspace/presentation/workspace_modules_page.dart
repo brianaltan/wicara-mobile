@@ -1486,19 +1486,21 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
 
   Future<void> _startPosttestFromWorkspace() async {
     final workspace = _workspace;
-    if (workspace == null ||
-        _isLoadingWorkspace ||
-        _isPhaseSubmitting ||
-        !workspace.posttestEligible) {
+    if (workspace == null || _isLoadingWorkspace || _isPhaseSubmitting) {
       return;
     }
+    final wasPosttestEligible = workspace.posttestEligible;
     final shouldStart = await showDialog<bool>(
       context: context,
       builder: (context) {
         final material = _workspaceMaterial;
         return AlertDialog(
           title: Text(material.startPosttestButtonLabel),
-          content: Text(material.posttestReadyBody),
+          content: Text(
+            wasPosttestEligible
+                ? material.posttestReadyBody
+                : material.posttestWarningBody,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -1532,7 +1534,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       });
       _openPosttestFromWorkspace(
         moduleCompleted: true,
-        requestedEarlyPosttest: false,
+        requestedEarlyPosttest: !wasPosttestEligible,
       );
     } on WorkspaceException catch (error) {
       if (!mounted || _workspace?.id != workspace.id) {
@@ -1840,7 +1842,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     );
     final material = _workspaceMaterial;
     final workspace = _workspace;
-    final showStartPosttestButton = workspace?.posttestEligible ?? false;
+    final showStartPosttestButton = workspace != null;
     final canAdvancePhase = _canAdvancePhase(workspace);
     final canForceAdvancePhase = _canForceAdvancePhase(workspace);
     final showCheckUnderstanding =
