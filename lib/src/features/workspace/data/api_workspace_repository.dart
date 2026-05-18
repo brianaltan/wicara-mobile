@@ -350,6 +350,12 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       backendPhaseTransitionPending: backendPending,
       backendPosttestEligible: backendPosttestEligible,
     );
+    final responseLanguage = _resolveResponseLanguage(
+      learnerLanguage:
+          workspace?.learnerLanguage ??
+          _nullableString(metadata['learner_language']),
+      latestMessage: textPayload,
+    );
 
     final task = _taskForPhase(
       phase: phaseState.currentPhase,
@@ -365,6 +371,7 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       textPayload: textPayload,
       workspace: workspace,
       metadata: metadata,
+      responseLanguage: responseLanguage,
     );
     final isBriefGreeting =
         normalizedEventType == 'text' && _isBriefGreeting(textPayload);
@@ -395,7 +402,7 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       );
       parsedBeforeTransition = _briefGreetingPayload(
         phase: phaseState.currentPhase,
-        languageCode: workspace?.learnerLanguage,
+        languageCode: responseLanguage.code,
       );
     } else {
       final requestId =
@@ -413,15 +420,19 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
         phase: phaseState.currentPhase,
         normalizedEventType: normalizedEventType,
         textPayload: textPayload,
-        metadata: metadata,
       );
     }
     final previousTutorText = _latestTutorText(workspace);
-    var sanitizedParsed = parsedBeforeTransition;
+    var sanitizedParsed = parsedBeforeTransition.copyWith(
+      text: _enforceBrevity(
+        parsedBeforeTransition.text,
+        phase: phaseState.currentPhase,
+      ),
+    );
     if (_isRepetitiveResponse(sanitizedParsed.text, previousTutorText)) {
       sanitizedParsed = sanitizedParsed.copyWith(
         text: _antiRepeatResponse(
-          languageCode: workspace?.learnerLanguage,
+          languageCode: responseLanguage.code,
           phase: phaseState.currentPhase,
           learnerText: textPayload,
         ),
@@ -481,14 +492,11 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     required String textPayload,
     required WorkspaceSession? workspace,
     required Map<String, dynamic> metadata,
+    required _ResponseLanguageContext responseLanguage,
   }) {
     final learnerText = textPayload.trim().isEmpty
         ? '(tidak ada teks eksplisit, lihat metadata event)'
         : textPayload.trim();
-    final responseLanguage = _responseLanguageName(
-      workspace?.learnerLanguage ??
-          _nullableString(metadata['learner_language']),
-    );
     final topic = _topicForPrompt(workspace);
     final history = _historyForPrompt(workspace);
     final phase = phaseState.currentPhase;
@@ -497,15 +505,22 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     final phaseInstruction = _phasePromptInstruction(
       phase: phase,
       isFirstPhaseTurn: phaseState.currentPhaseTurnCount <= 0,
-      responseLanguage: responseLanguage,
+      responseLanguage: responseLanguage.displayName,
     );
     final transitionCriteria = _phaseTransitionCriteria(phase);
+    final learnerProfileLanguage =
+        _nullableString(workspace?.learnerLanguage) ??
+        _nullableString(metadata['learner_language']) ??
+        'unknown';
     return '''
 You are WICARA tutor for STEAM 5E learning.
-Respond ONLY in $responseLanguage.
+Respond ONLY in ${responseLanguage.displayName}.
 Keep response concise and tied to the student's latest message.
 Do not produce long generic mini-lectures.
 One clear pedagogical move per turn.
+
+Learner profile language: $learnerProfileLanguage
+Language source: ${responseLanguage.source}
 
 Current phase: $phase
 Next phase candidate: $nextPhase
@@ -544,7 +559,6 @@ Metadata event: ${jsonEncode(metadata)}
     required String phase,
     required String normalizedEventType,
     required String textPayload,
-    required Map<String, dynamic> metadata,
   }) {
     final trimmed = raw.trim();
     final extracted = _extractJsonObject(trimmed);
@@ -553,7 +567,8 @@ Metadata event: ${jsonEncode(metadata)}
         final decoded = jsonDecode(extracted);
         if (decoded is Map<String, dynamic>) {
           final text = _string(decoded['text']);
-          final fallbackText = text.isEmpty
+          final textWasEmpty = text.isEmpty;
+          final fallbackText = textWasEmpty
               ? _deterministicTutorText(
                   phase: phase,
                   eventType: normalizedEventType,
@@ -567,21 +582,14 @@ Metadata event: ${jsonEncode(metadata)}
           final fallbackActions = nextActions.isEmpty
               ? _defaultNextActionsForPhase(phase, intent: intent)
               : nextActions;
-          final parsedReady =
-              _bool(decoded['next_phase_ready']) ||
-              _heuristicNextPhaseReady(
-                phase: phase,
-                eventType: normalizedEventType,
-                metadata: metadata,
-                learnerText: textPayload,
-                tutorText: fallbackText,
-              );
+          final parsedReady = _bool(decoded['next_phase_ready']);
           final nextPhaseReady = phase == 'evaluate' ? false : parsedReady;
-          final phaseReasoning =
-              _nullableString(decoded['phase_reasoning']) ??
-              (nextPhaseReady
-                  ? 'learner_signals_ready_for_next_phase'
-                  : 'needs_more_guided_progress_in_current_phase');
+          final phaseReasoning = textWasEmpty
+              ? 'fallback_due_to_empty_text'
+              : (_nullableString(decoded['phase_reasoning']) ??
+                    (nextPhaseReady
+                        ? 'learner_signals_ready_for_next_phase'
+                        : 'needs_more_guided_progress_in_current_phase'));
           return _TutorOverridePayload(
             currentPhase: phase,
             text: fallbackText,
@@ -602,23 +610,13 @@ Metadata event: ${jsonEncode(metadata)}
       textPayload: textPayload,
     );
     final intent = _defaultIntentForPhase(phase, normalizedEventType);
-    final parsedReady = _heuristicNextPhaseReady(
-      phase: phase,
-      eventType: normalizedEventType,
-      metadata: metadata,
-      learnerText: textPayload,
-      tutorText: text,
-    );
-    final nextPhaseReady = phase == 'evaluate' ? false : parsedReady;
     return _TutorOverridePayload(
       currentPhase: phase,
       text: text,
       intent: intent,
       nextActions: _defaultNextActionsForPhase(phase, intent: intent),
-      nextPhaseReady: nextPhaseReady,
-      phaseReasoning: nextPhaseReady
-          ? 'local_fallback_detected_ready_for_next_phase'
-          : 'local_fallback_not_ready_for_phase_transition',
+      nextPhaseReady: false,
+      phaseReasoning: 'structured_parse_fallback',
     );
   }
 
@@ -819,6 +817,30 @@ Metadata event: ${jsonEncode(metadata)}
     };
   }
 
+  String _enforceBrevity(String text, {required String phase}) {
+    final maxSentences = switch (phase) {
+      'engage' => 2,
+      'explore' => 2,
+      'explain' => 4,
+      'elaborate' => 3,
+      'evaluate' => 3,
+      _ => 3,
+    };
+    final stripped = text.trim();
+    if (stripped.isEmpty) {
+      return stripped;
+    }
+    final parts = stripped
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length <= maxSentences) {
+      return stripped;
+    }
+    return parts.take(maxSentences).join(' ').trim();
+  }
+
   String _phaseTransitionCriteria(String phase) {
     return switch (phase) {
       'engage' =>
@@ -869,33 +891,6 @@ Metadata event: ${jsonEncode(metadata)}
       return null;
     }
     return raw.substring(start, end + 1);
-  }
-
-  bool _heuristicNextPhaseReady({
-    required String phase,
-    required String eventType,
-    required Map<String, dynamic> metadata,
-    required String learnerText,
-    required String tutorText,
-  }) {
-    if (phase == 'evaluate') {
-      return false;
-    }
-    if (eventType == 'quiz_answer' && metadata['is_correct'] == true) {
-      return true;
-    }
-    final learnerWordCount = learnerText
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((token) => token.trim().isNotEmpty)
-        .length;
-    if (eventType == 'text' && learnerWordCount >= 7) {
-      return true;
-    }
-    final normalized = tutorText.toLowerCase();
-    return normalized.contains('lanjut ke fase berikut') ||
-        normalized.contains('siap lanjut') ||
-        normalized.contains('ready untuk fase berikut');
   }
 
   String _defaultIntentForPhase(String phase, String eventType) {
@@ -963,15 +958,107 @@ Metadata event: ${jsonEncode(metadata)}
         : learnerText;
   }
 
-  String _responseLanguageName(String? languageCode) {
-    final normalized = _string(languageCode).toLowerCase().replaceAll('_', '-');
+  _ResponseLanguageContext _resolveResponseLanguage({
+    required String? learnerLanguage,
+    required String latestMessage,
+  }) {
+    final profileCode = _normalizeLanguageCode(learnerLanguage);
+    final messageCode = _detectMessageLanguage(latestMessage);
+    if (messageCode != null && messageCode != profileCode) {
+      return _ResponseLanguageContext(
+        code: messageCode,
+        displayName: _languageDisplayName(messageCode),
+        source: 'message_override',
+      );
+    }
+    return _ResponseLanguageContext(
+      code: profileCode,
+      displayName: _languageDisplayName(profileCode),
+      source: 'learner_profile',
+    );
+  }
+
+  String _normalizeLanguageCode(String? value) {
+    final normalized = _string(value).toLowerCase().replaceAll('_', '-');
     if (normalized == 'id' ||
         normalized == 'id-id' ||
         normalized == 'indonesian' ||
         normalized == 'bahasa-indonesia') {
+      return 'id';
+    }
+    if (normalized == 'en' || normalized == 'en-us' || normalized == 'en-gb') {
+      return 'en';
+    }
+    return 'en';
+  }
+
+  String _languageDisplayName(String languageCode) {
+    if (languageCode == 'id') {
       return 'Bahasa Indonesia';
     }
     return 'English';
+  }
+
+  String? _detectMessageLanguage(String text) {
+    final normalized = _string(text).toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final words = RegExp(r'[a-zA-Z]+')
+        .allMatches(normalized)
+        .map((match) => match.group(0) ?? '')
+        .where((word) => word.isNotEmpty)
+        .toList(growable: false);
+    if (words.isEmpty) {
+      return null;
+    }
+    const idKeywords = <String>{
+      'aku',
+      'kamu',
+      'saya',
+      'dan',
+      'yang',
+      'untuk',
+      'karena',
+      'tidak',
+      'gak',
+      'nggak',
+      'apa',
+      'materi',
+      'ulang',
+      'soal',
+      'aljabar',
+    };
+    const enKeywords = <String>{
+      'i',
+      'you',
+      'the',
+      'and',
+      'what',
+      'how',
+      'why',
+      'because',
+      'algebra',
+      'expression',
+      'understand',
+    };
+    var idHits = 0;
+    var enHits = 0;
+    for (final word in words) {
+      if (idKeywords.contains(word)) {
+        idHits += 1;
+      }
+      if (enKeywords.contains(word)) {
+        enHits += 1;
+      }
+    }
+    if (idHits >= 2 && idHits >= enHits + 1) {
+      return 'id';
+    }
+    if (enHits >= 2 && enHits >= idHits + 1) {
+      return 'en';
+    }
+    return null;
   }
 
   bool _countsAsLearnerTurn(String eventType) {
@@ -1181,6 +1268,18 @@ bool _bool(Object? value) {
   }
   final normalized = _string(value).toLowerCase();
   return normalized == 'true' || normalized == '1' || normalized == 'yes';
+}
+
+class _ResponseLanguageContext {
+  const _ResponseLanguageContext({
+    required this.code,
+    required this.displayName,
+    required this.source,
+  });
+
+  final String code;
+  final String displayName;
+  final String source;
 }
 
 class _LocalTutorOverride {
