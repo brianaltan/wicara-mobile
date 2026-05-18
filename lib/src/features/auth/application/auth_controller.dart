@@ -33,9 +33,10 @@ class AuthController extends ChangeNotifier {
     if (!session.onboardingCompleted) {
       return AppRoutes.onboarding;
     }
-    return _lastProtectedRoute == AppRoutes.onboarding
+    final lastRoute = _normalizeRestorableRoute(_lastProtectedRoute);
+    return lastRoute == AppRoutes.onboarding
         ? AppRoutes.home
-        : (_lastProtectedRoute ?? AppRoutes.home);
+        : (lastRoute ?? AppRoutes.home);
   }
 
   Future<void> initialize() async {
@@ -51,7 +52,9 @@ class AuthController extends ChangeNotifier {
       _lastProtectedRoute = null;
     } else {
       _session = restoredSession;
-      _lastProtectedRoute = persistedState.lastProtectedRoute;
+      _lastProtectedRoute = _normalizeRestorableRoute(
+        persistedState.lastProtectedRoute,
+      );
     }
 
     // Auto-refresh: try to get a fresh access_token using the stored refresh_token.
@@ -64,7 +67,9 @@ class AuthController extends ChangeNotifier {
           final refreshed = await _authRepository.refresh(sessionToRefresh);
           if (refreshed != null) {
             _session = refreshed;
-            _lastProtectedRoute = persistedState.lastProtectedRoute;
+            _lastProtectedRoute = _normalizeRestorableRoute(
+              persistedState.lastProtectedRoute,
+            );
             await _sessionStore.save(
               session: refreshed,
               lastProtectedRoute:
@@ -184,7 +189,7 @@ class AuthController extends ChangeNotifier {
     if (!isSignedIn || routeName == null) {
       return;
     }
-    if (!AppRoutes.protectedRoutes.contains(routeName)) {
+    if (!_isRestorableProtectedRoute(routeName)) {
       return;
     }
     if (_lastProtectedRoute == routeName) {
@@ -222,5 +227,21 @@ class AuthController extends ChangeNotifier {
     }
 
     return normalized;
+  }
+
+  bool _isRestorableProtectedRoute(String routeName) {
+    if (!AppRoutes.protectedRoutes.contains(routeName)) {
+      return false;
+    }
+    return routeName != AppRoutes.pretest &&
+        routeName != AppRoutes.edgeAiSettings &&
+        routeName != AppRoutes.workspaceModules;
+  }
+
+  String? _normalizeRestorableRoute(String? routeName) {
+    if (routeName == null || routeName.trim().isEmpty) {
+      return null;
+    }
+    return _isRestorableProtectedRoute(routeName) ? routeName : null;
   }
 }

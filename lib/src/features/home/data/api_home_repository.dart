@@ -1,6 +1,8 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/utils/learning_level_resolver.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../pretest/data/api_pretest_repository.dart';
+import '../../pretest/data/pretest_session_store.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
@@ -41,6 +43,13 @@ class ApiHomeRepository implements HomeRepository {
     final selectedSubjects = selectedSubjectCodes
         .map(_subjectKey)
         .toList(growable: false);
+    final backendTracks = _trackSummaries(homeJson['active_tracks']);
+    final effectiveTracks = _withLocalPretestFallbackTrack(
+      tracks: backendTracks,
+      educationLevel: _string(profileJson['education_level']),
+      gradeLevel: _string(profileJson['grade_level']),
+      selectedSubjects: selectedSubjects,
+    );
 
     return HomeSnapshot(
       displayName: _string(homeJson['display_name']).isNotEmpty
@@ -61,7 +70,7 @@ class ApiHomeRepository implements HomeRepository {
       availableSubjects: _subjectKeys(subjectsJson),
       onboardingCompleted: profileJson['onboarding_completed'] == true,
       nextQueueItem: _queueItemOrNull(homeJson['next_queue_item']),
-      activeTracks: _trackSummaries(homeJson['active_tracks']),
+      activeTracks: effectiveTracks,
       mediaArtifacts: _mediaArtifactsFromList(mediaArtifactsJson['items']),
     );
   }
@@ -589,6 +598,111 @@ class ApiHomeRepository implements HomeRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  List<LearningTrackSummary> _withLocalPretestFallbackTrack({
+    required List<LearningTrackSummary> tracks,
+    required String educationLevel,
+    required String gradeLevel,
+    required List<String> selectedSubjects,
+  }) {
+    final currentDraft = _currentDraftFromSession(
+      educationLevel: educationLevel,
+      gradeLevel: gradeLevel,
+    );
+    final drafts = <LocalTrackDraft>[
+      ...pretestSessionStore.localTrackHistory,
+    ];
+    if (currentDraft != null) {
+      drafts.add(currentDraft);
+    }
+    if (drafts.isEmpty) {
+      return tracks;
+    }
+
+    final merged = <LearningTrackSummary>[...tracks];
+    final existingIds = merged.map((track) => track.id).toSet();
+    for (final draft in drafts) {
+      if (draft.trackId.trim().isEmpty || existingIds.contains(draft.trackId)) {
+        continue;
+      }
+      final subjectLabel = _resolveLocalGoalSubjectLabel(
+        selectedSubjects,
+        draftSubjectCode: draft.subjectCode,
+      );
+      merged.add(
+        LearningTrackSummary(
+          id: draft.trackId,
+          subjectCode: draft.subjectCode.isNotEmpty
+              ? draft.subjectCode
+              : subjectLabel,
+          subjectName: subjectLabel,
+          title: draft.conceptTitle.isNotEmpty
+              ? draft.conceptTitle
+              : _titleFromCode(draft.conceptCode),
+          status: 'ready',
+          progressPercent: 0,
+          modules: [
+            LearningTrackModuleSummary(
+              id: draft.moduleId,
+              title: draft.moduleTitle,
+              description:
+                  'Lanjutkan pembelajaran dari hasil diagnosis pretest on-device.',
+              status: 'ready',
+              estimatedMinutes: 15,
+            ),
+          ],
+        ),
+      );
+      existingIds.add(draft.trackId);
+    }
+    return merged;
+  }
+
+  LocalTrackDraft? _currentDraftFromSession({
+    required String educationLevel,
+    required String gradeLevel,
+  }) {
+    final trackId = _string(pretestSessionStore.trackId);
+    final learningGoalId = _string(pretestSessionStore.learningGoalId);
+    final conceptCode = _string(pretestSessionStore.targetConceptCode);
+    if (trackId.isEmpty || learningGoalId.isEmpty || conceptCode.isEmpty) {
+      return null;
+    }
+    final isElementary = isElementaryLevel(
+      educationLevel: educationLevel,
+      gradeLevel: gradeLevel,
+    );
+    return LocalTrackDraft(
+      trackId: trackId,
+      learningGoalId: learningGoalId,
+      conceptCode: conceptCode,
+      conceptTitle: _titleFromCode(conceptCode),
+      subjectCode: _string(pretestSessionStore.targetSubjectCode),
+      moduleId: isElementary ? 'demo-module-perkalian' : 'demo-module-aljabar',
+      moduleTitle: isElementary
+          ? 'Perkalian'
+          : 'Aljabar dan pembuktian Al-Khawarizmi',
+      createdAtIso: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  String _resolveLocalGoalSubjectLabel(
+    List<String> selectedSubjects, {
+    String draftSubjectCode = '',
+  }) {
+    final fromDraft = _string(draftSubjectCode);
+    if (fromDraft.isNotEmpty) {
+      return _subjectKey(fromDraft);
+    }
+    final fromSession = _string(pretestSessionStore.targetSubjectCode);
+    if (fromSession.isNotEmpty) {
+      return _subjectKey(fromSession);
+    }
+    if (selectedSubjects.isNotEmpty) {
+      return selectedSubjects.first;
+    }
+    return 'Math';
   }
 
   List<LearningTrackModuleSummary> _moduleSummaries(Object? value) {

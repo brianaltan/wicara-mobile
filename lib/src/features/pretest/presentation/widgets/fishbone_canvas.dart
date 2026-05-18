@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -26,6 +28,41 @@ class CanvasWorkSnapshot {
   final bool showGrid;
   final Size canvasSize;
   final List<_CanvasElement> _elements;
+}
+
+Future<Uint8List?> renderCanvasSnapshotPng(
+  CanvasWorkSnapshot snapshot, {
+  int maxEdgePx = 1080,
+}) async {
+  final sceneSize = snapshot.canvasSize == Size.zero
+      ? const Size(360, 240)
+      : snapshot.canvasSize;
+  final longestEdge = math.max(sceneSize.width, sceneSize.height);
+  if (longestEdge <= 0) {
+    return null;
+  }
+  final scale = (maxEdgePx / longestEdge).clamp(0.25, 1.0).toDouble();
+  final outputSize = Size(sceneSize.width * scale, sceneSize.height * scale);
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder, Offset.zero & outputSize);
+  final painter = _WorkCanvasPainter(
+    elements: snapshot._elements,
+    hasAttachment: snapshot.hasAttachment,
+    showGrid: snapshot.showGrid,
+    zoom: scale,
+    panOffset: Offset.zero,
+    sceneSize: sceneSize,
+    previewShape: null,
+  );
+  painter.paint(canvas, outputSize);
+  final picture = recorder.endRecording();
+  final imageWidth = outputSize.width.ceil().clamp(1, maxEdgePx).toInt();
+  final imageHeight = outputSize.height.ceil().clamp(1, maxEdgePx).toInt();
+  final image = await picture.toImage(imageWidth, imageHeight);
+  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  return byteData?.buffer.asUint8List();
 }
 
 class CanvasWorkPreview extends StatelessWidget {

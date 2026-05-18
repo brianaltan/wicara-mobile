@@ -1,5 +1,12 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+
 import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
+import '../../edge_ai/domain/edge_model_router.dart';
+import '../domain/local_5e_orchestrator.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
 import 'workspace_session_store.dart' as store;
@@ -9,6 +16,10 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     required ApiClient apiClient,
     required AuthSessionStore sessionStore,
     required store.WorkspaceSessionStore workspaceSessionStore,
+    this.edgeModelRouter = const EdgeModelRouter(),
+    this.edgeForceLocalForPilot = true,
+    this.edgeCloudFallbackAllowed = false,
+    this.edgeDebugRouteTrace = false,
   }) : _apiClient = apiClient,
        _sessionStore = sessionStore,
        _workspaceSessionStore = workspaceSessionStore;
@@ -16,6 +27,13 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   final ApiClient _apiClient;
   final AuthSessionStore _sessionStore;
   final store.WorkspaceSessionStore _workspaceSessionStore;
+  final EdgeModelRouter edgeModelRouter;
+  final bool edgeForceLocalForPilot;
+  final bool edgeCloudFallbackAllowed;
+  final bool edgeDebugRouteTrace;
+  static const Local5EOrchestrator _orchestrator = Local5EOrchestrator();
+  static final Map<String, WorkspaceSession> _workspaceCacheById =
+      <String, WorkspaceSession>{};
 
   @override
   Future<WorkspaceSession> createOrResumeWorkspace({
@@ -38,6 +56,7 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
         },
       );
       final workspace = workspaceFromJson(json);
+      _rememberWorkspace(workspace);
       await _workspaceSessionStore.saveAndSetActive(
         trackId: trackId,
         moduleId: moduleId,
@@ -109,7 +128,9 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
         '/api/v1/workspaces/$workspaceId',
         headers: {'Authorization': 'Bearer $token'},
       );
-      return workspaceFromJson(json);
+      final workspace = workspaceFromJson(json);
+      _rememberWorkspace(workspace);
+      return workspace;
     } on ApiClientException catch (error) {
       throw WorkspaceException(error.message);
     }
@@ -124,6 +145,21 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   }) async {
     final token = _requireToken();
     try {
+      final localTutor = await _generateLocalTutorOverride(
+        workspaceId: workspaceId,
+        eventType: eventType,
+        textPayload: textPayload,
+        metadata: metadata,
+      );
+      final requestMetadata = <String, dynamic>{
+        ...metadata,
+        if (localTutor != null) 'skip_server_tutor': true,
+        if (localTutor != null)
+          'client_tutor_override': localTutor.overrideJson,
+        if (localTutor != null) 'client_5e_state': localTutor.orchestratorState,
+        if (localTutor != null && edgeDebugRouteTrace)
+          'client_edge_route_audit': localTutor.routeAudit,
+      };
       final json = await _apiClient.postJson(
         '/api/v1/workspaces/$workspaceId/events',
         headers: {'Authorization': 'Bearer $token'},
@@ -131,10 +167,20 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
           'event_type': eventType,
           'actor_type': 'learner',
           'text_payload': textPayload,
-          'metadata': metadata,
+          'metadata': requestMetadata,
         },
       );
-      return appendResultFromJson(json);
+      final backendResult = appendResultFromJson(json);
+      _rememberWorkspace(backendResult.workspace);
+      if (localTutor == null) {
+        return backendResult;
+      }
+      return WorkspaceAppendResult(
+        event: backendResult.event,
+        workspace: backendResult.workspace,
+        tutorResponse: localTutor.tutorResponse,
+        masteryUpdate: backendResult.masteryUpdate,
+      );
     } on ApiClientException catch (error) {
       throw WorkspaceException(error.message);
     }
@@ -261,6 +307,764 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       throw const WorkspaceException('Please log in before opening workspace.');
     }
     return token;
+  }
+
+  void _rememberWorkspace(WorkspaceSession workspace) {
+    _workspaceCacheById[workspace.id] = workspace;
+    _orchestrator.ensureState(
+      workspaceId: workspace.id,
+      backendCurrentPhase: workspace.currentPhase,
+      backendPhaseTransitionPending: workspace.phaseTransitionPending,
+      backendPosttestEligible: workspace.posttestEligible,
+    );
+  }
+
+  WorkspaceSession? _cachedWorkspace(String workspaceId) {
+    return _workspaceCacheById[workspaceId];
+  }
+
+  Future<_LocalTutorOverride?> _generateLocalTutorOverride({
+    required String workspaceId,
+    required String eventType,
+    required String textPayload,
+    required Map<String, dynamic> metadata,
+  }) async {
+    if (!edgeForceLocalForPilot) {
+      return null;
+    }
+    final normalizedEventType = eventType.trim().toLowerCase();
+    final workspace = _cachedWorkspace(workspaceId);
+    final backendPhase = Local5EOrchestrator.normalizePhase(
+      (workspace?.currentPhase ?? _nullableString(metadata['current_phase'])) ??
+          'engage',
+    );
+    final backendPending =
+        workspace?.phaseTransitionPending == true ||
+        _bool(metadata['phase_transition_pending']);
+    final backendPosttestEligible =
+        workspace?.posttestEligible == true ||
+        _bool(metadata['posttest_eligible']);
+    final phaseState = _orchestrator.ensureState(
+      workspaceId: workspaceId,
+      backendCurrentPhase: backendPhase,
+      backendPhaseTransitionPending: backendPending,
+      backendPosttestEligible: backendPosttestEligible,
+    );
+    final responseLanguage = _resolveResponseLanguage(
+      learnerLanguage:
+          workspace?.learnerLanguage ??
+          _nullableString(metadata['learner_language']),
+      latestMessage: textPayload,
+    );
+
+    final task = _taskForPhase(
+      phase: phaseState.currentPhase,
+      eventType: normalizedEventType,
+    );
+    if (task == null) {
+      return null;
+    }
+
+    final prompt = _localTutorPrompt(
+      phaseState: phaseState,
+      eventType: normalizedEventType,
+      textPayload: textPayload,
+      workspace: workspace,
+      metadata: metadata,
+      responseLanguage: responseLanguage,
+    );
+    final isBriefGreeting =
+        normalizedEventType == 'text' && _isBriefGreeting(textPayload);
+    late final EdgeRouteResult routeResult;
+    late final _TutorOverridePayload parsedBeforeTransition;
+    if (isBriefGreeting) {
+      routeResult = const EdgeRouteResult(
+        text: '',
+        decision: EdgeRouteDecision(
+          target: EdgeRuntimeTarget.deterministicLocal,
+          reason: 'brief_greeting_detected',
+          requiresNetwork: false,
+          privacySensitive: true,
+          userVisibleFallback: false,
+        ),
+        audit: EdgeRouteAudit(
+          runtimeTarget: 'deterministic_local',
+          modelId: 'deterministic-greeting-v1',
+          executionLocation: 'device',
+          networkRequired: false,
+          fallbackUsed: false,
+          routeReason: 'brief_greeting_detected',
+          latencyMs: 0,
+          inputChars: 0,
+          outputChars: 0,
+          createdAtIso8601: '',
+        ),
+      );
+      parsedBeforeTransition = _briefGreetingPayload(
+        phase: phaseState.currentPhase,
+        languageCode: responseLanguage.code,
+      );
+    } else {
+      final requestId =
+          'workspace_local_tutor_${workspaceId}_${DateTime.now().microsecondsSinceEpoch}';
+      routeResult = await edgeModelRouter.routeAndGenerate(
+        task: task,
+        prompt: prompt,
+        requestId: requestId,
+        temperature: 0.25,
+        maxTokens: 220,
+        allowCloudFallback: edgeCloudFallbackAllowed,
+      );
+      parsedBeforeTransition = _parseTutorOverridePayload(
+        routeResult.text,
+        phase: phaseState.currentPhase,
+        normalizedEventType: normalizedEventType,
+        textPayload: textPayload,
+      );
+    }
+    final previousTutorText = _latestTutorText(workspace);
+    var sanitizedParsed = parsedBeforeTransition.copyWith(
+      text: _enforceBrevity(
+        parsedBeforeTransition.text,
+        phase: phaseState.currentPhase,
+      ),
+    );
+    if (_isRepetitiveResponse(sanitizedParsed.text, previousTutorText)) {
+      sanitizedParsed = sanitizedParsed.copyWith(
+        text: _antiRepeatResponse(
+          languageCode: responseLanguage.code,
+          phase: phaseState.currentPhase,
+          learnerText: textPayload,
+        ),
+        nextPhaseReady: false,
+        phaseReasoning: 'anti_repeat_guard_applied',
+      );
+    }
+    final transition = _orchestrator.applyTutorSignal(
+      workspaceId: workspaceId,
+      nextPhaseReady: sanitizedParsed.nextPhaseReady,
+      phaseReasoning: sanitizedParsed.phaseReasoning,
+      countLearnerTurn: _countsAsLearnerTurn(normalizedEventType),
+    );
+    final parsed = sanitizedParsed.copyWith(
+      nextPhaseReady: transition.nextPhaseReady,
+      phaseReasoning: transition.transitionReason,
+      currentPhase: transition.phaseBefore,
+    );
+    final tutorResponse = WorkspaceTutorResponse(
+      text: parsed.text,
+      intent: parsed.intent,
+      nextActions: parsed.nextActions,
+      nextPhaseReady: parsed.nextPhaseReady,
+      phaseReasoning: parsed.phaseReasoning,
+    );
+    final routeAudit = <String, dynamic>{
+      ...routeResult.auditMetadata,
+      'phase_before': transition.phaseBefore,
+      'phase_after': transition.phaseAfter,
+      'transition_pending': transition.phaseTransitionPending,
+      'auto_advanced': transition.autoAdvanced,
+      'transition_reason': transition.transitionReason,
+      'model_output_raw': isBriefGreeting
+          ? '[deterministic_greeting]'
+          : routeResult.text,
+      'parsed_next_phase_ready': parsed.nextPhaseReady,
+      if (isBriefGreeting) 'greeting_handler': true,
+    };
+    debugPrint(
+      'WORKSPACE_5E phase_before=${transition.phaseBefore} '
+      'model_output_raw=${isBriefGreeting ? "[deterministic_greeting]" : routeResult.text.replaceAll("\n", " ")} '
+      'parsed_next_phase_ready=${parsed.nextPhaseReady} '
+      'phase_after=${transition.phaseAfter} '
+      'transition_reason=${transition.transitionReason}',
+    );
+    return _LocalTutorOverride(
+      tutorResponse: tutorResponse,
+      overrideJson: parsed.toJson(),
+      orchestratorState: transition.state.toClientMetadata(),
+      routeAudit: routeAudit,
+    );
+  }
+
+  String _localTutorPrompt({
+    required Local5EState phaseState,
+    required String eventType,
+    required String textPayload,
+    required WorkspaceSession? workspace,
+    required Map<String, dynamic> metadata,
+    required _ResponseLanguageContext responseLanguage,
+  }) {
+    final learnerText = textPayload.trim().isEmpty
+        ? '(tidak ada teks eksplisit, lihat metadata event)'
+        : textPayload.trim();
+    final topic = _topicForPrompt(workspace);
+    final history = _historyForPrompt(workspace);
+    final phase = phaseState.currentPhase;
+    final nextPhase =
+        Local5EOrchestrator.nextPhaseCandidate(phase) ?? '(final)';
+    final phaseInstruction = _phasePromptInstruction(
+      phase: phase,
+      isFirstPhaseTurn: phaseState.currentPhaseTurnCount <= 0,
+      responseLanguage: responseLanguage.displayName,
+    );
+    final transitionCriteria = _phaseTransitionCriteria(phase);
+    final learnerProfileLanguage =
+        _nullableString(workspace?.learnerLanguage) ??
+        _nullableString(metadata['learner_language']) ??
+        'unknown';
+    return '''
+You are WICARA tutor for STEAM 5E learning.
+Respond ONLY in ${responseLanguage.displayName}.
+Keep response concise and tied to the student's latest message.
+Do not produce long generic mini-lectures.
+One clear pedagogical move per turn.
+
+Learner profile language: $learnerProfileLanguage
+Language source: ${responseLanguage.source}
+
+Current phase: $phase
+Next phase candidate: $nextPhase
+Topic: $topic
+Event type: $eventType
+Phase transition criteria: $transitionCriteria
+
+Conversation summary:
+$history
+
+Latest learner message:
+$learnerText
+
+Phase instruction:
+$phaseInstruction
+
+Output MUST be valid JSON object only:
+{
+  "text": "1-3 concise sentences",
+  "intent": "spark_curiosity|probe_understanding|explain|recommend_practice|evaluate_response|ask_followup|use_canvas_feedback",
+  "next_actions": ["aksi_1","aksi_2"],
+  "next_phase_ready": false,
+  "phase_reasoning": "short reason for ready/not-ready"
+}
+
+Rules:
+- If current phase is evaluate, always set next_phase_ready=false.
+- If not ready, keep phase_reasoning specific to learner gap.
+- Avoid repeating identical opening style.
+Metadata event: ${jsonEncode(metadata)}
+''';
+  }
+
+  _TutorOverridePayload _parseTutorOverridePayload(
+    String raw, {
+    required String phase,
+    required String normalizedEventType,
+    required String textPayload,
+  }) {
+    final trimmed = raw.trim();
+    final extracted = _extractJsonObject(trimmed);
+    if (extracted != null) {
+      try {
+        final decoded = jsonDecode(extracted);
+        if (decoded is Map<String, dynamic>) {
+          final text = _string(decoded['text']);
+          final textWasEmpty = text.isEmpty;
+          final fallbackText = textWasEmpty
+              ? _deterministicTutorText(
+                  phase: phase,
+                  eventType: normalizedEventType,
+                  textPayload: textPayload,
+                )
+              : text;
+          final intent = _string(decoded['intent']).isNotEmpty
+              ? _string(decoded['intent'])
+              : _defaultIntentForPhase(phase, normalizedEventType);
+          final nextActions = _stringList(decoded['next_actions']);
+          final fallbackActions = nextActions.isEmpty
+              ? _defaultNextActionsForPhase(phase, intent: intent)
+              : nextActions;
+          final parsedReady = _bool(decoded['next_phase_ready']);
+          final nextPhaseReady = phase == 'evaluate' ? false : parsedReady;
+          final phaseReasoning = textWasEmpty
+              ? 'fallback_due_to_empty_text'
+              : (_nullableString(decoded['phase_reasoning']) ??
+                    (nextPhaseReady
+                        ? 'learner_signals_ready_for_next_phase'
+                        : 'needs_more_guided_progress_in_current_phase'));
+          return _TutorOverridePayload(
+            currentPhase: phase,
+            text: fallbackText,
+            intent: intent,
+            nextActions: fallbackActions,
+            nextPhaseReady: nextPhaseReady,
+            phaseReasoning: phaseReasoning,
+          );
+        }
+      } catch (_) {
+        // Fall through to deterministic payload.
+      }
+    }
+
+    final text = _deterministicTutorText(
+      phase: phase,
+      eventType: normalizedEventType,
+      textPayload: textPayload,
+    );
+    final intent = _defaultIntentForPhase(phase, normalizedEventType);
+    return _TutorOverridePayload(
+      currentPhase: phase,
+      text: text,
+      intent: intent,
+      nextActions: _defaultNextActionsForPhase(phase, intent: intent),
+      nextPhaseReady: false,
+      phaseReasoning: 'structured_parse_fallback',
+    );
+  }
+
+  _TutorOverridePayload _briefGreetingPayload({
+    required String phase,
+    required String? languageCode,
+  }) {
+    final normalized = _string(languageCode).toLowerCase();
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa-indonesia';
+    final text = isIndonesian
+        ? 'Halo, siap. Kamu mau mulai dari mana dulu: variabel, koefisien, atau suku?'
+        : 'Hi, ready to start. Do you want to begin with variables, coefficients, or terms?';
+    return _TutorOverridePayload(
+      currentPhase: phase,
+      text: text,
+      intent: _defaultIntentForPhase(phase, 'text'),
+      nextActions: _defaultNextActionsForPhase(
+        phase,
+        intent: 'spark_curiosity',
+      ),
+      nextPhaseReady: false,
+      phaseReasoning: 'brief_greeting_detected',
+    );
+  }
+
+  bool _isBriefGreeting(String text) {
+    final normalized = text.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return false;
+    }
+    final compact = normalized.replaceAll(RegExp(r'[^\w\s]'), '');
+    return compact == 'halo' ||
+        compact == 'hallo' ||
+        compact == 'hai' ||
+        compact == 'hi' ||
+        compact == 'hello' ||
+        compact == 'pagi' ||
+        compact == 'siang' ||
+        compact == 'sore' ||
+        compact == 'malam';
+  }
+
+  String? _latestTutorText(WorkspaceSession? workspace) {
+    final events = workspace?.events;
+    if (events == null || events.isEmpty) {
+      return null;
+    }
+    for (final event in events.reversed) {
+      if (event.actorType != 'tutor') {
+        continue;
+      }
+      final text = event.textPayload.trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  bool _isRepetitiveResponse(String current, String? previous) {
+    if (previous == null || previous.trim().isEmpty) {
+      return false;
+    }
+    final normalizedCurrent = _normalizeForRepeat(current);
+    final normalizedPrevious = _normalizeForRepeat(previous);
+    if (normalizedCurrent.isEmpty || normalizedPrevious.isEmpty) {
+      return false;
+    }
+    if (normalizedCurrent == normalizedPrevious) {
+      return true;
+    }
+    if (normalizedCurrent.startsWith("imagine you're") &&
+        normalizedPrevious.startsWith("imagine you're")) {
+      return true;
+    }
+    if ((normalizedCurrent.length - normalizedPrevious.length).abs() <= 12 &&
+        (normalizedCurrent.contains(normalizedPrevious) ||
+            normalizedPrevious.contains(normalizedCurrent))) {
+      return true;
+    }
+    final similarity = _roughSimilarity(normalizedCurrent, normalizedPrevious);
+    return similarity >= 0.86;
+  }
+
+  String _antiRepeatResponse({
+    required String? languageCode,
+    required String phase,
+    required String learnerText,
+  }) {
+    final normalized = _string(languageCode).toLowerCase();
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa-indonesia';
+
+    if (isIndonesian) {
+      return switch (phase) {
+        'engage' =>
+          'Mantap, kita fokus dari jawabanmu. Menurutmu bagian mana yang paling bikin bingung: variabel, koefisien, atau suku?',
+        'explore' =>
+          'Oke, uji cepat: dari ekspresimu, mana suku sejenis yang bisa digabung dan kenapa?',
+        'explain' =>
+          'Bagus. Coba jelaskan lagi dengan kata-katamu sendiri, lalu beri satu contoh singkat.',
+        'elaborate' =>
+          'Lanjut latihan: sederhanakan 3x + 2 - x + 5, lalu jelaskan langkahnya singkat.',
+        'evaluate' =>
+          'Jawabanmu sudah dicatat. Coba cek lagi bagian yang paling ragu, lalu perbaiki satu langkah.',
+        _ =>
+          learnerText.trim().isEmpty
+              ? 'Masuk. Tambahkan satu langkah konkret berikutnya.'
+              : 'Masuk. Lanjutkan dari poin terakhirmu dan tambahkan satu langkah konkret.',
+      };
+    }
+
+    return switch (phase) {
+      'engage' =>
+        'Great, let us use your answer directly. Which part feels most confusing: variables, coefficients, or terms?',
+      'explore' =>
+        'Quick check: from your expression, which like terms can be combined, and why?',
+      'explain' =>
+        'Nice. Restate the idea in your own words and give one short example.',
+      'elaborate' =>
+        'Try this: simplify 3x + 2 - x + 5, then explain your steps briefly.',
+      'evaluate' =>
+        'I noted your answer. Recheck the step you are least sure about and revise it once.',
+      _ =>
+        learnerText.trim().isEmpty
+            ? 'Good point. Add one concrete next step.'
+            : 'Good point. Continue from your last step and add one concrete next step.',
+    };
+  }
+
+  String _normalizeForRepeat(String text) {
+    return text
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  double _roughSimilarity(String a, String b) {
+    final shorter = a.length <= b.length ? a : b;
+    final longer = a.length <= b.length ? b : a;
+    if (shorter.isEmpty || longer.isEmpty) {
+      return 0;
+    }
+    var matchCount = 0;
+    final window = math.max(1, shorter.length ~/ 8);
+    for (var index = 0; index < shorter.length; index++) {
+      final char = shorter[index];
+      final start = math.max(0, index - window);
+      final end = math.min(longer.length, index + window + 1);
+      if (longer.substring(start, end).contains(char)) {
+        matchCount += 1;
+      }
+    }
+    return matchCount / shorter.length;
+  }
+
+  EdgeTaskType? _taskForPhase({
+    required String phase,
+    required String eventType,
+  }) {
+    if (eventType == 'canvas_sent') {
+      return EdgeTaskType.tutorHint;
+    }
+    if (eventType == 'quiz_answer' || phase == 'evaluate') {
+      return EdgeTaskType.tutorEvaluate;
+    }
+    if (phase == 'explore') {
+      return EdgeTaskType.tutorHint;
+    }
+    return EdgeTaskType.tutorExplain;
+  }
+
+  String _phasePromptInstruction({
+    required String phase,
+    required bool isFirstPhaseTurn,
+    required String responseLanguage,
+  }) {
+    return switch (phase) {
+      'engage' =>
+        'Activate prior knowledge with one focused question. ${isFirstPhaseTurn ? 'You may use one brief real-world hook.' : 'Do not restart with a generic new scenario.'} Do not explain full concept yet.',
+      'explore' =>
+        'Give one mini challenge or micro experiment. Ask learner to observe and respond.',
+      'explain' =>
+        'Explain concept based on learner message, concise and concrete, with one check-in question.',
+      'elaborate' =>
+        'Give one application case in a new context and ask for short reasoning.',
+      'evaluate' =>
+        'Check understanding, give feedback, and one clear next step. Keep it short.',
+      _ => 'Respond as a concise Socratic tutor in $responseLanguage.',
+    };
+  }
+
+  String _enforceBrevity(String text, {required String phase}) {
+    final maxSentences = switch (phase) {
+      'engage' => 2,
+      'explore' => 2,
+      'explain' => 4,
+      'elaborate' => 3,
+      'evaluate' => 3,
+      _ => 3,
+    };
+    final stripped = text.trim();
+    if (stripped.isEmpty) {
+      return stripped;
+    }
+    final parts = stripped
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length <= maxSentences) {
+      return stripped;
+    }
+    return parts.take(maxSentences).join(' ').trim();
+  }
+
+  String _phaseTransitionCriteria(String phase) {
+    return switch (phase) {
+      'engage' =>
+        'Learner shows initial curiosity/prior knowledge and is ready for discovery task.',
+      'explore' =>
+        'Learner attempts exploration and shares observation, ready for explicit explanation.',
+      'explain' =>
+        'Learner restates key concept and connects to one worked idea/example.',
+      'elaborate' =>
+        'Learner applies concept to new case with reasonable reasoning.',
+      'evaluate' => 'Final phase, keep next_phase_ready=false.',
+      _ => 'Use pedagogical judgement based on learner readiness.',
+    };
+  }
+
+  String _topicForPrompt(WorkspaceSession? workspace) {
+    final topic = (workspace?.currentTopic ?? '').trim();
+    return topic.isEmpty ? 'this module topic' : topic;
+  }
+
+  String _historyForPrompt(WorkspaceSession? workspace, {int maxTurns = 10}) {
+    final events = workspace?.events ?? const <WorkspaceEvent>[];
+    if (events.isEmpty) {
+      return '(no prior conversation)';
+    }
+    final start = events.length > maxTurns * 2
+        ? events.length - maxTurns * 2
+        : 0;
+    final lines = <String>[];
+    for (final event in events.skip(start)) {
+      final text = event.textPayload.trim();
+      if (text.isEmpty) {
+        continue;
+      }
+      final role = event.actorType == 'learner' ? 'Student' : 'Tutor';
+      lines.add('$role: $text');
+    }
+    return lines.isEmpty ? '(no prior conversation)' : lines.join('\n');
+  }
+
+  String? _extractJsonObject(String raw) {
+    if (raw.isEmpty) {
+      return null;
+    }
+    final start = raw.indexOf('{');
+    final end = raw.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+      return null;
+    }
+    return raw.substring(start, end + 1);
+  }
+
+  String _defaultIntentForPhase(String phase, String eventType) {
+    if (eventType == 'canvas_sent') {
+      return 'use_canvas_feedback';
+    }
+    return switch (phase) {
+      'engage' => 'spark_curiosity',
+      'explore' => 'probe_understanding',
+      'explain' => 'explain',
+      'elaborate' => 'recommend_practice',
+      'evaluate' => 'evaluate_response',
+      _ => 'ask_followup',
+    };
+  }
+
+  List<String> _defaultNextActionsForPhase(
+    String phase, {
+    required String intent,
+  }) {
+    final normalizedIntent = intent.trim().toLowerCase();
+    if (normalizedIntent == 'use_canvas_feedback') {
+      return const ['refine_canvas', 'explain_steps'];
+    }
+    return switch (phase) {
+      'engage' => const ['explore_topic', 'ask_question', 'use_canvas'],
+      'explore' => const ['try_answer', 'ask_clarification', 'use_canvas'],
+      'explain' => const ['summarize', 'answer_quiz', 'use_canvas'],
+      'elaborate' => const ['apply_concept', 'answer_quiz'],
+      'evaluate' => const [
+        'review_explanation',
+        'retry_quiz',
+        'continue_next_module',
+      ],
+      _ => const ['ask_followup'],
+    };
+  }
+
+  String _deterministicTutorText({
+    required String phase,
+    required String eventType,
+    required String textPayload,
+  }) {
+    final learnerText = textPayload.trim();
+    if (learnerText.isEmpty && eventType == 'canvas_sent') {
+      return 'Canvas kamu sudah terekam. Jelaskan satu langkah utama yang kamu pakai, lalu kita cek bareng.';
+    }
+    if (phase == 'evaluate' || eventType == 'quiz_answer') {
+      return 'Bagus, sekarang jelaskan kenapa pilihanmu masuk akal dalam satu langkah inti.';
+    }
+    if (phase == 'engage') {
+      return 'Oke, kita mulai dari pemahaman awalmu. Menurutmu bagian mana dari konsep ini yang paling bikin bingung?';
+    }
+    if (phase == 'explore') {
+      return 'Coba lakukan satu percobaan kecil dari idemu tadi, lalu ceritakan observasi utamanya.';
+    }
+    if (phase == 'explain') {
+      return 'Mari kita rapikan konsepnya dari jawabanmu: jelaskan inti idemu dalam satu aturan sederhana.';
+    }
+    if (phase == 'elaborate') {
+      return 'Sekarang terapkan konsep ini ke kasus baru yang mirip, lalu jelaskan langkah pertamamu.';
+    }
+    return learnerText.isEmpty
+        ? 'Ayo lanjut. Sebutkan satu hal yang masih membingungkan supaya kita pecah jadi langkah kecil.'
+        : learnerText;
+  }
+
+  _ResponseLanguageContext _resolveResponseLanguage({
+    required String? learnerLanguage,
+    required String latestMessage,
+  }) {
+    final profileCode = _normalizeLanguageCode(learnerLanguage);
+    final messageCode = _detectMessageLanguage(latestMessage);
+    if (messageCode != null && messageCode != profileCode) {
+      return _ResponseLanguageContext(
+        code: messageCode,
+        displayName: _languageDisplayName(messageCode),
+        source: 'message_override',
+      );
+    }
+    return _ResponseLanguageContext(
+      code: profileCode,
+      displayName: _languageDisplayName(profileCode),
+      source: 'learner_profile',
+    );
+  }
+
+  String _normalizeLanguageCode(String? value) {
+    final normalized = _string(value).toLowerCase().replaceAll('_', '-');
+    if (normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa-indonesia') {
+      return 'id';
+    }
+    if (normalized == 'en' || normalized == 'en-us' || normalized == 'en-gb') {
+      return 'en';
+    }
+    return 'en';
+  }
+
+  String _languageDisplayName(String languageCode) {
+    if (languageCode == 'id') {
+      return 'Bahasa Indonesia';
+    }
+    return 'English';
+  }
+
+  String? _detectMessageLanguage(String text) {
+    final normalized = _string(text).toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final words = RegExp(r'[a-zA-Z]+')
+        .allMatches(normalized)
+        .map((match) => match.group(0) ?? '')
+        .where((word) => word.isNotEmpty)
+        .toList(growable: false);
+    if (words.isEmpty) {
+      return null;
+    }
+    const idKeywords = <String>{
+      'aku',
+      'kamu',
+      'saya',
+      'dan',
+      'yang',
+      'untuk',
+      'karena',
+      'tidak',
+      'gak',
+      'nggak',
+      'apa',
+      'materi',
+      'ulang',
+      'soal',
+      'aljabar',
+    };
+    const enKeywords = <String>{
+      'i',
+      'you',
+      'the',
+      'and',
+      'what',
+      'how',
+      'why',
+      'because',
+      'algebra',
+      'expression',
+      'understand',
+    };
+    var idHits = 0;
+    var enHits = 0;
+    for (final word in words) {
+      if (idKeywords.contains(word)) {
+        idHits += 1;
+      }
+      if (enKeywords.contains(word)) {
+        enHits += 1;
+      }
+    }
+    if (idHits >= 2 && idHits >= enHits + 1) {
+      return 'id';
+    }
+    if (enHits >= 2 && enHits >= idHits + 1) {
+      return 'en';
+    }
+    return null;
+  }
+
+  bool _countsAsLearnerTurn(String eventType) {
+    return eventType == 'text' ||
+        eventType == 'quiz_answer' ||
+        eventType == 'canvas_sent';
   }
 }
 
@@ -464,4 +1268,77 @@ bool _bool(Object? value) {
   }
   final normalized = _string(value).toLowerCase();
   return normalized == 'true' || normalized == '1' || normalized == 'yes';
+}
+
+class _ResponseLanguageContext {
+  const _ResponseLanguageContext({
+    required this.code,
+    required this.displayName,
+    required this.source,
+  });
+
+  final String code;
+  final String displayName;
+  final String source;
+}
+
+class _LocalTutorOverride {
+  const _LocalTutorOverride({
+    required this.tutorResponse,
+    required this.overrideJson,
+    required this.orchestratorState,
+    required this.routeAudit,
+  });
+
+  final WorkspaceTutorResponse tutorResponse;
+  final Map<String, dynamic> overrideJson;
+  final Map<String, dynamic> orchestratorState;
+  final Map<String, dynamic> routeAudit;
+}
+
+class _TutorOverridePayload {
+  const _TutorOverridePayload({
+    required this.currentPhase,
+    required this.text,
+    required this.intent,
+    required this.nextActions,
+    required this.nextPhaseReady,
+    required this.phaseReasoning,
+  });
+
+  final String currentPhase;
+  final String text;
+  final String intent;
+  final List<String> nextActions;
+  final bool nextPhaseReady;
+  final String phaseReasoning;
+
+  _TutorOverridePayload copyWith({
+    String? currentPhase,
+    String? text,
+    String? intent,
+    List<String>? nextActions,
+    bool? nextPhaseReady,
+    String? phaseReasoning,
+  }) {
+    return _TutorOverridePayload(
+      currentPhase: currentPhase ?? this.currentPhase,
+      text: text ?? this.text,
+      intent: intent ?? this.intent,
+      nextActions: nextActions ?? this.nextActions,
+      nextPhaseReady: nextPhaseReady ?? this.nextPhaseReady,
+      phaseReasoning: phaseReasoning ?? this.phaseReasoning,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'current_phase': currentPhase,
+      'text': text,
+      'intent': intent,
+      'next_actions': nextActions,
+      'next_phase_ready': nextPhaseReady,
+      'phase_reasoning': phaseReasoning,
+    };
+  }
 }

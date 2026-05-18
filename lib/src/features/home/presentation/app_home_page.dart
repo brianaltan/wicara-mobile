@@ -21,6 +21,8 @@ import '../../onboarding/domain/onboarding_copy.dart';
 import '../../onboarding/domain/onboarding_options.dart';
 import '../../onboarding/domain/onboarding_profile.dart';
 import '../../onboarding/presentation/widgets/subject_tile.dart';
+import '../../edge_ai/data/litert_gemma_runtime.dart';
+import '../../edge_ai/domain/edge_ai_models.dart';
 import '../domain/home_repository.dart';
 import '../domain/home_snapshot.dart';
 import '../../pretest/domain/pretest_models.dart';
@@ -132,6 +134,8 @@ class _AppHomePageState extends State<AppHomePage> {
   String? _lastSyncedProfileFingerprint;
   late Future<HomeSnapshot> _homeSnapshotFuture;
   bool _autoOpenWorkspacePending = false;
+  bool _edgeAiSetupPromptShown = false;
+  bool _edgeAiSetupCheckInFlight = false;
 
   @override
   void initState() {
@@ -153,6 +157,9 @@ class _AppHomePageState extends State<AppHomePage> {
         _autoOpenWorkspaceAfterPretest();
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybePromptEdgeAiSetup();
+    });
   }
 
   Future<void> _autoOpenWorkspaceAfterPretest() async {
@@ -193,6 +200,149 @@ class _AppHomePageState extends State<AppHomePage> {
         ..showSnackBar(
           const SnackBar(
             content: Text('Gagal auto-open workspace setelah pretest.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  Future<void> _maybePromptEdgeAiSetup() async {
+    if (!mounted || _edgeAiSetupPromptShown || _edgeAiSetupCheckInFlight) {
+      return;
+    }
+    _edgeAiSetupCheckInFlight = true;
+    try {
+      final status = await defaultEdgeAiRuntime.getStatus();
+      if (!mounted || !status.available || status.isReady) {
+        return;
+      }
+      final modelPath = (status.modelPath ?? status.defaultModelPath ?? '')
+          .trim();
+      final hasModel = status.defaultModelExists || modelPath.isNotEmpty;
+      _edgeAiSetupPromptShown = true;
+      if (!hasModel) {
+        await _promptDownloadModel();
+        return;
+      }
+      await _promptInitializeModel(status);
+    } catch (_) {
+      // Ignore runtime probe failures on Home so page remains responsive.
+    } finally {
+      _edgeAiSetupCheckInFlight = false;
+    }
+  }
+
+  Future<void> _promptDownloadModel() async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Model AI lokal belum terpasang'),
+          content: const Text(
+            'Wicara akan lebih stabil kalau model LiteRT sudah di-download. Mau buka Pengaturan AI Lokal sekarang?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Nanti'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+              },
+              child: const Text('Download model'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _promptInitializeModel(EdgeRuntimeStatus status) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Model AI lokal belum siap'),
+          content: const Text(
+            'Model sudah ada di device, tapi belum di-initialize. Mau initialize sekarang?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Nanti'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+              },
+              child: const Text('Buka settings'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _initializeEdgeModelQuick(status);
+              },
+              child: const Text('Initialize'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _initializeEdgeModelQuick(EdgeRuntimeStatus status) async {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Menginisialisasi model lokal...'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    final modelPath = (status.modelPath ?? status.defaultModelPath ?? '')
+        .trim();
+    try {
+      final initialized = await defaultEdgeAiRuntime
+          .initialize(modelPath: modelPath.isEmpty ? null : modelPath)
+          .timeout(const Duration(seconds: 120));
+      if (!mounted) {
+        return;
+      }
+      final success = initialized.isReady;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? 'Model lokal siap dipakai.'
+                  : 'Initialize selesai tapi runtime belum ready. Coba buka settings AI lokal.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Initialize model gagal: $error'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1738,9 +1888,18 @@ class _GoalMetaPill extends StatelessWidget {
 }
 
 List<String> _goalHistorySubjects(HomeSnapshot snapshot) {
-  final source = snapshot.selectedSubjects.isNotEmpty
-      ? snapshot.selectedSubjects
-      : snapshot.availableSubjects;
+  final source = <String>[
+    ...(snapshot.selectedSubjects.isNotEmpty
+        ? snapshot.selectedSubjects
+        : snapshot.availableSubjects),
+    ...snapshot.activeTracks.map((track) {
+      final code = track.subjectCode.trim();
+      if (code.isNotEmpty) {
+        return code;
+      }
+      return track.subjectName;
+    }),
+  ];
   final seen = <String>{};
   final subjects = <String>[];
   for (final subject in source) {
@@ -6801,6 +6960,10 @@ class _ProfilePage extends StatelessWidget {
     ).pushNamedAndRemoveUntil(AppRoutes.landing, (route) => false);
   }
 
+  Future<void> _openEdgeAiSettings(BuildContext context) async {
+    await Navigator.of(context).pushNamed(AppRoutes.edgeAiSettings);
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = onboardingController.profile;
@@ -6867,6 +7030,16 @@ class _ProfilePage extends StatelessWidget {
             _ProfileSection(
               title: copy.preferencesSectionTitle,
               children: [
+                _ProfileSettingTile(
+                  icon: Icons.memory_rounded,
+                  label: copy.isIndonesian
+                      ? 'AI Lokal (LiteRT-LM)'
+                      : 'Local AI (LiteRT-LM)',
+                  value: copy.isIndonesian
+                      ? 'Install & initialize model'
+                      : 'Install & initialize model',
+                  onTap: () => _openEdgeAiSettings(context),
+                ),
                 _ProfileSettingTile(
                   icon: Icons.menu_book_outlined,
                   label: copy.subjectsLabel,

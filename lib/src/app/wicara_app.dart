@@ -4,6 +4,7 @@ import '../core/theme/wicara_theme.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/sign_in_page.dart';
 import '../features/curriculum/domain/curriculum_repository.dart';
+import '../features/edge_ai/presentation/edge_ai_settings_page.dart';
 import '../features/home/domain/home_repository.dart';
 import '../features/home/domain/home_snapshot.dart';
 import '../features/home/presentation/app_home_page.dart';
@@ -171,6 +172,7 @@ class _WicaraAppState extends State<WicaraApp> {
           pretestRepository: widget.pretestRepository,
           onboardingController: widget.onboardingController,
         ),
+        AppRoutes.edgeAiSettings => const EdgeAiSettingsPage(),
         AppRoutes.home => AppHomePage(
           curriculumRepository: widget.curriculumRepository,
           learningGoalRepository: widget.learningGoalRepository,

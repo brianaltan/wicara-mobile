@@ -13,6 +13,7 @@ import '../../onboarding/domain/onboarding_copy.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/rich_math_text.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
+import '../domain/local_5e_orchestrator.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
 
@@ -69,6 +70,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   WorkspaceMediaArtifact? _latestVideoArtifact;
   String? _videoStatusMessage;
   String? _videoErrorMessage;
+  bool _isWorkspaceHeaderExpanded = false;
   List<WorkspaceSessionSummary> _sessionHistory = const [];
   String? _activeSessionId;
   int _workspaceRequestSerial = 0;
@@ -321,7 +323,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       return;
     }
 
-    final language = _resolveGenerationLanguageCode();
+    final localPayload = _buildPayloadForWorkspace(workspace);
+    final generationMode = localPayload == null ? 'context_auto' : 'manual';
+    final language = localPayload?.language ?? _resolveGenerationLanguageCode();
     final chatTurnCount = _chatEntries
         .where(
           (entry) =>
@@ -343,17 +347,22 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
 
     try {
       debugPrint(
-        '[video-generate] workspace_id=${workspace.id} generation_mode=context_auto language=$language',
+        '[video-generate] workspace_id=${workspace.id} generation_mode=$generationMode language=$language template_id=${localPayload?.templateId ?? "(auto)"}',
       );
       final result = await widget.workspaceRepository.generateVideo(
         workspaceId: workspace.id,
-        generationMode: 'context_auto',
+        generationMode: generationMode,
+        templateId: localPayload?.templateId,
+        specJson: localPayload?.specJson,
         language: language,
         qualityProfile: 'standard',
         metadata: {
           'triggered_by': 'workspace_mid_chat_button',
           'chat_turn_count': chatTurnCount,
           'workspace_content_mode': _contentMode.name,
+          'spec_generation_source': localPayload == null
+              ? 'backend_context_auto'
+              : 'mobile_template_payload_v1',
         },
       );
 
@@ -468,7 +477,6 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
   }
 
-  // ignore: unused_element
   _VideoGenerationPayload? _buildPayloadForWorkspace(
     WorkspaceSession workspace,
   ) {
@@ -552,7 +560,17 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   String? _videoTemplateHintMessage() {
-    return null;
+    final workspace = _workspace;
+    if (workspace == null) {
+      return null;
+    }
+    final payload = _buildPayloadForWorkspace(workspace);
+    if (payload != null) {
+      return null;
+    }
+    return _workspaceMaterial.isIndonesian
+        ? 'Topik ini belum punya template lokal, jadi video akan pakai context_auto dari backend.'
+        : 'This topic has no local template yet, so video generation falls back to backend context_auto.';
   }
 
   _VideoTemplateMatch? _matchTemplateForTopic(String topic) {
@@ -1846,7 +1864,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final canAdvancePhase = _canAdvancePhase(workspace);
     final canForceAdvancePhase = _canForceAdvancePhase(workspace);
     final showCheckUnderstanding =
-        (workspace?.currentPhase ?? 'engage') == 'evaluate';
+        Local5EOrchestrator.normalizePhase(
+          workspace?.currentPhase ?? 'engage',
+        ) ==
+        'evaluate';
     final workspaceDescription =
         (_workspace?.currentTopicDescription.trim().isNotEmpty ?? false)
         ? _workspace!.currentTopicDescription.trim()
@@ -1859,6 +1880,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final pageWidth = math.min(constraints.maxWidth, 430.0);
+            final compactViewport = constraints.maxHeight < 780;
+            final showHeaderDetails =
+                !compactViewport || _isWorkspaceHeaderExpanded;
 
             return Center(
               child: SizedBox(
@@ -1867,7 +1891,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 14, 28, 20),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -1884,87 +1908,157 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                   height: 38,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
+                              const SizedBox(width: 6),
                               Image.asset(
                                 'lib/src/assets/workspaceIcon.png',
-                                width: 84,
-                                height: 84,
+                                width: 56,
+                                height: 56,
                                 fit: BoxFit.contain,
                                 filterQuality: FilterQuality.high,
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                material.workspaceTitleLabel,
-                                style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _WorkspaceTopicCard(
-                            copy: copy,
-                            title:
-                                _workspace?.currentTopic ??
-                                widget.routeArguments?.moduleTitle ??
-                                material.topicTitle,
-                            description: workspaceDescription,
-                          ),
-                          const SizedBox(height: 12),
-                          _PhaseStepperBar(
-                            currentPhase: workspace?.currentPhase ?? 'engage',
-                            phaseTransitionPending:
-                                workspace?.phaseTransitionPending ?? false,
-                            material: material,
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
+                              const SizedBox(width: 10),
                               Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _isLoadingWorkspace
-                                      ? null
-                                      : () {
-                                          unawaited(_startNewChatSession());
-                                        },
-                                  icon: const Icon(Icons.add_comment_outlined),
-                                  label: Text(material.newChatLabel),
+                                child: Text(
+                                  material.workspaceTitleLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton.icon(
+                              if (compactViewport)
+                                TextButton.icon(
                                   onPressed: () {
-                                    unawaited(_openSessionHistorySheet());
+                                    setState(() {
+                                      _isWorkspaceHeaderExpanded =
+                                          !_isWorkspaceHeaderExpanded;
+                                    });
                                   },
-                                  icon: const Icon(Icons.history_rounded),
+                                  icon: Icon(
+                                    showHeaderDetails
+                                        ? Icons.unfold_less_rounded
+                                        : Icons.unfold_more_rounded,
+                                    size: 18,
+                                  ),
                                   label: Text(
-                                    material.historyButtonLabel(
-                                      _sessionHistory.length,
+                                    showHeaderDetails
+                                        ? (material.isIndonesian
+                                              ? 'Ringkas'
+                                              : 'Collapse')
+                                        : (material.isIndonesian
+                                              ? 'Detail'
+                                              : 'Details'),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 6,
                                     ),
+                                    minimumSize: const Size(0, 32),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
-                          if (showStartPosttestButton) ...[
-                            const SizedBox(height: 8),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  _isLoadingWorkspace || _isPhaseSubmitting
-                                  ? null
-                                  : () {
-                                      unawaited(_startPosttestFromWorkspace());
-                                    },
-                              icon: const Icon(
-                                Icons.assignment_turned_in_outlined,
+                          AnimatedCrossFade(
+                            duration: const Duration(milliseconds: 200),
+                            crossFadeState: showHeaderDetails
+                                ? CrossFadeState.showFirst
+                                : CrossFadeState.showSecond,
+                            firstChild: Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _WorkspaceTopicCard(
+                                    copy: copy,
+                                    title:
+                                        _workspace?.currentTopic ??
+                                        widget.routeArguments?.moduleTitle ??
+                                        material.topicTitle,
+                                    description: workspaceDescription,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  _PhaseStepperBar(
+                                    currentPhase:
+                                        workspace?.currentPhase ?? 'engage',
+                                    phaseTransitionPending:
+                                        workspace?.phaseTransitionPending ??
+                                        false,
+                                    material: material,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: _isLoadingWorkspace
+                                              ? null
+                                              : () {
+                                                  unawaited(
+                                                    _startNewChatSession(),
+                                                  );
+                                                },
+                                          icon: const Icon(
+                                            Icons.add_comment_outlined,
+                                          ),
+                                          label: Text(material.newChatLabel),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: () {
+                                            unawaited(
+                                              _openSessionHistorySheet(),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                            Icons.history_rounded,
+                                          ),
+                                          label: Text(
+                                            material.historyButtonLabel(
+                                              _sessionHistory.length,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (showStartPosttestButton) ...[
+                                    const SizedBox(height: 8),
+                                    OutlinedButton.icon(
+                                      onPressed:
+                                          _isLoadingWorkspace ||
+                                              _isPhaseSubmitting
+                                          ? null
+                                          : () {
+                                              unawaited(
+                                                _startPosttestFromWorkspace(),
+                                              );
+                                            },
+                                      icon: const Icon(
+                                        Icons.assignment_turned_in_outlined,
+                                      ),
+                                      label: Text(
+                                        material.startPosttestButtonLabel,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              label: Text(material.startPosttestButtonLabel),
                             ),
-                          ],
+                            secondChild: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: _WorkspaceCompactHeaderStatus(
+                                phase: workspace?.currentPhase ?? 'engage',
+                                phaseTransitionPending:
+                                    workspace?.phaseTransitionPending ?? false,
+                                material: material,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1973,7 +2067,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                         builder: (context, viewportConstraints) {
                           return SingleChildScrollView(
                             controller: _scrollController,
-                            padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
                                 minHeight: viewportConstraints.maxHeight - 12,
@@ -4186,6 +4280,75 @@ class _PhaseStepperBar extends StatelessWidget {
   }
 }
 
+class _WorkspaceCompactHeaderStatus extends StatelessWidget {
+  const _WorkspaceCompactHeaderStatus({
+    required this.phase,
+    required this.phaseTransitionPending,
+    required this.material,
+  });
+
+  final String phase;
+  final bool phaseTransitionPending;
+  final _LocalizedWorkspaceMaterial material;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentPhase = Local5EOrchestrator.normalizePhase(phase);
+    final chipColor = phaseTransitionPending
+        ? WicaraColors.secondarySoft
+        : WicaraColors.fieldFill;
+    final chipBorder = phaseTransitionPending
+        ? WicaraColors.secondaryLight
+        : WicaraColors.line;
+    final statusText = phaseTransitionPending
+        ? (material.isIndonesian
+              ? 'Siap transisi fase'
+              : 'Phase transition ready')
+        : (material.isIndonesian
+              ? 'Belajar di fase ini'
+              : 'Continue this phase');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: chipColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: chipBorder),
+            ),
+            child: Text(
+              material.phaseLabel(currentPhase),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: WicaraColors.ink,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              statusText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WorkspaceFooter extends StatelessWidget {
   const _WorkspaceFooter({
     required this.controller,
@@ -4230,7 +4393,7 @@ class _WorkspaceFooter extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 11, 28, 14),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4251,6 +4414,34 @@ class _WorkspaceFooter extends StatelessWidget {
                       isPhaseSubmitting
                           ? material.advancingPhaseLabel
                           : material.advancePhaseLabel,
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: !isVideoGenerating && canGenerateVideo
+                        ? onGenerateVideo
+                        : null,
+                    icon: Icon(
+                      isVideoGenerating
+                          ? Icons.hourglass_bottom_rounded
+                          : Icons.smart_display_rounded,
+                    ),
+                    label: Text(
+                      isVideoGenerating
+                          ? material.generatingVideoButtonLabel
+                          : material.generateVideoFromChatLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
                   ),
                 ),
@@ -4280,22 +4471,6 @@ class _WorkspaceFooter extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: !isVideoGenerating && canGenerateVideo
-                  ? onGenerateVideo
-                  : null,
-              icon: Icon(
-                isVideoGenerating
-                    ? Icons.hourglass_bottom_rounded
-                    : Icons.smart_display_rounded,
-              ),
-              label: Text(
-                isVideoGenerating
-                    ? material.generatingVideoButtonLabel
-                    : material.generateVideoFromChatLabel,
-              ),
-            ),
-            const SizedBox(height: 10),
             _WorkspaceComposerInput(
               controller: controller,
               onSend: onSend,
@@ -4326,8 +4501,9 @@ class _WorkspaceComposerInput extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
+            keyboardType: TextInputType.multiline,
             minLines: 1,
-            maxLines: 2,
+            maxLines: 4,
             textInputAction: TextInputAction.send,
             onSubmitted: (_) => onSend(),
             decoration: InputDecoration(
@@ -4336,7 +4512,7 @@ class _WorkspaceComposerInput extends StatelessWidget {
               fillColor: WicaraColors.fieldFill,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 15,
-                vertical: 16,
+                vertical: 12,
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(13),
@@ -4361,8 +4537,8 @@ class _WorkspaceComposerInput extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Container(
-          width: 53,
-          height: 53,
+          width: 49,
+          height: 49,
           decoration: BoxDecoration(
             color: WicaraColors.secondary,
             borderRadius: BorderRadius.circular(27),

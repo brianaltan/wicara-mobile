@@ -178,11 +178,12 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
   final targetTitle = target is Map ? _string(target['title']) : '';
   final recommendedPath = _string(diagnosis['recommended_path']);
   final pathOptions = diagnosis['path_options'];
-  final scorePercent =
-      _double(diagnosis['pure_answer_percent']) ??
-      _double(diagnosis['score_percent']);
   final answeredCount = _int(diagnosis['pure_answer_total']) ?? 0;
   final correctCount = _int(diagnosis['pure_answer_score']) ?? 0;
+  final scorePercent = answeredCount > 0
+      ? (correctCount / answeredCount) * 100
+      : (_double(diagnosis['pure_answer_percent']) ??
+            _double(diagnosis['score_percent']));
   final strengths = analysis is Map
       ? _stringList(analysis['strengths'])
       : const <String>[];
