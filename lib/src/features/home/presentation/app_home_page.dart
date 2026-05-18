@@ -8402,9 +8402,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
   String _selectedSubjectCode = 'math';
   int _visibleSectionCount = _initialVisibleSections;
   _KnowledgeNode? _selectedNode;
-  bool _isLoadingCurriculum = true;
   bool _isLoadingMoreSections = false;
-  bool _isUsingFallbackGraph = true;
   bool _isCreatingGoal = false;
   int _curriculumRequestSerial = 0;
 
@@ -8451,8 +8449,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         );
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
-        _isUsingFallbackGraph = false;
-        _isLoadingCurriculum = false;
         _isLoadingMoreSections = false;
       });
     } catch (_) {
@@ -8466,8 +8462,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         _selectedSubjectCode = 'math';
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
-        _isUsingFallbackGraph = true;
-        _isLoadingCurriculum = false;
         _isLoadingMoreSections = false;
       });
     }
@@ -8482,7 +8476,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
     final locale = _apiLocale(widget.preferredLanguage);
     setState(() {
       _selectedSubjectCode = subject.code;
-      _isLoadingCurriculum = true;
       _visibleSectionCount = _initialVisibleSections;
       _selectedNode = null;
       _isLoadingMoreSections = false;
@@ -8502,8 +8495,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         _graph = _knowledgeGraphFromApi(graph, focusSubjectCode: subject.code);
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
-        _isUsingFallbackGraph = false;
-        _isLoadingCurriculum = false;
         _isLoadingMoreSections = false;
       });
     } catch (_) {
@@ -8517,8 +8508,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
         _selectedSubjectCode = 'math';
         _visibleSectionCount = _initialVisibleSections;
         _selectedNode = null;
-        _isUsingFallbackGraph = true;
-        _isLoadingCurriculum = false;
         _isLoadingMoreSections = false;
       });
     }
@@ -8625,10 +8614,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
           children: [
             Text(
               node.label,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             Text(
@@ -8797,11 +8783,6 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    _CurriculumSourceLabel(
-                      isLoading: _isLoadingCurriculum,
-                      isUsingFallback: _isUsingFallbackGraph,
-                    ),
                     const SizedBox(height: 14),
                     const _KnowledgeMapLegend(),
                     const SizedBox(height: 22),
@@ -8927,38 +8908,6 @@ class _SubjectMapTabButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CurriculumSourceLabel extends StatelessWidget {
-  const _CurriculumSourceLabel({
-    required this.isLoading,
-    required this.isUsingFallback,
-  });
-
-  final bool isLoading;
-  final bool isUsingFallback;
-
-  @override
-  Widget build(BuildContext context) {
-    final copy = _HomeCopyScope.of(context);
-    final label = isLoading
-        ? copy.loadingCurriculumLabel
-        : isUsingFallback
-        ? copy.fallbackGraphLabel
-        : copy.liveCurriculumGraphLabel;
-    final color = isUsingFallback
-        ? WicaraColors.accentAmber
-        : WicaraColors.math;
-
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: color,
-        fontSize: 10,
-        fontWeight: FontWeight.w800,
       ),
     );
   }
@@ -10448,12 +10397,12 @@ String _nodeDescription(_KnowledgeNode node, OnboardingCopy copy) {
   final grade = node.gradeBand;
   if (copy.isIndonesian) {
     return grade == null || grade.isEmpty
-        ? 'Pelajari konsep ${node.label} dalam graf prasyarat Kurikulum Merdeka.'
-        : 'Pelajari konsep ${node.label} untuk $grade dalam graf prasyarat Kurikulum Merdeka.';
+        ? 'Pelajari konsep ${node.label} dalam graf prasyarat.'
+        : 'Pelajari konsep ${node.label} untuk $grade dalam graf prasyarat.';
   }
   return grade == null || grade.isEmpty
-      ? 'Learn ${node.label} in the Kurikulum Merdeka prerequisite graph.'
-      : 'Learn ${node.label} for $grade in the Kurikulum Merdeka prerequisite graph.';
+      ? 'Learn ${node.label} in the prerequisite graph.'
+      : 'Learn ${node.label} for $grade in the prerequisite graph.';
 }
 
 class _KnowledgeGraph {
@@ -10711,20 +10660,26 @@ enum _NodeStatus {
 }
 
 List<_SubjectMapItem> _subjectTabsFromApi(List<CurriculumSubject> subjects) {
-  final activeSubjects = subjects.where((subject) => subject.isActive).toList();
+  final activeSubjects = subjects
+      .where((subject) => subject.isActive)
+      .where((subject) => !_isRemovedKnowledgeMapSubject(subject.code))
+      .toList();
   if (activeSubjects.isEmpty) {
     return _KnowledgeMapDetailState._fallbackSubjects;
   }
 
-  return [
+  final tabs = [
     for (final subject in activeSubjects)
       _SubjectMapItem(
         subject.code,
         _subjectLabel(subject),
         _subjectColor(subject.code),
-        false,
+        !_isEnabledKnowledgeMapSubject(subject.code),
       ),
   ];
+  return tabs.any((subject) => !subject.isLocked)
+      ? tabs
+      : _KnowledgeMapDetailState._fallbackSubjects;
 }
 
 String _defaultSubjectCode(List<_SubjectMapItem> subjects) {
@@ -10748,7 +10703,7 @@ _KnowledgeGraph _knowledgeGraphFromApi(
   }
 
   return _KnowledgeGraph(
-    title: graph.title,
+    title: _cleanKnowledgeMapTitle(graph.title),
     width: graph.width,
     height: graph.height,
     topDown: graph.topDown,
@@ -10777,10 +10732,11 @@ _KnowledgeGraph _knowledgeGraphFromApi(
 }
 
 String _subjectLabel(CurriculumSubject subject) {
+  if (subject.name.trim().isNotEmpty) {
+    return subject.name;
+  }
   return switch (subject.code) {
     'matematika' => 'Matematika',
-    'ipas' => 'IPAS',
-    'ipa' => 'IPA',
     'fisika' => 'Fisika',
     'kimia' => 'Kimia',
     'biologi' => 'Biologi',
@@ -10790,6 +10746,25 @@ String _subjectLabel(CurriculumSubject subject) {
     'biology' => 'Biology',
     _ => subject.name,
   };
+}
+
+bool _isRemovedKnowledgeMapSubject(String code) {
+  final normalized = code.trim().toLowerCase();
+  return normalized == 'ipas' || normalized == 'ipa';
+}
+
+bool _isEnabledKnowledgeMapSubject(String code) {
+  final normalized = code.trim().toLowerCase();
+  return normalized == 'matematika' || normalized == 'math';
+}
+
+String _cleanKnowledgeMapTitle(String title) {
+  return title
+      .replaceFirst(
+        RegExp(r'^(Graph\s+)?Kurikulum\s+Merdeka\s+', caseSensitive: false),
+        '',
+      )
+      .trim();
 }
 
 Color _subjectColor(String code) {

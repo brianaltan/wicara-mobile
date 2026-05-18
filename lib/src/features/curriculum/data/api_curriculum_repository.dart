@@ -10,7 +10,7 @@ class ApiCurriculumRepository implements CurriculumRepository {
   final ApiClient _apiClient;
 
   @override
-  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'en'}) async {
+  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'id'}) async {
     final json = await _apiClient.getJson(
       '/api/v1/subjects',
       queryParameters: {'locale': _supportedLocale(locale)},
@@ -21,7 +21,7 @@ class ApiCurriculumRepository implements CurriculumRepository {
   @override
   Future<CurriculumKnowledgeMap> fetchKnowledgeMap({
     required String subject,
-    String locale = 'en',
+    String locale = 'id',
   }) async {
     final json = await _apiClient.getJson(
       '/api/v1/knowledge-map',
@@ -34,7 +34,7 @@ class ApiCurriculumRepository implements CurriculumRepository {
   Future<CurriculumConceptDetail> fetchConceptDetail({
     required String conceptCode,
     String? subject,
-    String locale = 'en',
+    String locale = 'id',
   }) async {
     final queryParameters = <String, String>{
       'locale': _supportedLocale(locale),
