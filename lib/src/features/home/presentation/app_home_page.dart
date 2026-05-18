@@ -7280,7 +7280,7 @@ class _LearningReportPreview extends StatelessWidget {
           weeklyDelta: report.remainingGapsDelta,
           deltaLabel: '${report.remainingGapsDelta} this week',
         );
-    final groups = report.performanceGroups.take(3).toList(growable: false);
+    final groups = _summaryPerformanceGroups(report.performanceGroups);
 
     return Column(
       children: [
@@ -8296,6 +8296,20 @@ String _reportRangeOptionLabel(_ReportRangeOption option) {
     _ReportRangeOption.lastWeek => 'Minggu lalu',
     _ReportRangeOption.last4Weeks => '4 minggu terakhir',
   };
+}
+
+List<ReportPerformanceGroup> _summaryPerformanceGroups(
+  List<ReportPerformanceGroup> groups,
+) {
+  if (groups.isEmpty) {
+    return const [];
+  }
+  for (final group in groups) {
+    if (group.label.toLowerCase().trim() == 'overall') {
+      return [group];
+    }
+  }
+  return [groups.first];
 }
 
 class _LearningGainCard extends StatelessWidget {
