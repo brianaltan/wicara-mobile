@@ -211,6 +211,85 @@ class LocalLearningGoalRepository implements LearningGoalRepository {
   }
 
   @override
+  Future<LearningGoalBootstrap> createLearningGoalFromConcept({
+    String? conceptId,
+    String? conceptCode,
+    String? subjectCode,
+    String? language,
+  }) async {
+    final existing = await fetchActiveGoal();
+    if (existing != null && existing.id.isNotEmpty) {
+      throw ActiveGoalConflictException(
+        existingGoalId: existing.id,
+        existingTopic: existing.rawTopic,
+        existingStatus: existing.status,
+        existingNextAction: existing.nextAction,
+        pretestSessionId: existing.pretestSessionId,
+        trackId: existing.trackId,
+      );
+    }
+
+    var concepts = await _localCurriculumRepository.listConcepts(
+      subjectCode: subjectCode,
+    );
+    if (concepts.isEmpty) {
+      concepts = await _localCurriculumRepository.listConcepts();
+    }
+    if (concepts.isEmpty) {
+      throw const LearningGoalException(
+        'Kurikulum lokal belum tersedia. Coba sync kurikulum dulu.',
+      );
+    }
+
+    final normalizedId = (conceptId ?? '').trim().toLowerCase();
+    final normalizedCode = (conceptCode ?? '').trim().toLowerCase();
+    final selected = concepts.firstWhere(
+      (item) =>
+          (normalizedId.isNotEmpty &&
+              (item.id.toLowerCase() == normalizedId ||
+                  item.code.toLowerCase() == normalizedId)) ||
+          (normalizedCode.isNotEmpty &&
+              (item.code.toLowerCase() == normalizedCode ||
+                  item.id.toLowerCase() == normalizedCode)),
+      orElse: () => concepts.first,
+    );
+
+    if (normalizedId.isNotEmpty || normalizedCode.isNotEmpty) {
+      final matched =
+          selected.id.toLowerCase() == normalizedId ||
+          selected.code.toLowerCase() == normalizedId ||
+          selected.code.toLowerCase() == normalizedCode ||
+          selected.id.toLowerCase() == normalizedCode;
+      if (!matched) {
+        final targetRef = normalizedCode.isNotEmpty
+            ? normalizedCode
+            : normalizedId;
+        throw LearningGoalException(
+          'Node "$targetRef" tidak ditemukan di kurikulum lokal.',
+        );
+      }
+    }
+
+    final goalId = 'local_goal_${DateTime.now().microsecondsSinceEpoch}';
+    _pretestSessionStore.saveBootstrap(
+      learningGoalId: goalId,
+      targetConceptCode: selected.code,
+      targetSubjectCode: selected.subjectCode,
+    );
+    final suggestion = _toSuggestion(selected);
+    _activeGoalCache = ActiveLearningGoal(
+      id: goalId,
+      status: 'active',
+      rawTopic: suggestion.title,
+      nextAction: 'take_pretest',
+      targetConcept: suggestion,
+      pretestSessionId: null,
+      trackId: null,
+    );
+    return LearningGoalBootstrap(learningGoalId: goalId);
+  }
+
+  @override
   Future<List<LearningConceptSuggestion>> searchMaterials({
     required String query,
     String? subjectCode,

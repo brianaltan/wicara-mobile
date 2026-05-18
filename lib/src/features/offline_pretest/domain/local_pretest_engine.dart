@@ -245,7 +245,7 @@ class LocalPretestEngine {
             .toSet();
     final attemptId = 'local_attempt_${DateTime.now().microsecondsSinceEpoch}';
     final canvasSnapshotPath = _nullableString(answer.canvasAssetId);
-    final canvasStrokeCount = answer.canvasStrokeCount;
+    final canvasStrokeCount = null;
     final evaluation = await _evidenceEvaluator.evaluate(
       question: question,
       selectedOption: selectedOption,
