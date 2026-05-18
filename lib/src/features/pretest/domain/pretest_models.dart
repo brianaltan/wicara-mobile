@@ -41,7 +41,6 @@ class PretestAnswer {
     required this.confidence,
     this.typedReasoning = '',
     this.canvasAssetId,
-    this.canvasStrokeCount,
     this.usedCanvas = false,
   });
 
@@ -50,7 +49,6 @@ class PretestAnswer {
   final int confidence;
   final String typedReasoning;
   final String? canvasAssetId;
-  final int? canvasStrokeCount;
   final bool usedCanvas;
 }
 
@@ -79,6 +77,8 @@ class KnowledgeState {
     this.masteryScore,
     this.confidence,
     this.overallMasteryPercent,
+    this.correctCount = 0,
+    this.answeredCount = 0,
     this.strengths = const [],
     this.gaps = const [],
     this.evidenceNotes = const [],
@@ -97,6 +97,8 @@ class KnowledgeState {
   final double? masteryScore;
   final double? confidence;
   final int? overallMasteryPercent;
+  final int correctCount;
+  final int answeredCount;
   final List<String> strengths;
   final List<String> gaps;
   final List<String> evidenceNotes;
@@ -116,10 +118,13 @@ class PretestNodeReport {
     this.avgReasoningScore,
     this.attemptCount = 0,
     this.correctCount = 0,
+    this.answerPercent,
+    this.evidencePercent,
+    this.scorePercent,
+    this.confidencePercent,
+    this.metricSource = '',
+    this.hasEvidence = false,
     this.diagnosticSignals = const [],
-    this.hasCanvasEvidence = false,
-    this.canvasStrokeCount,
-    this.canvasSnapshotPath,
     this.carelessMistakePossible = false,
     this.misconceptionDetected = false,
   });
@@ -134,10 +139,13 @@ class PretestNodeReport {
   final double? avgReasoningScore;
   final int attemptCount;
   final int correctCount;
+  final double? answerPercent;
+  final double? evidencePercent;
+  final double? scorePercent;
+  final double? confidencePercent;
+  final String metricSource;
+  final bool hasEvidence;
   final List<String> diagnosticSignals;
-  final bool hasCanvasEvidence;
-  final int? canvasStrokeCount;
-  final String? canvasSnapshotPath;
   final bool carelessMistakePossible;
   final bool misconceptionDetected;
 }

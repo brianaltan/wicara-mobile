@@ -37,9 +37,11 @@ class ApiCurriculumRepository implements CurriculumRepository {
     String locale = 'id',
   }) async {
     final queryParameters = <String, String>{
-      if (subject != null) 'subject': subject,
       'locale': _supportedLocale(locale),
     };
+    if (subject != null) {
+      queryParameters['subject'] = subject;
+    }
     final json = await _apiClient.getJson(
       '/api/v1/knowledge-map/concepts/${Uri.encodeComponent(conceptCode)}',
       queryParameters: queryParameters,
@@ -48,7 +50,17 @@ class ApiCurriculumRepository implements CurriculumRepository {
   }
 
   String _supportedLocale(String locale) {
-    final normalized = locale.trim().toLowerCase();
-    return normalized == 'en' ? 'en' : 'id';
+    final normalized = locale.trim().toLowerCase().replaceAll('_', '-');
+    if (normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'ind' ||
+        normalized == 'indo' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa' ||
+        normalized == 'bahasa indonesia' ||
+        normalized.contains('indo')) {
+      return 'id';
+    }
+    return 'en';
   }
 }

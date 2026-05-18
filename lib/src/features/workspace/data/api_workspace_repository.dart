@@ -141,12 +141,44 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
+  Future<WorkspaceSession> advancePhase({
+    required String workspaceId,
+    bool force = false,
+  }) async {
+    final token = _requireToken();
+    try {
+      final json = await _apiClient.postJson(
+        '/api/v1/workspaces/$workspaceId/advance-phase',
+        headers: {'Authorization': 'Bearer $token'},
+        queryParameters: {'force': force.toString()},
+      );
+      return workspaceFromJson(json);
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
+  Future<WorkspaceSession> startPosttest({required String workspaceId}) async {
+    final token = _requireToken();
+    try {
+      final json = await _apiClient.postJson(
+        '/api/v1/workspaces/$workspaceId/start-posttest',
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      return workspaceFromJson(json);
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
   Future<WorkspaceGenerateVideoResult> generateVideo({
     required String workspaceId,
     String generationMode = 'context_auto',
     String? templateId,
     Map<String, dynamic>? specJson,
-    String language = 'id',
+    String language = 'en',
     String qualityProfile = 'standard',
     String? conceptId,
     Map<String, dynamic> metadata = const {},
@@ -250,13 +282,21 @@ WorkspaceSessionSummary workspaceSessionSummaryFromJson(
 WorkspaceSession workspaceFromJson(Map<String, dynamic> json) {
   final events = json['events'];
   final latestMedia = json['latest_media'];
+  final learnerLanguage = _string(json['learner_language']);
   return WorkspaceSession(
     id: _string(json['id']),
     trackId: _string(json['track_id']),
     moduleId: _string(json['module_id']),
     currentTopic: _string(json['current_topic']),
+    currentTopicDescription: _string(json['current_topic_description']),
+    learnerLanguage: learnerLanguage.isEmpty ? 'en' : learnerLanguage,
     contentMode: _string(json['content_mode']),
     status: _string(json['status']),
+    currentPhase: _string(json['current_phase']).isNotEmpty
+        ? _string(json['current_phase'])
+        : 'engage',
+    phaseTransitionPending: _bool(json['phase_transition_pending']),
+    posttestEligible: _bool(json['posttest_eligible']),
     events: events is List
         ? events
               .whereType<Map<String, dynamic>>()
@@ -292,6 +332,8 @@ WorkspaceAppendResult appendResultFromJson(Map<String, dynamic> json) {
             text: _string(tutorResponse['text']),
             intent: _string(tutorResponse['intent']),
             nextActions: _stringList(tutorResponse['next_actions']),
+            nextPhaseReady: _bool(tutorResponse['next_phase_ready']),
+            phaseReasoning: _nullableString(tutorResponse['phase_reasoning']),
           )
         : null,
     masteryUpdate: masteryUpdate is Map<String, dynamic>
@@ -411,4 +453,15 @@ double? _doubleOrNull(Object? value) {
     return value.toDouble();
   }
   return double.tryParse((value ?? '').toString());
+}
+
+bool _bool(Object? value) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is num) {
+    return value != 0;
+  }
+  final normalized = _string(value).toLowerCase();
+  return normalized == 'true' || normalized == '1' || normalized == 'yes';
 }

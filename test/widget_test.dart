@@ -174,15 +174,19 @@ void main() {
     await tester.tap(find.text('Continue session'));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Long explanation'));
-    await tester.tap(find.text('Long explanation'));
+    expect(find.text('Long explanation'), findsNothing);
+    expect(find.text('Sudden check'), findsNothing);
+    expect(find.text('Start learning chat'), findsOneWidget);
+    expect(find.text('Check understanding'), findsNothing);
+
+    await tester.tap(find.text('Start learning chat'));
     await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Check understanding'));
+    expect(find.text('Material recap'), findsOneWidget);
 
     await tester.ensureVisible(find.text('12'));
     await tester.tap(find.text('12'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Mulai Posttest'));
-    await tester.tap(find.text('Mulai Posttest'));
     await tester.pumpAndSettle();
 
     expect(find.text('Posttest Perkalian'), findsWidgets);
@@ -212,20 +216,59 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    expect(find.text('Evaluation Complete'), findsWidgets);
-    expect(
-      find.text('Posttest: 10 jawaban benar dari 10 soal.'),
-      findsOneWidget,
-    );
-    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('Posttest Analysis'), findsWidgets);
+    expect(find.text('Mastery confirmed'), findsOneWidget);
+    expect(find.text('Perkalian'), findsWidgets);
+    expect(find.text('100%'), findsWidgets);
 
-    await tester.ensureVisible(find.text('Kembali ke Home'));
-    await tester.tap(find.text('Kembali ke Home'));
+    await tester.ensureVisible(find.text('Continue learning'));
+    await tester.tap(find.text('Continue learning'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Evaluation Complete'), findsNothing);
+    expect(find.text('Posttest Analysis'), findsNothing);
     expect(find.text('Continue session'), findsOneWidget);
     expect(preferences.getString('auth.lastProtectedRoute'), '/home');
+  });
+
+  testWidgets('workspace start posttest warns before module completion', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final workspaceRepository = _RecordingWorkspaceRepository();
+    await tester.pumpWidget(
+      await _buildSignedInTestApp(
+        homeRepository: const _WorkspaceReadyHomeRepository(),
+        workspaceRepository: workspaceRepository,
+        educationLevel: 'elementary',
+        gradeLevel: '4',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Continue session'));
+    await tester.tap(find.text('Continue session'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Start Posttest'));
+    await tester.tap(find.text('Start Posttest'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Workspace not finished yet'), findsOneWidget);
+    expect(find.text('Keep learning'), findsOneWidget);
+    expect(find.text('Start posttest'), findsOneWidget);
+
+    await tester.tap(find.text('Start posttest'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Posttest Perkalian'), findsWidgets);
+    expect(
+      workspaceRepository.moduleStateUpdates,
+      isNot(contains('completed')),
+    );
   });
 
   testWidgets('learning report detail renders backend payload', (tester) async {
@@ -252,6 +295,8 @@ void main() {
 
     expect(find.text(_reportRangeLabelForTest(thisWeek)), findsOneWidget);
     expect(find.text('Learning performance'), findsOneWidget);
+    expect(find.text('Learning gain'), findsOneWidget);
+    expect(find.text('+16%'), findsOneWidget);
     expect(find.text('Unlocked this week'), findsOneWidget);
     expect(find.text('Upcoming recommendations'), findsOneWidget);
     expect(find.text('Consistency is compounding.'), findsOneWidget);
@@ -287,15 +332,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Perkalian'), findsWidgets);
-    expect(find.text('Lanjut'), findsOneWidget);
+    expect(find.text('Submit answer'), findsOneWidget);
 
     await tester.ensureVisible(find.text('12'));
     await tester.tap(find.text('12'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Lanjut'));
-    await tester.tap(find.text('Lanjut'));
+    await tester.ensureVisible(find.text('Add reasoning / sketch'));
+    await tester.tap(find.text('Add reasoning / sketch'));
     await tester.pumpAndSettle();
-    expect(find.text('Help us understand your thinking'), findsOneWidget);
+    expect(find.text('Add reasoning or canvas work'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).last, '4 groups of 3 is 12');
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
@@ -305,8 +350,8 @@ void main() {
     await tester.ensureVisible(find.text('22'));
     await tester.tap(find.text('22'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Lanjut'));
-    await tester.tap(find.text('Lanjut'));
+    await tester.ensureVisible(find.text('Add reasoning / sketch'));
+    await tester.tap(find.text('Add reasoning / sketch'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -511,21 +556,12 @@ class _FakeLearningGoalRepository implements LearningGoalRepository {
   }
 
   @override
-  Future<List<LearningConceptSuggestion>> searchMaterials({
-    required String query,
+  Future<LearningGoalBootstrap> createLearningGoalFromConcept({
+    String? conceptId,
+    String? conceptCode,
     String? subjectCode,
   }) async {
-    return const [
-      LearningConceptSuggestion(
-        conceptId: 'concept-1',
-        conceptCode: 'math.multiplication',
-        title: 'Perkalian',
-        subject: 'Matematika',
-        description: 'Memahami perkalian sebagai kelompok sama banyak.',
-        subjectCode: 'math',
-        gradeBand: 'primary',
-      ),
-    ];
+    return const LearningGoalBootstrap(learningGoalId: 'goal-1');
   }
 
   @override
@@ -549,6 +585,48 @@ class _FakeHomeRepository implements HomeRepository {
       selectedSubjects: ['Math', 'Physics'],
       availableSubjects: ['Math', 'Physics', 'Chemistry'],
       onboardingCompleted: true,
+    );
+  }
+
+  @override
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts() async => const [];
+
+  @override
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  }) async {
+    return HomeMediaArtifact(
+      id: artifactId,
+      title: 'Test artifact',
+      subtitle: 'Widget test',
+      status: 'ready',
+      durationSeconds: 0,
+      durationLabel: '0m',
+      transcript: '',
+      notes: const [],
+      artifactType: 'video',
+    );
+  }
+
+  @override
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  }) async {
+    return AssessmentDashboard(
+      learningGoalId: learningGoalId,
+      targetTitle: 'Spaced review',
+      state: 'mastered',
+      comparison: const AssessmentDashboardComparison(
+        available: true,
+        pretestScorePercent: 72,
+        posttestScorePercent: 88,
+        learningGainPercent: 16,
+        pairedConceptCount: 1,
+      ),
+      primaryAction: const ActionTarget(
+        label: 'Continue learning',
+        actionType: 'continue_learning',
+      ),
     );
   }
 
@@ -652,204 +730,6 @@ class _FakeHomeRepository implements HomeRepository {
   }
 
   @override
-  Future<DailyEvaluationSession> startPosttest({
-    String? learningGoalId,
-    String? trackId,
-  }) async {
-    return const DailyEvaluationSession(
-      sessionId: 'posttest-perkalian-widget-test',
-      title: 'Posttest Perkalian',
-      language: 'id',
-      reviewDue: ReviewDueSummary(
-        title: 'Posttest siap',
-        dueCount: 10,
-        summary: '10 soal untuk validasi mastery perkalian.',
-        actionLabel: 'Mulai',
-      ),
-      progress: DailyEvaluationProgress(
-        current: 1,
-        total: 10,
-        completed: 0,
-        label: '1 of 10',
-      ),
-      questions: [
-        PretestQuestion(
-          id: 'posttest-1',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '7 x 4 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '28'),
-            PretestOption(id: 'B', label: 'B', text: '24'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-2',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '6 x 9 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '54'),
-            PretestOption(id: 'B', label: 'B', text: '45'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-3',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: 'Mana bentuk penjumlahan berulang untuk 3 x 7?',
-          helper: 'Pilih bentuk yang setara.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '7 + 7 + 7'),
-            PretestOption(id: 'B', label: 'B', text: '3 + 3 + 3'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-4',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '13 x 2 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '26'),
-            PretestOption(id: 'B', label: 'B', text: '24'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-5',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '6 x 8 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '48'),
-            PretestOption(id: 'B', label: 'B', text: '42'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-6',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '7 x 6 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '42'),
-            PretestOption(id: 'B', label: 'B', text: '36'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-7',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: 'Mana bentuk perkalian dari 6 kelompok berisi 7?',
-          helper: 'Pilih bentuk perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '6 x 7'),
-            PretestOption(id: 'B', label: 'B', text: '6 + 7'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-8',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '4 x 8 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '32'),
-            PretestOption(id: 'B', label: 'B', text: '28'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-9',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '6 x 4 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '24'),
-            PretestOption(id: 'B', label: 'B', text: '20'),
-          ],
-        ),
-        PretestQuestion(
-          id: 'posttest-10',
-          stepLabel: 'Posttest',
-          topic: 'Perkalian',
-          prompt: '5 x 8 = ?',
-          helper: 'Pilih hasil perkalian.',
-          options: [
-            PretestOption(id: 'A', label: 'A', text: '40'),
-            PretestOption(id: 'B', label: 'B', text: '45'),
-          ],
-        ),
-      ],
-    );
-  }
-
-  @override
-  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
-    required String sessionId,
-    required String questionId,
-    required String optionId,
-    required int confidence,
-  }) async {
-    return DailyEvaluationAnswerResult(
-      attemptId: 'attempt-$questionId',
-      isCorrect: true,
-      nextReviewLabel: '',
-      masteryDelta: 0,
-      sessionStatus: questionId == 'posttest-10' ? 'completed' : 'active',
-      completed: questionId == 'posttest-10',
-    );
-  }
-
-  @override
-  Future<DailyEvaluationResult> finalizePosttest({
-    required String sessionId,
-  }) async {
-    return const DailyEvaluationResult(
-      sessionId: 'posttest-perkalian-widget-test',
-      title: 'Posttest Perkalian',
-      status: 'completed',
-      source: 'widget_test',
-      scorePercent: 100,
-      reviewedCount: 10,
-      correctCount: 10,
-      reviewAgainCount: 0,
-      reviewedConcepts: [
-        ReviewedConcept(
-          title: 'Perkalian',
-          statusLabel: 'Strong',
-          masteryScore: 1,
-        ),
-      ],
-      spacedRepetitionImpact: SpacedRepetitionImpact(
-        retentionLiftPercent: 100,
-        daysUntilNextReview: 7,
-        summary: 'Posttest: 10 jawaban benar dari 10 soal.',
-      ),
-      nextReview: DailyEvaluationNextReview(
-        label: 'Review ringan',
-        dueDate: '',
-        intervalDays: 7,
-      ),
-      recommendedNextActions: [
-        RecommendedNextAction(
-          title: 'Lanjut materi berikutnya',
-          actionType: 'continue_learning',
-          reason: 'Semua soal posttest lulus.',
-        ),
-      ],
-      backToHome: ActionTarget(
-        label: 'Kembali ke Home',
-        actionType: 'navigate',
-        target: '/home',
-      ),
-    );
-  }
-
-  @override
   Future<WeeklyLearningReport> fetchWeeklyLearningReport({
     DateTime? start,
     DateTime? end,
@@ -865,6 +745,10 @@ class _FakeHomeRepository implements HomeRepository {
       status: 'complete',
       source: 'widget_test',
       score: 88,
+      pretestScorePercent: 72,
+      posttestScorePercent: 88,
+      learningGainPercent: 16,
+      pairedConceptCount: 1,
       fixedGaps: 12,
       fixedGapsDelta: 4,
       remainingGaps: 5,
@@ -920,6 +804,81 @@ class _FakeHomeRepository implements HomeRepository {
       ),
     );
   }
+
+  @override
+  Future<DailyEvaluationSession> startPosttest({
+    String? learningGoalId,
+    String? trackId,
+    String? moduleId,
+  }) async {
+    return DailyEvaluationSession(
+      sessionId: 'posttest-widget-test',
+      title: 'Posttest Perkalian',
+      status: 'active',
+      language: 'id',
+      source: 'widget_test',
+      reviewDue: const ReviewDueSummary(
+        title: 'Posttest siap',
+        dueCount: 10,
+        summary: '10 soal untuk validasi mastery.',
+        actionLabel: 'Mulai',
+      ),
+      progress: const DailyEvaluationProgress(
+        current: 1,
+        total: 10,
+        completed: 0,
+        label: '1 of 10',
+      ),
+      questions: _posttestQuestionsForWidgetTest(),
+    );
+  }
+
+  @override
+  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
+  }) async {
+    return const DailyEvaluationAnswerResult(
+      attemptId: 'posttest-attempt-widget-test',
+      isCorrect: true,
+      nextReviewLabel: '',
+      masteryDelta: 0,
+      sessionStatus: 'active',
+      completed: false,
+    );
+  }
+
+  @override
+  Future<AdaptivePosttestResult> finalizePosttest({
+    required String sessionId,
+  }) async {
+    return const AdaptivePosttestResult(
+      sessionId: 'posttest-widget-test',
+      status: 'completed',
+      retakeRequiredConcepts: [],
+      nodeResults: [
+        PosttestNodeResult(
+          conceptCode: 'math.multiplication',
+          conceptTitle: 'Perkalian',
+          totalQuestions: 10,
+          answeredCount: 10,
+          correctCount: 10,
+          answerPercent: 100,
+          evidencePercent: 100,
+          scorePercent: 100,
+          confidencePercent: 68,
+          scaledScore: 10,
+          passed: true,
+          retakeRequired: false,
+        ),
+      ],
+    );
+  }
 }
 
 class _WorkspaceReadyHomeRepository extends _FakeHomeRepository {
@@ -951,6 +910,45 @@ class _WorkspaceReadyHomeRepository extends _FakeHomeRepository {
   }
 }
 
+List<PretestQuestion> _posttestQuestionsForWidgetTest() {
+  const answers = [
+    '28',
+    '54',
+    '7 + 7 + 7',
+    '26',
+    '48',
+    '42',
+    '6 x 7',
+    '32',
+    '24',
+    '40',
+  ];
+  return [
+    for (var index = 0; index < answers.length; index++)
+      PretestQuestion(
+        id: 'posttest-widget-${index + 1}',
+        stepLabel: '${index + 1} / ${answers.length}',
+        topic: 'Perkalian',
+        prompt: 'Soal posttest perkalian ${index + 1}',
+        helper: 'Pilih jawaban yang benar.',
+        progressCurrent: index + 1,
+        progressMax: answers.length,
+        options: [
+          PretestOption(
+            id: 'posttest-widget-${index + 1}-a',
+            label: 'A',
+            text: answers[index],
+          ),
+          PretestOption(
+            id: 'posttest-widget-${index + 1}-b',
+            label: 'B',
+            text: 'Pilihan lain ${index + 1}',
+          ),
+        ],
+      ),
+  ];
+}
+
 class _FakeWorkspaceRepository implements WorkspaceRepository {
   const _FakeWorkspaceRepository();
 
@@ -962,7 +960,7 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     bool startNewSession = false,
   }) async {
     return WorkspaceSession(
-      id: 'workspace-perkalian',
+      id: workspaceSessionId ?? 'workspace-perkalian',
       trackId: trackId,
       moduleId: moduleId,
       currentTopic: 'Perkalian',
@@ -1064,10 +1062,10 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     Map<String, dynamic> metadata = const {},
   }) async {
     final event = WorkspaceEvent(
-      id: 'event-video',
+      id: 'event-media-generated',
       workspaceId: workspaceId,
       eventIndex: 2,
-      eventType: 'generate_video',
+      eventType: 'media_generated',
       actorType: 'system',
       textPayload: '',
       metadata: metadata,
@@ -1083,9 +1081,9 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     );
     return WorkspaceGenerateVideoResult(
       queue: const WorkspaceAnimationQueue(
-        jobId: 'job-video',
-        artifactId: 'artifact-video',
-        status: 'ready',
+        jobId: 'job-widget-test',
+        artifactId: 'artifact-widget-test',
+        status: 'queued',
       ),
       event: event,
       workspace: workspace,
@@ -1101,7 +1099,7 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
       status: 'ready',
       progress: 100,
       message: 'Ready',
-      artifactId: 'artifact-video',
+      artifactId: 'artifact-widget-test',
     );
   }
 
@@ -1111,6 +1109,21 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     required String moduleId,
     required String status,
   }) async {}
+}
+
+class _RecordingWorkspaceRepository extends _FakeWorkspaceRepository {
+  _RecordingWorkspaceRepository();
+
+  final List<String> moduleStateUpdates = [];
+
+  @override
+  Future<void> updateModuleState({
+    required String trackId,
+    required String moduleId,
+    required String status,
+  }) async {
+    moduleStateUpdates.add(status);
+  }
 }
 
 class _PrematureCompletedDailyRepository extends _FakeHomeRepository {

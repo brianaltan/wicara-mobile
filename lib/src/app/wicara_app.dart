@@ -4,8 +4,6 @@ import '../core/theme/wicara_theme.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/sign_in_page.dart';
 import '../features/curriculum/domain/curriculum_repository.dart';
-import '../features/edge_ai/presentation/edge_ai_readiness_guard.dart';
-import '../features/edge_ai/presentation/edge_ai_settings_page.dart';
 import '../features/home/domain/home_repository.dart';
 import '../features/home/domain/home_snapshot.dart';
 import '../features/home/presentation/app_home_page.dart';
@@ -32,9 +30,6 @@ class WicaraApp extends StatefulWidget {
     required this.pretestRepository,
     this.workspaceRepository,
     this.homeRepository,
-    this.edgeLiteRtForceLocalForPilot = true,
-    this.edgeCloudFallbackAllowed = false,
-    this.edgeDebugRouteTrace = false,
     this.initialRoute = AppRoutes.landing,
     super.key,
   });
@@ -47,9 +42,6 @@ class WicaraApp extends StatefulWidget {
   final OnboardingRepository onboardingRepository;
   final PretestRepository pretestRepository;
   final WorkspaceRepository? workspaceRepository;
-  final bool edgeLiteRtForceLocalForPilot;
-  final bool edgeCloudFallbackAllowed;
-  final bool edgeDebugRouteTrace;
   final String initialRoute;
 
   @override
@@ -175,15 +167,13 @@ class _WicaraAppState extends State<WicaraApp> {
           learningGoalRepository: widget.learningGoalRepository,
           onboardingController: widget.onboardingController,
         ),
-        AppRoutes.edgeAiSettings => const EdgeAiSettingsPage(),
-        AppRoutes.pretest => EdgeAiReadinessGuard(
-          child: PretestPage(
-            pretestRepository: widget.pretestRepository,
-            onboardingController: widget.onboardingController,
-          ),
+        AppRoutes.pretest => PretestPage(
+          pretestRepository: widget.pretestRepository,
+          onboardingController: widget.onboardingController,
         ),
         AppRoutes.home => AppHomePage(
           curriculumRepository: widget.curriculumRepository,
+          learningGoalRepository: widget.learningGoalRepository,
           homeRepository:
               widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
@@ -196,9 +186,6 @@ class _WicaraAppState extends State<WicaraApp> {
               widget.workspaceRepository ??
               const _UnavailableWorkspaceRepository(),
           homeRepository: widget.homeRepository,
-          edgeForceLocalForPilot: widget.edgeLiteRtForceLocalForPilot,
-          edgeCloudFallbackAllowed: widget.edgeCloudFallbackAllowed,
-          showEdgeRouteTrace: widget.edgeDebugRouteTrace,
           routeArguments: settings.arguments is WorkspaceRouteArguments
               ? settings.arguments! as WorkspaceRouteArguments
               : null,
@@ -279,12 +266,25 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
+  Future<WorkspaceSession> advancePhase({
+    required String workspaceId,
+    bool force = false,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceSession> startPosttest({required String workspaceId}) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
   Future<WorkspaceGenerateVideoResult> generateVideo({
     required String workspaceId,
     String generationMode = 'context_auto',
     String? templateId,
     Map<String, dynamic>? specJson,
-    String language = 'id',
+    String language = 'en',
     String qualityProfile = 'standard',
     String? conceptId,
     Map<String, dynamic> metadata = const {},
@@ -354,6 +354,13 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
   Future<DailyEvaluationSession> fetchDailyEvaluation() {
     throw UnimplementedError('HomeRepository is not configured.');
   }
@@ -377,8 +384,10 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<DailyEvaluationSession> startPosttest({
+    String? workspaceSessionId,
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
@@ -389,12 +398,15 @@ class _UnavailableHomeRepository implements HomeRepository {
     required String questionId,
     required String optionId,
     required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 
   @override
-  Future<DailyEvaluationResult> finalizePosttest({required String sessionId}) {
+  Future<AdaptivePosttestResult> finalizePosttest({required String sessionId}) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 

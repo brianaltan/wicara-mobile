@@ -426,6 +426,164 @@ class ActionTarget {
   final String? target;
 }
 
+class AssessmentDashboard {
+  const AssessmentDashboard({
+    required this.learningGoalId,
+    required this.targetTitle,
+    required this.state,
+    required this.comparison,
+    required this.primaryAction,
+    this.pretest,
+    this.posttest,
+    this.recommendations = const [],
+  });
+
+  final String learningGoalId;
+  final String targetTitle;
+  final String state;
+  final AssessmentDashboardPretest? pretest;
+  final AssessmentDashboardPosttest? posttest;
+  final AssessmentDashboardComparison comparison;
+  final ActionTarget primaryAction;
+  final List<String> recommendations;
+}
+
+class AssessmentDashboardPretest {
+  const AssessmentDashboardPretest({
+    this.sessionId,
+    required this.status,
+    required this.scorePercent,
+    required this.overallMasteryPercent,
+    required this.confidencePercent,
+    required this.recommendedPath,
+    required this.summary,
+    this.strengths = const [],
+    this.gaps = const [],
+    this.evidenceNotes = const [],
+  });
+
+  final String? sessionId;
+  final String status;
+  final double scorePercent;
+  final double overallMasteryPercent;
+  final double confidencePercent;
+  final String recommendedPath;
+  final String summary;
+  final List<String> strengths;
+  final List<String> gaps;
+  final List<String> evidenceNotes;
+}
+
+class AssessmentDashboardPosttest {
+  const AssessmentDashboardPosttest({
+    this.sessionId,
+    required this.status,
+    required this.answerPercent,
+    required this.evidencePercent,
+    required this.scorePercent,
+    required this.confidencePercent,
+    required this.passedNodeCount,
+    required this.totalNodeCount,
+    required this.passed,
+    this.retakeRequiredConcepts = const [],
+    this.nodes = const [],
+  });
+
+  final String? sessionId;
+  final String status;
+  final double answerPercent;
+  final double evidencePercent;
+  final double scorePercent;
+  final double confidencePercent;
+  final int passedNodeCount;
+  final int totalNodeCount;
+  final bool passed;
+  final List<String> retakeRequiredConcepts;
+  final List<PosttestNodeResult> nodes;
+}
+
+class AssessmentDashboardComparison {
+  const AssessmentDashboardComparison({
+    required this.available,
+    this.pretestScorePercent,
+    this.posttestScorePercent,
+    this.learningGainPercent,
+    this.pairedConceptCount = 0,
+  });
+
+  final bool available;
+  final int? pretestScorePercent;
+  final int? posttestScorePercent;
+  final int? learningGainPercent;
+  final int pairedConceptCount;
+}
+
+class PosttestNodeResult {
+  const PosttestNodeResult({
+    this.conceptId,
+    required this.conceptCode,
+    required this.conceptTitle,
+    required this.totalQuestions,
+    required this.answeredCount,
+    required this.correctCount,
+    required this.answerPercent,
+    required this.evidencePercent,
+    required this.scorePercent,
+    required this.confidencePercent,
+    required this.scaledScore,
+    required this.passed,
+    required this.retakeRequired,
+    this.metricSource = 'adaptive_posttest_evidence',
+  });
+
+  final String? conceptId;
+  final String conceptCode;
+  final String conceptTitle;
+  final int totalQuestions;
+  final int answeredCount;
+  final int correctCount;
+  final double answerPercent;
+  final double evidencePercent;
+  final double scorePercent;
+  final double confidencePercent;
+  final double scaledScore;
+  final bool passed;
+  final bool retakeRequired;
+  final String metricSource;
+}
+
+class AdaptivePosttestResult {
+  const AdaptivePosttestResult({
+    required this.sessionId,
+    required this.status,
+    required this.nodeResults,
+    required this.retakeRequiredConcepts,
+  });
+
+  final String sessionId;
+  final String status;
+  final List<PosttestNodeResult> nodeResults;
+  final List<String> retakeRequiredConcepts;
+
+  int get totalNodeCount => nodeResults.length;
+
+  int get passedNodeCount => nodeResults.where((node) => node.passed).length;
+
+  bool get passed => totalNodeCount > 0 && passedNodeCount == totalNodeCount;
+
+  double get answerPercent =>
+      _averagePercent(nodeResults.map((node) => node.answerPercent));
+
+  double get evidencePercent =>
+      _averagePercent(nodeResults.map((node) => node.evidencePercent));
+
+  double get scorePercent =>
+      _averagePercent(nodeResults.map((node) => node.scorePercent));
+
+  double get confidencePercent =>
+      _averagePercent(nodeResults.map((node) => node.confidencePercent));
+}
+
 class WeeklyLearningReport {
   const WeeklyLearningReport({
     required this.rangeLabel,
@@ -434,6 +592,10 @@ class WeeklyLearningReport {
     required this.status,
     required this.source,
     required this.score,
+    this.pretestScorePercent,
+    this.posttestScorePercent,
+    this.learningGainPercent,
+    this.pairedConceptCount = 0,
     required this.fixedGaps,
     required this.fixedGapsDelta,
     required this.remainingGaps,
@@ -446,6 +608,11 @@ class WeeklyLearningReport {
     required this.unlockedThisWeek,
     required this.upcomingRecommendations,
     required this.consistencySummary,
+    this.dataQuality = const ReportDataQuality(),
+    this.effortImpact = const ReportEffortImpact(),
+    this.conceptMovers = const [],
+    this.weeklyTimeline = const [],
+    this.weeklyNarrative = const WeeklyNarrative(),
   });
 
   final String rangeLabel;
@@ -454,6 +621,10 @@ class WeeklyLearningReport {
   final String status;
   final String source;
   final int score;
+  final int? pretestScorePercent;
+  final int? posttestScorePercent;
+  final int? learningGainPercent;
+  final int pairedConceptCount;
   final int fixedGaps;
   final int fixedGapsDelta;
   final int remainingGaps;
@@ -466,6 +637,11 @@ class WeeklyLearningReport {
   final UnlockedConceptSummary unlockedThisWeek;
   final List<RecommendedNextAction> upcomingRecommendations;
   final ConsistencySummary consistencySummary;
+  final ReportDataQuality dataQuality;
+  final ReportEffortImpact effortImpact;
+  final List<ReportConceptMover> conceptMovers;
+  final List<WeeklyTimelinePoint> weeklyTimeline;
+  final WeeklyNarrative weeklyNarrative;
 }
 
 class ReportPerformanceGroup {
@@ -513,4 +689,110 @@ class ConsistencySummary {
   final String title;
   final String narrative;
   final String signal;
+}
+
+class ReportDataQuality {
+  const ReportDataQuality({
+    this.confidenceLabel = 'low',
+    this.confidenceScore = 0,
+    this.coverageStatus = 'seeded_baseline',
+    this.attemptsCovered = 0,
+    this.pairedConcepts = 0,
+    this.notes = const [],
+  });
+
+  final String confidenceLabel;
+  final int confidenceScore;
+  final String coverageStatus;
+  final int attemptsCovered;
+  final int pairedConcepts;
+  final List<String> notes;
+}
+
+class ReportEffortImpact {
+  const ReportEffortImpact({
+    this.attemptCount = 0,
+    this.activeDays = 0,
+    this.retentionMinutes = 0,
+    this.reviewDueCount = 0,
+    this.newGapsCount = 0,
+    this.impactScoreDelta = 0,
+    this.efficiencyLabel = 'no_signal',
+    this.narrative = '',
+  });
+
+  final int attemptCount;
+  final int activeDays;
+  final int retentionMinutes;
+  final int reviewDueCount;
+  final int newGapsCount;
+  final int impactScoreDelta;
+  final String efficiencyLabel;
+  final String narrative;
+}
+
+class ReportConceptMover {
+  const ReportConceptMover({
+    this.conceptId,
+    required this.title,
+    required this.movementType,
+    required this.status,
+    required this.masteryBeforePercent,
+    required this.masteryAfterPercent,
+    required this.masteryDeltaPercent,
+    required this.evidenceDelta,
+    this.nextReviewDate,
+    required this.reason,
+  });
+
+  final String? conceptId;
+  final String title;
+  final String movementType;
+  final String status;
+  final int masteryBeforePercent;
+  final int masteryAfterPercent;
+  final int masteryDeltaPercent;
+  final int evidenceDelta;
+  final String? nextReviewDate;
+  final String reason;
+}
+
+class WeeklyTimelinePoint {
+  const WeeklyTimelinePoint({
+    required this.label,
+    required this.rangeStart,
+    required this.rangeEnd,
+    required this.score,
+    required this.fixedGaps,
+    required this.remainingGaps,
+    required this.attemptCount,
+  });
+
+  final String label;
+  final String rangeStart;
+  final String rangeEnd;
+  final int score;
+  final int fixedGaps;
+  final int remainingGaps;
+  final int attemptCount;
+}
+
+class WeeklyNarrative {
+  const WeeklyNarrative({
+    this.improved = '',
+    this.stagnant = '',
+    this.focus = '',
+  });
+
+  final String improved;
+  final String stagnant;
+  final String focus;
+}
+
+double _averagePercent(Iterable<double> values) {
+  final rows = values.toList(growable: false);
+  if (rows.isEmpty) {
+    return 0;
+  }
+  return rows.reduce((value, element) => value + element) / rows.length;
 }

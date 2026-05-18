@@ -17,11 +17,17 @@ class WorkspaceCompletionResult {
     required this.trackId,
     required this.moduleId,
     required this.moduleTitle,
+    required this.moduleCompleted,
+    required this.requestedEarlyPosttest,
+    this.workspaceSessionId,
   });
 
   final String trackId;
   final String moduleId;
   final String moduleTitle;
+  final bool moduleCompleted;
+  final bool requestedEarlyPosttest;
+  final String? workspaceSessionId;
 }
 
 class WorkspaceSession {
@@ -33,6 +39,11 @@ class WorkspaceSession {
     required this.contentMode,
     required this.status,
     required this.events,
+    required this.currentPhase,
+    required this.phaseTransitionPending,
+    required this.posttestEligible,
+    this.currentTopicDescription = '',
+    this.learnerLanguage = 'en',
     this.latestMedia,
   });
 
@@ -40,9 +51,14 @@ class WorkspaceSession {
   final String trackId;
   final String moduleId;
   final String currentTopic;
+  final String currentTopicDescription;
+  final String learnerLanguage;
   final String contentMode;
   final String status;
   final List<WorkspaceEvent> events;
+  final String currentPhase;
+  final bool phaseTransitionPending;
+  final bool posttestEligible;
   final WorkspaceMediaArtifact? latestMedia;
 }
 
@@ -95,11 +111,15 @@ class WorkspaceTutorResponse {
     required this.text,
     required this.intent,
     required this.nextActions,
+    required this.nextPhaseReady,
+    this.phaseReasoning,
   });
 
   final String text;
   final String intent;
   final List<String> nextActions;
+  final bool nextPhaseReady;
+  final String? phaseReasoning;
 }
 
 class WorkspaceMasteryUpdate {

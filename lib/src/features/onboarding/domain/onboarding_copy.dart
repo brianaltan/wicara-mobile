@@ -4,7 +4,20 @@ class OnboardingCopy {
   const OnboardingCopy._(this.isIndonesian);
 
   factory OnboardingCopy.forLanguage(String preferredLanguage) {
-    return OnboardingCopy._(preferredLanguage == 'Bahasa Indonesia');
+    final normalized = preferredLanguage.trim().toLowerCase().replaceAll(
+      '_',
+      '-',
+    );
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'ind' ||
+        normalized == 'indo' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa' ||
+        normalized == 'bahasa indonesia' ||
+        normalized.contains('indo');
+    return OnboardingCopy._(isIndonesian);
   }
 
   final bool isIndonesian;
@@ -122,6 +135,24 @@ class OnboardingCopy {
       isIndonesian ? 'Selesaikan Evaluasi' : 'Finish Daily Evals';
   String get nextQuestionLabel =>
       isIndonesian ? 'Soal berikutnya' : 'Next question';
+  String dailyQuestionProgressLabel(int current, int total) =>
+      isIndonesian ? '$current dari $total' : '$current of $total';
+  String get reviewDueLabel =>
+      isIndonesian ? 'Review yang jatuh tempo' : 'Review due';
+  String reviewDueSummaryLabel(int count) => isIndonesian
+      ? '$count item siap direview'
+      : '$count items ready for review';
+  String get reviewNowLabel => isIndonesian ? 'Review sekarang' : 'Review now';
+  String get retentionForecastLabel =>
+      isIndonesian ? 'Perkiraan retensimu' : 'Your retention forecast';
+  String get retentionForecastBasisLabel => isIndonesian
+      ? 'Berdasarkan MVP kurva lupa Ebbinghaus.'
+      : 'Based on the Ebbinghaus forgetting curve MVP.';
+  String get retentionCoachingLabel => isIndonesian
+      ? 'Terus review untuk menaikkan kurva dan memperkuat retensi jangka panjang.'
+      : 'Keep reviewing to move the curve up and improve long-term retention.';
+  String get highImpactLabel => isIndonesian ? 'Dampak tinggi' : 'High impact';
+  String get maintainedLabel => isIndonesian ? 'Terjaga' : 'Maintained';
   String get evaluationCompleteLabel =>
       isIndonesian ? 'Evaluasi Selesai 🎉' : 'Evaluation Complete 🎉';
   String get evaluationCompleteSubtitle => isIndonesian
@@ -134,6 +165,16 @@ class OnboardingCopy {
   String get scoreLabel => isIndonesian ? 'Skor' : 'Score';
   String get reviewedConceptsLabel =>
       isIndonesian ? 'Konsep yang ditinjau' : 'Reviewed concepts';
+  String get noReviewedConceptsLabel => isIndonesian
+      ? 'Belum ada konsep yang ditinjau'
+      : 'No concepts reviewed yet';
+  String get pendingLabel => isIndonesian ? 'Menunggu' : 'Pending';
+  String get recommendedNextActionsLabel => isIndonesian
+      ? 'Rekomendasi langkah berikutnya'
+      : 'Recommended next actions';
+  String get continueLearningReason => isIndonesian
+      ? 'Lanjutkan ke jalur belajarmu.'
+      : 'Go to your learning path.';
   String get statusGoodLabel => isIndonesian ? 'Bagus' : 'Good';
   String get statusStrongLabel => isIndonesian ? 'Kuat' : 'Strong';
   String get statusReviewLabel => isIndonesian ? 'Tinjau' : 'Review';
@@ -201,16 +242,15 @@ class OnboardingCopy {
   String get knowledgeMapLabel =>
       isIndonesian ? 'Peta Pengetahuan' : 'Knowledge Map';
   String get knowledgeMapDescription => isIndonesian
-      ? 'Jelajahi fase Kurikulum Merdeka, domain mata pelajaran, dan jalur prasyarat.'
-      : 'Explore Kurikulum Merdeka phases, subject domains, and prerequisite paths.';
+      ? 'Jelajahi domain mata pelajaran dan jalur prasyarat.'
+      : 'Explore subject domains and prerequisite paths.';
   String get loadingCurriculumLabel => isIndonesian
       ? 'Memuat kurikulum dari backend...'
       : 'Loading curriculum from backend...';
   String get fallbackGraphLabel =>
       isIndonesian ? 'Graf fallback statis' : 'Static fallback graph';
-  String get liveCurriculumGraphLabel => isIndonesian
-      ? 'Graf Kurikulum Merdeka langsung'
-      : 'Live Kurikulum Merdeka graph';
+  String get liveCurriculumGraphLabel =>
+      isIndonesian ? 'Graf pengetahuan langsung' : 'Live knowledge graph';
   String nodeCountLabel(int count) =>
       isIndonesian ? '$count node' : '$count nodes';
   String get prerequisiteLayerLabel =>
@@ -235,13 +275,12 @@ class OnboardingCopy {
   String get graphOfGraphsHint => isIndonesian
       ? 'Tautan Graph of Graphs akan terlihat saat tersedia.'
       : 'Graph of Graphs links are visible when available.';
-  String get conceptBridgeFallbackLabel => isIndonesian
-      ? 'Jembatan konsep Kurikulum Merdeka'
-      : 'Kurikulum Merdeka concept bridge';
+  String get conceptBridgeFallbackLabel =>
+      isIndonesian ? 'Jembatan konsep' : 'Concept bridge';
   String get relatedBadgeLabel => isIndonesian ? 'TERKAIT' : 'RELATED';
   String get conceptFallbackDescription => isIndonesian
-      ? 'Konsep dalam graf prasyarat Kurikulum Merdeka.'
-      : 'Concept in the Kurikulum Merdeka prerequisite graph.';
+      ? 'Konsep dalam graf prasyarat.'
+      : 'Concept in the prerequisite graph.';
   String get languageLabel => isIndonesian ? 'Bahasa' : 'Language';
   String get appTitle => 'Wicara';
   String get getStartedLabel => isIndonesian ? 'Mulai' : 'Get started';

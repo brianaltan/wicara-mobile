@@ -89,6 +89,18 @@ class ApiHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  }) async {
+    final token = _requireToken();
+    final json = await _apiClient.getJson(
+      '/api/v1/learning-goals/$learningGoalId/assessment-dashboard',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _assessmentDashboardFromJson(json);
+  }
+
+  @override
   Future<DailyEvaluationSession> fetchDailyEvaluation() async {
     final token = _requireToken();
     final json = await _apiClient.getJson(
@@ -108,7 +120,7 @@ class ApiHomeRepository implements HomeRepository {
         : (parsedQuestions.isEmpty ? null : parsedQuestions.first);
     return DailyEvaluationSession(
       sessionId: _string(json['session_id']),
-      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      title: _string(json['title']),
       status: _string(json['status']),
       language: _stringWithFallback(json['language'], 'en'),
       source: _string(json['source']),
@@ -164,21 +176,30 @@ class ApiHomeRepository implements HomeRepository {
 
   @override
   Future<DailyEvaluationSession> startPosttest({
+    String? workspaceSessionId,
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) async {
     final token = _requireToken();
     final body = <String, dynamic>{};
+    if ((workspaceSessionId ?? '').isNotEmpty) {
+      body['workspace_session_id'] = workspaceSessionId;
+    }
     if ((learningGoalId ?? '').isNotEmpty) {
       body['learning_goal_id'] = learningGoalId;
     }
     if ((trackId ?? '').isNotEmpty) {
       body['track_id'] = trackId;
     }
+    if ((moduleId ?? '').isNotEmpty) {
+      body['module_id'] = moduleId;
+    }
     final json = await _apiClient.postJson(
       '/api/v1/posttests/start',
       headers: {'Authorization': 'Bearer $token'},
       body: body,
+      timeout: const Duration(seconds: 300),
     );
     return _posttestSessionFromJson(json);
   }
@@ -189,6 +210,9 @@ class ApiHomeRepository implements HomeRepository {
     required String questionId,
     required String optionId,
     required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
   }) async {
     final token = _requireToken();
     final json = await _apiClient.postJson(
@@ -198,6 +222,9 @@ class ApiHomeRepository implements HomeRepository {
         'question_id': questionId,
         'selected_option_id': optionId,
         'confidence': confidence,
+        'typed_reasoning': typedReasoning,
+        'canvas_asset_id': canvasAssetId,
+        'used_canvas': usedCanvas,
       },
     );
     return DailyEvaluationAnswerResult(
@@ -211,7 +238,7 @@ class ApiHomeRepository implements HomeRepository {
   }
 
   @override
-  Future<DailyEvaluationResult> finalizePosttest({
+  Future<AdaptivePosttestResult> finalizePosttest({
     required String sessionId,
   }) async {
     final token = _requireToken();
@@ -298,10 +325,10 @@ class ApiHomeRepository implements HomeRepository {
   ReviewDueSummary _reviewDueFromJson(Object? value) {
     final json = _map(value);
     return ReviewDueSummary(
-      title: _stringWithFallback(json['title'], 'Review due'),
+      title: _string(json['title']),
       dueCount: _int(json['due_count']),
       summary: _string(json['summary']),
-      actionLabel: _stringWithFallback(json['action_label'], 'Start'),
+      actionLabel: _string(json['action_label']),
     );
   }
 
@@ -327,7 +354,7 @@ class ApiHomeRepository implements HomeRepository {
     final json = _map(value);
     final rawPoints = json['points'];
     return RetentionForecast(
-      title: _stringWithFallback(json['title'], 'Your retention forecast'),
+      title: _string(json['title']),
       basis: _string(json['basis']),
       points: rawPoints is List
           ? rawPoints
@@ -348,10 +375,10 @@ class ApiHomeRepository implements HomeRepository {
   RecommendationCallout _recommendationCalloutFromJson(Object? value) {
     final json = _map(value);
     return RecommendationCallout(
-      title: _stringWithFallback(json['title'], 'Review now'),
+      title: _string(json['title']),
       message: _string(json['message']),
       impactLabel: _string(json['impact_label']),
-      actionLabel: _stringWithFallback(json['action_label'], 'Review now'),
+      actionLabel: _string(json['action_label']),
     );
   }
 
@@ -360,7 +387,7 @@ class ApiHomeRepository implements HomeRepository {
   ) {
     return DailyEvaluationResult(
       sessionId: _string(json['session_id']),
-      title: _stringWithFallback(json['title'], 'Daily Evaluation'),
+      title: _string(json['title']),
       status: _string(json['status']),
       source: _string(json['source']),
       scorePercent: _int(json['score_percent']),
@@ -375,7 +402,7 @@ class ApiHomeRepository implements HomeRepository {
       ),
       backToHome: _actionTargetFromJson(
         json['back_to_home'],
-        fallbackLabel: 'Back to Home',
+        fallbackLabel: '',
       ),
     );
   }
@@ -399,16 +426,14 @@ class ApiHomeRepository implements HomeRepository {
         .toInt();
     return DailyEvaluationSession(
       sessionId: _string(json['session_id']),
-      title: 'Adaptive Posttest',
+      title: 'Posttest Mastery Check',
       status: _stringWithFallback(json['status'], 'active'),
-      language: 'id',
-      source: 'adaptive_generated',
-      reviewDue: ReviewDueSummary(
-        title: 'Posttest siap',
-        dueCount: totalQuestions,
-        summary: '$totalQuestions soal untuk validasi mastery per node.',
-        actionLabel: 'Mulai',
+      language: _stringWithFallback(json['language'], 'id'),
+      source: _stringWithFallback(
+        json['posttest_source'],
+        'adaptive_generated',
       ),
+      reviewDue: const ReviewDueSummary(),
       progress: DailyEvaluationProgress(
         current: safeCurrent,
         total: totalQuestions,
@@ -417,77 +442,119 @@ class ApiHomeRepository implements HomeRepository {
       ),
       currentQuestion: currentQuestion,
       questions: parsedQuestions,
-      retentionForecast: const RetentionForecast(
-        title: 'Target posttest',
-        basis: 'Pass score per node minimal 7.0.',
-        points: [
-          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
-          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
-        ],
-      ),
-      recommendationCallout: const RecommendationCallout(
-        title: 'Mastery gate',
-        message: 'Node dengan skor <7 wajib retake dan badge tidak diberikan.',
-        impactLabel: 'Posttest',
-        actionLabel: 'Jawab',
-      ),
+      retentionForecast: const RetentionForecast(),
+      recommendationCallout: const RecommendationCallout(),
     );
   }
 
-  DailyEvaluationResult _posttestResultFromJson(
+  AdaptivePosttestResult _posttestResultFromJson(
     Map<String, dynamic> json, {
     required String sessionId,
   }) {
     final nodeResults = json['node_results'];
-    final nodes = nodeResults is List
-        ? nodeResults.whereType<Map<String, dynamic>>().toList(growable: false)
-        : const <Map<String, dynamic>>[];
-    final totalNodes = nodes.length;
-    final passedNodes = nodes.where((item) => item['passed'] == true).length;
-    final scorePercent = totalNodes == 0 ? 0 : ((passedNodes / totalNodes) * 100).round();
-    return DailyEvaluationResult(
+    return AdaptivePosttestResult(
       sessionId: sessionId,
-      title: 'Adaptive Posttest',
       status: _stringWithFallback(json['status'], 'completed'),
-      source: 'adaptive_generated',
-      scorePercent: scorePercent,
-      reviewedCount: totalNodes,
-      correctCount: passedNodes,
-      reviewAgainCount: totalNodes - passedNodes,
-      reviewedConcepts: nodes
-          .map(
-            (item) => ReviewedConcept(
-              title: _string(item['concept_title']),
-              statusLabel: item['passed'] == true ? 'Strong' : 'Retake',
-              masteryScore: _double(item['scaled_score']) / 10,
-            ),
-          )
-          .toList(growable: false),
-      spacedRepetitionImpact: SpacedRepetitionImpact(
-        retentionLiftPercent: scorePercent,
-        daysUntilNextReview: passedNodes == totalNodes ? 7 : 1,
-        summary: '$passedNodes/$totalNodes nodes passed mastery gate.',
-      ),
-      nextReview: DailyEvaluationNextReview(
-        label: passedNodes == totalNodes ? 'Review ringan' : 'Retake posttest',
-        dueDate: '',
-        intervalDays: passedNodes == totalNodes ? 7 : 1,
-      ),
-      recommendedNextActions: [
-        RecommendedNextAction(
-          title: passedNodes == totalNodes ? 'Lanjut materi berikutnya' : 'Retake node yang gagal',
-          actionType: passedNodes == totalNodes ? 'continue_learning' : 'practice',
-          reason: passedNodes == totalNodes
-              ? 'Semua node posttest lulus.'
-              : 'Beberapa node belum mencapai skor minimum 7.',
-        ),
-      ],
-      backToHome: const ActionTarget(
-        label: 'Kembali ke Home',
-        actionType: 'navigate',
-        target: '/home',
-      ),
+      nodeResults: _posttestNodesFromJson(nodeResults),
+      retakeRequiredConcepts: _stringList(json['retake_required_concepts']),
     );
+  }
+
+  AssessmentDashboard _assessmentDashboardFromJson(Map<String, dynamic> json) {
+    return AssessmentDashboard(
+      learningGoalId: _string(json['learning_goal_id']),
+      targetTitle: _string(json['target_title']),
+      state: _string(json['state']),
+      pretest: _dashboardPretestFromJson(json['pretest']),
+      posttest: _dashboardPosttestFromJson(json['posttest']),
+      comparison: _dashboardComparisonFromJson(json['comparison']),
+      primaryAction: _actionTargetFromJson(
+        json['primary_action'],
+        fallbackLabel: 'Continue',
+      ),
+      recommendations: _stringList(json['recommendations']),
+    );
+  }
+
+  AssessmentDashboardPretest? _dashboardPretestFromJson(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      return null;
+    }
+    return AssessmentDashboardPretest(
+      sessionId: _nullableString(value['session_id']),
+      status: _string(value['status']),
+      scorePercent: _double(value['score_percent']),
+      overallMasteryPercent: _double(value['overall_mastery_percent']),
+      confidencePercent: _double(value['confidence_percent']),
+      recommendedPath: _string(value['recommended_path']),
+      summary: _string(value['summary']),
+      strengths: _stringList(value['strengths']),
+      gaps: _stringList(value['gaps']),
+      evidenceNotes: _stringList(value['evidence_notes']),
+    );
+  }
+
+  AssessmentDashboardPosttest? _dashboardPosttestFromJson(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      return null;
+    }
+    return AssessmentDashboardPosttest(
+      sessionId: _nullableString(value['session_id']),
+      status: _string(value['status']),
+      answerPercent: _double(value['answer_percent']),
+      evidencePercent: _double(value['evidence_percent']),
+      scorePercent: _double(value['score_percent']),
+      confidencePercent: _double(value['confidence_percent']),
+      passedNodeCount: _int(value['passed_node_count']),
+      totalNodeCount: _int(value['total_node_count']),
+      passed: value['passed'] == true,
+      retakeRequiredConcepts: _stringList(value['retake_required_concepts']),
+      nodes: _posttestNodesFromJson(value['nodes']),
+    );
+  }
+
+  AssessmentDashboardComparison _dashboardComparisonFromJson(Object? value) {
+    final json = _map(value);
+    return AssessmentDashboardComparison(
+      available: json['available'] == true,
+      pretestScorePercent: _nullableInt(json['pretest_score_percent']),
+      posttestScorePercent: _nullableInt(json['posttest_score_percent']),
+      learningGainPercent: _nullableInt(json['learning_gain_percent']),
+      pairedConceptCount: _int(json['paired_concept_count']),
+    );
+  }
+
+  List<PosttestNodeResult> _posttestNodesFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => PosttestNodeResult(
+            conceptId: _nullableString(json['concept_id']),
+            conceptCode: _string(json['concept_code']),
+            conceptTitle: _stringWithFallback(
+              json['concept_title'],
+              _string(json['concept_code']),
+            ),
+            totalQuestions: _int(json['total_questions']),
+            answeredCount: _int(json['answered_count']),
+            correctCount: _int(json['correct_count']),
+            answerPercent: _double(json['answer_percent']),
+            evidencePercent: _double(json['evidence_percent']),
+            scorePercent: _double(json['score_percent']),
+            confidencePercent: _double(json['confidence_percent']),
+            scaledScore: _double(json['scaled_score']),
+            passed: json['passed'] == true,
+            retakeRequired: json['retake_required'] == true,
+            metricSource: _stringWithFallback(
+              json['metric_source'],
+              'adaptive_posttest_evidence',
+            ),
+          ),
+        )
+        .toList(growable: false);
   }
 
   LearningQueueItem? _queueItemOrNull(Object? value) {
@@ -580,6 +647,17 @@ class ApiHomeRepository implements HomeRepository {
     return text.isEmpty ? null : text;
   }
 
+  int? _nullableInt(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    final text = _string(value);
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+    return _int(value);
+  }
+
   List<ReviewedConcept> _reviewedConceptsFromJson(Object? value) {
     if (value is! List) {
       return const [];
@@ -591,8 +669,8 @@ class ApiHomeRepository implements HomeRepository {
             conceptId: _string(json['concept_id']).isEmpty
                 ? null
                 : _string(json['concept_id']),
-            title: _stringWithFallback(json['title'], 'Reviewed concept'),
-            statusLabel: _stringWithFallback(json['status_label'], 'Review'),
+            title: _string(json['title']),
+            statusLabel: _string(json['status_label']),
             masteryScore: _double(json['mastery_score']),
           ),
         )
@@ -625,7 +703,7 @@ class ApiHomeRepository implements HomeRepository {
         .whereType<Map<String, dynamic>>()
         .map(
           (json) => RecommendedNextAction(
-            title: _stringWithFallback(json['title'], 'Recommended action'),
+            title: _string(json['title']),
             actionType: _string(json['action_type']),
             reason: _string(json['reason']),
             dueDate: _string(json['due_date']).isEmpty
@@ -648,7 +726,9 @@ class ApiHomeRepository implements HomeRepository {
     return ActionTarget(
       label: _stringWithFallback(json['label'], fallbackLabel),
       actionType: _string(json['action_type']),
-      target: _string(json['target']).isEmpty ? null : _string(json['target']),
+      target: _string(json['target']).isEmpty
+          ? _nullableString(json['target_id'])
+          : _string(json['target']),
     );
   }
 
@@ -662,6 +742,10 @@ class ApiHomeRepository implements HomeRepository {
       status: _stringWithFallback(json['status'], 'complete'),
       source: _string(json['source']),
       score: _int(json['score']),
+      pretestScorePercent: _nullableInt(json['pretest_score_percent']),
+      posttestScorePercent: _nullableInt(json['posttest_score_percent']),
+      learningGainPercent: _nullableInt(json['learning_gain_percent']),
+      pairedConceptCount: _int(json['paired_concept_count']),
       fixedGaps: _int(json['fixed_gaps']),
       fixedGapsDelta: _int(json['fixed_gaps_delta']),
       remainingGaps: _int(json['remaining_gaps']),
@@ -683,6 +767,14 @@ class ApiHomeRepository implements HomeRepository {
       consistencySummary: _consistencySummaryFromJson(
         json['consistency_summary'],
       ),
+      dataQuality: _dataQualityFromJson(json['data_quality']),
+      effortImpact: _effortImpactFromJson(
+        json['effort_impact'],
+        retentionMinutesFallback: _int(json['retention_minutes']),
+      ),
+      conceptMovers: _conceptMoversFromJson(json['concept_movers']),
+      weeklyTimeline: _weeklyTimelineFromJson(json['weekly_timeline']),
+      weeklyNarrative: _weeklyNarrativeFromJson(json['weekly_narrative']),
     );
   }
 
@@ -769,6 +861,99 @@ class ApiHomeRepository implements HomeRepository {
       title: _stringWithFallback(json['title'], 'Consistency is compounding.'),
       narrative: _string(json['narrative']),
       signal: _string(json['signal']),
+    );
+  }
+
+  ReportDataQuality _dataQualityFromJson(Object? value) {
+    final json = _map(value);
+    return ReportDataQuality(
+      confidenceLabel: _stringWithFallback(json['confidence_label'], 'low'),
+      confidenceScore: _int(json['confidence_score']),
+      coverageStatus: _stringWithFallback(
+        json['coverage_status'],
+        'seeded_baseline',
+      ),
+      attemptsCovered: _int(json['attempts_covered']),
+      pairedConcepts: _int(json['paired_concepts']),
+      notes: _stringList(json['notes']),
+    );
+  }
+
+  ReportEffortImpact _effortImpactFromJson(
+    Object? value, {
+    required int retentionMinutesFallback,
+  }) {
+    final json = _map(value);
+    return ReportEffortImpact(
+      attemptCount: _int(json['attempt_count']),
+      activeDays: _int(json['active_days']),
+      retentionMinutes: _int(json['retention_minutes']) == 0
+          ? retentionMinutesFallback
+          : _int(json['retention_minutes']),
+      reviewDueCount: _int(json['review_due_count']),
+      newGapsCount: _int(json['new_gaps_count']),
+      impactScoreDelta: _int(json['impact_score_delta']),
+      efficiencyLabel: _stringWithFallback(
+        json['efficiency_label'],
+        'no_signal',
+      ),
+      narrative: _string(json['narrative']),
+    );
+  }
+
+  List<ReportConceptMover> _conceptMoversFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => ReportConceptMover(
+            conceptId: _string(json['concept_id']).isEmpty
+                ? null
+                : _string(json['concept_id']),
+            title: _stringWithFallback(json['title'], 'Concept'),
+            movementType: _stringWithFallback(json['movement_type'], 'at_risk'),
+            status: _stringWithFallback(json['status'], 'unknown'),
+            masteryBeforePercent: _int(json['mastery_before_percent']),
+            masteryAfterPercent: _int(json['mastery_after_percent']),
+            masteryDeltaPercent: _int(json['mastery_delta_percent']),
+            evidenceDelta: _int(json['evidence_delta']),
+            nextReviewDate: _string(json['next_review_date']).isEmpty
+                ? null
+                : _string(json['next_review_date']),
+            reason: _string(json['reason']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<WeeklyTimelinePoint> _weeklyTimelineFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => WeeklyTimelinePoint(
+            label: _stringWithFallback(json['label'], 'Wk'),
+            rangeStart: _string(json['range_start']),
+            rangeEnd: _string(json['range_end']),
+            score: _int(json['score']),
+            fixedGaps: _int(json['fixed_gaps']),
+            remainingGaps: _int(json['remaining_gaps']),
+            attemptCount: _int(json['attempt_count']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  WeeklyNarrative _weeklyNarrativeFromJson(Object? value) {
+    final json = _map(value);
+    return WeeklyNarrative(
+      improved: _string(json['improved']),
+      stagnant: _string(json['stagnant']),
+      focus: _string(json['focus']),
     );
   }
 

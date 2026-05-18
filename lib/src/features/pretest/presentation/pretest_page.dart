@@ -1,27 +1,20 @@
-import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
-import '../../edge_ai/data/litert_gemma_runtime.dart';
-import '../../offline_pretest/domain/local_pretest_engine.dart';
-import '../../offline_pretest/domain/local_pretest_question_generator.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
-import 'widgets/confidence_picker.dart';
 import 'widgets/fishbone_canvas.dart';
 import 'widgets/knowledge_state_card.dart';
 import 'widgets/rich_math_text.dart';
 
-enum _PretestStage { question, result }
+enum _PretestStage { question, reasoning, result }
 
 class PretestPage extends StatefulWidget {
   const PretestPage({
@@ -39,59 +32,24 @@ class PretestPage extends StatefulWidget {
 
 class _PretestPageState extends State<PretestPage> {
   final _reasoningController = TextEditingController(text: '');
-  StreamSubscription<LocalQuestionGenerationProgress>?
-  _questionGenerationProgressSubscription;
-  StreamSubscription<LocalDiagnosisGenerationProgress>?
-  _diagnosisProgressSubscription;
 
   _PretestStage _stage = _PretestStage.question;
   PretestQuestion? _question;
   String _selectedOptionId = '';
-  int _confidence = 6;
   bool _isSubmitting = false;
   bool _isLoadingQuestion = true;
   String? _questionError;
   KnowledgeState? _knowledgeState;
   final List<CanvasWorkSnapshot> _canvasSnapshots = [];
-  LocalQuestionGenerationProgress? _questionGenerationProgress;
-  bool _isDiagnosisNarrativeLoading = false;
-  String _diagnosisNarrativeMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _questionGenerationProgressSubscription = LocalPretestQuestionGenerator
-        .progressStream
-        .listen((progress) {
-          if (!mounted) {
-            return;
-          }
-          setState(() {
-            _questionGenerationProgress = progress.active ? progress : null;
-          });
-        });
-    _diagnosisProgressSubscription = LocalPretestEngine.diagnosisProgressStream
-        .listen((progress) {
-          if (!mounted) {
-            return;
-          }
-          setState(() {
-            _isDiagnosisNarrativeLoading = progress.active;
-            _diagnosisNarrativeMessage = progress.message;
-            if (!progress.active &&
-                progress.status == 'completed' &&
-                progress.knowledgeState != null) {
-              _knowledgeState = progress.knowledgeState;
-            }
-          });
-        });
     _loadQuestion();
   }
 
   @override
   void dispose() {
-    _questionGenerationProgressSubscription?.cancel();
-    _diagnosisProgressSubscription?.cancel();
     _reasoningController.dispose();
     super.dispose();
   }
@@ -105,8 +63,6 @@ class _PretestPageState extends State<PretestPage> {
       _knowledgeState = null;
       _canvasSnapshots.clear();
       _isLoadingQuestion = true;
-      _isDiagnosisNarrativeLoading = false;
-      _diagnosisNarrativeMessage = '';
     });
     try {
       final question = await widget.pretestRepository.fetchCurrentQuestion();
@@ -129,42 +85,50 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Future<void> _submitAnswer() async {
+    if (_isSubmitting) {
+      return;
+    }
     if (_selectedOptionId.isEmpty) {
       _showMessage('Pilih jawaban sebelum lanjut.');
       return;
     }
-    final usedCanvas = _canvasSnapshots.isNotEmpty;
-    final canvasStrokeCount = usedCanvas
-        ? _canvasSnapshots.last.elementCount
-        : null;
-    final canvasSnapshotPath = usedCanvas
-        ? await _saveCanvasSnapshotIfNeeded(_canvasSnapshots.last)
-        : null;
 
+    await _submitCurrentAnswer(typedReasoning: '', usedCanvas: false);
+  }
+
+  void _openReasoning() {
+    if (_selectedOptionId.isEmpty) {
+      _showMessage('Pilih jawaban sebelum tambah cara.');
+      return;
+    }
+    setState(() => _stage = _PretestStage.reasoning);
+  }
+
+  Future<void> _submitReasoning() async {
+    if (_isSubmitting) {
+      return;
+    }
     await _submitCurrentAnswer(
       typedReasoning: _reasoningController.text,
-      usedCanvas: usedCanvas,
-      canvasSnapshotPath: canvasSnapshotPath,
-      canvasStrokeCount: canvasStrokeCount,
+      usedCanvas: _canvasSnapshots.isNotEmpty,
     );
   }
 
   Future<void> _submitCurrentAnswer({
     required String typedReasoning,
     required bool usedCanvas,
-    String? canvasSnapshotPath,
-    int? canvasStrokeCount,
   }) async {
+    if (_isSubmitting) {
+      return;
+    }
     setState(() => _isSubmitting = true);
     try {
       final result = await widget.pretestRepository.submitAnswer(
         PretestAnswer(
           questionId: _question?.id ?? '',
           optionId: _selectedOptionId,
-          confidence: _confidence,
+          confidence: 0,
           typedReasoning: typedReasoning,
-          canvasAssetId: canvasSnapshotPath,
-          canvasStrokeCount: canvasStrokeCount,
           usedCanvas: usedCanvas,
         ),
       );
@@ -174,6 +138,10 @@ class _PretestPageState extends State<PretestPage> {
       if (result.completed) {
         setState(() {
           _knowledgeState = result.diagnosis;
+          _question = null;
+          _selectedOptionId = '';
+          _reasoningController.clear();
+          _canvasSnapshots.clear();
           _stage = _PretestStage.result;
         });
       } else if (result.nextQuestion != null) {
@@ -197,29 +165,8 @@ class _PretestPageState extends State<PretestPage> {
     }
   }
 
-  Future<String?> _saveCanvasSnapshotIfNeeded(
-    CanvasWorkSnapshot snapshot,
-  ) async {
-    try {
-      final bytes = await renderCanvasSnapshotPng(snapshot);
-      if (bytes == null || bytes.isEmpty) {
-        return null;
-      }
-      final baseDir = Directory(
-        path.join(Directory.systemTemp.path, 'wicara_canvas_evidence'),
-      );
-      if (!await baseDir.exists()) {
-        await baseDir.create(recursive: true);
-      }
-      final filename =
-          'pretest_canvas_${DateTime.now().microsecondsSinceEpoch}.png';
-      final outputFile = File(path.join(baseDir.path, filename));
-      await outputFile.writeAsBytes(bytes, flush: true);
-      return outputFile.path;
-    } catch (_) {
-      return null;
-    }
-  }
+  PretestOption get _selectedOption =>
+      _question!.options.firstWhere((option) => option.id == _selectedOptionId);
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
@@ -231,6 +178,20 @@ class _PretestPageState extends State<PretestPage> {
 
   void _handleCanvasSentToChat(CanvasWorkSnapshot snapshot) {
     setState(() => _canvasSnapshots.add(snapshot));
+  }
+
+  void _goBack() {
+    if (_stage == _PretestStage.reasoning) {
+      setState(() => _stage = _PretestStage.question);
+      return;
+    }
+    if (_stage == _PretestStage.result) {
+      setState(() => _stage = _PretestStage.question);
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
   }
 
   Future<void> _selectPathAndGoHome() async {
@@ -264,20 +225,6 @@ class _PretestPageState extends State<PretestPage> {
       (route) => false,
       arguments: const {'open_goal_history': true},
     );
-  }
-
-  void _exitWhileGenerating() {
-    unawaited(defaultEdgeAiRuntime.unload());
-    _showMessage('Keluar pretest. Proses generate akan dihentikan.');
-    _goHome();
-  }
-
-  bool get _showQuestionGenerationOverlay {
-    final progress = _questionGenerationProgress;
-    if (progress == null || !progress.active) {
-      return false;
-    }
-    return _isLoadingQuestion || _isSubmitting;
   }
 
   void _openLargeCanvas() {
@@ -347,34 +294,12 @@ class _PretestPageState extends State<PretestPage> {
             return Center(
               child: SizedBox(
                 width: pageWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, stageConstraints) {
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                child: KeyedSubtree(
-                                  key: ValueKey(_stage),
-                                  child: _stageView(stageConstraints, copy),
-                                ),
-                              ),
-                              if (_showQuestionGenerationOverlay)
-                                _QuestionGenerationOverlay(
-                                  progress: _questionGenerationProgress!,
-                                  copy: copy,
-                                  onExit: _exitWhileGenerating,
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: KeyedSubtree(
+                    key: ValueKey(_stage),
+                    child: _stageView(constraints, copy),
+                  ),
                 ),
               ),
             );
@@ -385,19 +310,26 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Widget _stageView(BoxConstraints constraints, OnboardingCopy copy) {
+    if (_stage == _PretestStage.result) {
+      return _ResultStage(
+        constraints: constraints,
+        copy: copy,
+        result: _knowledgeState,
+        onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
+      );
+    }
     if (_isLoadingQuestion) {
       return _PretestStateView(
         constraints: constraints,
-        title: 'Menyiapkan pretest lokal',
-        message:
-            'Menyiapkan soal lokal… (bisa sampai 2 menit di device lambat).',
+        title: 'Loading pretest',
+        message: 'Fetching adaptive questions from backend.',
       );
     }
     if (_questionError != null || _question == null) {
       return _PretestStateView(
         constraints: constraints,
         title: 'Pretest unavailable',
-        message: _questionError ?? 'No pretest question available.',
+        message: _questionError ?? 'Backend returned no question.',
         actionLabel: 'Try again',
         onAction: _loadQuestion,
       );
@@ -406,6 +338,7 @@ class _PretestPageState extends State<PretestPage> {
 
     return switch (_stage) {
       _PretestStage.question => _QuestionStage(
+        key: ValueKey(question.id),
         constraints: constraints,
         copy: copy,
         question: question,
@@ -413,236 +346,30 @@ class _PretestPageState extends State<PretestPage> {
             .clamp(0.0, 1.0)
             .toDouble(),
         selectedOptionId: _selectedOptionId,
-        confidence: _confidence,
         isSubmitting: _isSubmitting,
         onClose: _goHome,
         onSelected: (id) => setState(() => _selectedOptionId = id),
-        onConfidenceChanged: (value) => setState(() => _confidence = value),
-        reasoningController: _reasoningController,
-        canvasSnapshots: _canvasSnapshots,
         submitLabel: copy.isIndonesian ? 'Kirim jawaban' : 'Submit answer',
+        addEvidenceLabel: copy.isIndonesian
+            ? 'Tambah cara / coretan'
+            : 'Add reasoning / sketch',
         onSubmit: _submitAnswer,
-        onUseCanvas: _openLargeCanvas,
-        onSkipReasoning: () {
-          setState(() {
-            _reasoningController.clear();
-            _canvasSnapshots.clear();
-          });
-        },
+        onAddEvidence: _openReasoning,
       ),
-      _PretestStage.result => _ResultStage(
+      _PretestStage.reasoning => _ReasoningStage(
         constraints: constraints,
         copy: copy,
-        result: _knowledgeState,
-        isNarrativeLoading: _isDiagnosisNarrativeLoading,
-        narrativeMessage: _diagnosisNarrativeMessage,
-        onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
+        question: question,
+        selectedOption: _selectedOption,
+        controller: _reasoningController,
+        canvasSnapshots: _canvasSnapshots,
+        isSubmitting: _isSubmitting,
+        onBack: _goBack,
+        onUseCanvas: _openLargeCanvas,
+        onSubmit: _submitReasoning,
       ),
+      _PretestStage.result => const SizedBox.shrink(),
     };
-  }
-}
-
-class _QuestionGenerationOverlay extends StatelessWidget {
-  const _QuestionGenerationOverlay({
-    required this.progress,
-    required this.copy,
-    required this.onExit,
-  });
-
-  final LocalQuestionGenerationProgress progress;
-  final OnboardingCopy copy;
-  final VoidCallback onExit;
-
-  @override
-  Widget build(BuildContext context) {
-    final eta = progress.estimatedRemainingSeconds;
-    final etaText = eta == null
-        ? ''
-        : copy.isIndonesian
-        ? 'Estimasi sisa ${eta}s'
-        : 'Estimated ${eta}s remaining';
-    final progressText = copy.isIndonesian
-        ? 'Percobaan ${progress.attempt}/${progress.maxAttempts}'
-        : 'Attempt ${progress.attempt}/${progress.maxAttempts}';
-    final sectionText = copy.isIndonesian
-        ? 'Section ${progress.completedSections}/${progress.totalSections}'
-        : 'Section ${progress.completedSections}/${progress.totalSections}';
-    final sectionProgress = progress.totalSections <= 0
-        ? 0.0
-        : (progress.completedSections / progress.totalSections).clamp(0.0, 1.0);
-    final combinedProgress = progress.progress > sectionProgress
-        ? progress.progress
-        : sectionProgress;
-    final rawOutput = progress.rawOutputPreview;
-    final parsedOutput = progress.parsedOutputPreview;
-    final showDebugOutput = rawOutput.isNotEmpty || parsedOutput.isNotEmpty;
-    final overlayMaxHeight = MediaQuery.sizeOf(context).height * 0.8;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        ModalBarrier(
-          color: Colors.black.withValues(alpha: 0.18),
-          dismissible: false,
-        ),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: Container(
-              width: double.infinity,
-              constraints: BoxConstraints(
-                maxWidth: 360,
-                maxHeight: overlayMaxHeight,
-              ),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: WicaraColors.line),
-                boxShadow: [
-                  BoxShadow(
-                    color: WicaraColors.shadowBlue.withValues(alpha: 0.22),
-                    blurRadius: 20,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      copy.isIndonesian
-                          ? 'Menyusun soal di device...'
-                          : 'Generating questions on-device...',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: WicaraColors.text,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: combinedProgress.clamp(0.0, 1.0),
-                        minHeight: 8,
-                        color: WicaraColors.secondary,
-                        backgroundColor: WicaraColors.line,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      progress.message,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: WicaraColors.muted,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      etaText.isEmpty
-                          ? '$sectionText • $progressText'
-                          : '$sectionText • $progressText • $etaText',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: WicaraColors.softMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: onExit,
-                        icon: const Icon(Icons.exit_to_app_rounded, size: 16),
-                        label: Text(
-                          copy.isIndonesian ? 'Keluar pretest' : 'Exit pretest',
-                        ),
-                      ),
-                    ),
-                    if (showDebugOutput) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        copy.isIndonesian
-                            ? 'Debug output model'
-                            : 'Model debug output',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: WicaraColors.text,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (rawOutput.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _LlmOutputPreview(
-                          title: copy.isIndonesian
-                              ? 'Raw response'
-                              : 'Raw response',
-                          content: rawOutput,
-                        ),
-                      ],
-                      if (parsedOutput.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _LlmOutputPreview(
-                          title: copy.isIndonesian
-                              ? 'Parsed JSON'
-                              : 'Parsed JSON',
-                          content: parsedOutput,
-                        ),
-                      ],
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _LlmOutputPreview extends StatelessWidget {
-  const _LlmOutputPreview({required this.title, required this.content});
-
-  final String title;
-  final String content;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: WicaraColors.pageBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: WicaraColors.line),
-      ),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: WicaraColors.text,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 130),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                content,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: WicaraColors.muted,
-                  fontFamily: 'monospace',
-                  height: 1.25,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -713,22 +440,19 @@ class _PretestStateView extends StatelessWidget {
 
 class _QuestionStage extends StatelessWidget {
   const _QuestionStage({
+    super.key,
     required this.constraints,
     required this.copy,
     required this.question,
     required this.progressValue,
     required this.selectedOptionId,
-    required this.confidence,
     required this.isSubmitting,
     required this.onClose,
     required this.onSelected,
-    required this.onConfidenceChanged,
     required this.submitLabel,
+    required this.addEvidenceLabel,
     required this.onSubmit,
-    required this.reasoningController,
-    required this.canvasSnapshots,
-    required this.onUseCanvas,
-    required this.onSkipReasoning,
+    required this.onAddEvidence,
   });
 
   final BoxConstraints constraints;
@@ -736,17 +460,13 @@ class _QuestionStage extends StatelessWidget {
   final PretestQuestion question;
   final double progressValue;
   final String selectedOptionId;
-  final int confidence;
   final bool isSubmitting;
   final VoidCallback onClose;
   final ValueChanged<String> onSelected;
-  final ValueChanged<int> onConfidenceChanged;
   final String submitLabel;
+  final String addEvidenceLabel;
   final VoidCallback onSubmit;
-  final TextEditingController reasoningController;
-  final List<CanvasWorkSnapshot> canvasSnapshots;
-  final VoidCallback onUseCanvas;
-  final VoidCallback onSkipReasoning;
+  final VoidCallback onAddEvidence;
 
   @override
   Widget build(BuildContext context) {
@@ -849,94 +569,6 @@ class _QuestionStage extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: compact ? 18 : 26),
-                  Text(
-                    copy.isIndonesian
-                        ? 'Tulis caramu menyelesaikan (opsional)'
-                        : 'Write your solving steps (optional)',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: WicaraColors.text,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: reasoningController,
-                    minLines: 3,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      hintText: copy.isIndonesian
-                          ? '1) Tulis langkah pertama...\n2) Lanjutkan hitungannya...\n3) Simpulkan jawabanmu...'
-                          : '1) Write your first step...\n2) Continue the calculation...\n3) Conclude your answer...',
-                      filled: true,
-                      fillColor: WicaraColors.fieldFill,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: WicaraColors.line),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: WicaraColors.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: WicaraColors.secondary,
-                          width: 1.4,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    copy.isIndonesian
-                        ? 'Tulis sedikit langkahmu biar diagnosis nanti lebih akurat ke kamu.'
-                        : 'Add short steps so the diagnosis can be more personal to you.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: WicaraColors.softMuted,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: onUseCanvas,
-                        icon: const Icon(Icons.draw_outlined, size: 18),
-                        label: Text(
-                          canvasSnapshots.isEmpty
-                              ? (copy.isIndonesian
-                                    ? 'Tambah canvas (opsional)'
-                                    : 'Add canvas (optional)')
-                              : (copy.isIndonesian
-                                    ? 'Edit canvas (${canvasSnapshots.length})'
-                                    : 'Edit canvas (${canvasSnapshots.length})'),
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: isSubmitting ? null : onSkipReasoning,
-                        icon: const Icon(Icons.fast_forward_rounded, size: 18),
-                        label: Text(
-                          copy.isIndonesian ? 'Lewati cara' : 'Skip reasoning',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    copy.isIndonesian ? 'Pilih jawaban' : 'Select your answer',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: WicaraColors.text,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   for (
                     var index = 0;
                     index < question.options.length;
@@ -952,16 +584,28 @@ class _QuestionStage extends StatelessWidget {
                       const SizedBox(height: 10),
                   ],
                   const SizedBox(height: 19),
-                  ConfidencePicker(
-                    value: confidence,
-                    onChanged: onConfidenceChanged,
-                    copy: copy,
-                  ),
-                  const SizedBox(height: 20),
                   GradientButton(
                     label: submitLabel,
                     onPressed: selectedOptionId.isEmpty ? null : onSubmit,
                     isLoading: isSubmitting,
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: selectedOptionId.isEmpty || isSubmitting
+                        ? null
+                        : onAddEvidence,
+                    icon: const Icon(Icons.edit_note_rounded, size: 20),
+                    label: Text(addEvidenceLabel),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: WicaraColors.secondaryDeep,
+                      side: const BorderSide(
+                        color: WicaraColors.secondaryLight,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
                   ),
                 ],
               ),
@@ -975,7 +619,6 @@ class _QuestionStage extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _ReasoningStage extends StatelessWidget {
   const _ReasoningStage({
     required this.constraints,
@@ -1037,22 +680,11 @@ class _ReasoningStage extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     copy.isIndonesian
-                        ? 'Opsional: tulis langkahmu atau lampirkan coretan. Ini menaikkan confidence diagnosis, tapi jawaban pilihan ganda tetap jadi anchor.'
-                        : 'Optional: type your steps or attach canvas work. This helps diagnosis confidence, but your MCQ answer stays the anchor.',
+                        ? 'Opsional: tulis langkahmu atau lampirkan coretan. Ini hanya menjadi feedback diagnostik; skor tetap dari MCQ.'
+                        : 'Optional: type your steps or attach canvas work. This only adds diagnostic feedback; the score stays MCQ-only.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    copy.isIndonesian
-                        ? 'Kalau kamu skip reasoning/canvas, evaluasi tetap jalan dari MCQ saja. LLM lokal dipakai saat ada reasoning teks.'
-                        : 'If you skip reasoning/canvas, evaluation still runs from MCQ only. Local LLM is used when text reasoning is provided.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: WicaraColors.softMuted,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
                     ),
                   ),
                   SizedBox(height: compact ? 18 : 27),
@@ -1195,16 +827,12 @@ class _ResultStage extends StatelessWidget {
     required this.constraints,
     required this.copy,
     required this.result,
-    required this.isNarrativeLoading,
-    required this.narrativeMessage,
     required this.onContinue,
   });
 
   final BoxConstraints constraints;
   final OnboardingCopy copy;
   final KnowledgeState? result;
-  final bool isNarrativeLoading;
-  final String narrativeMessage;
   final VoidCallback onContinue;
 
   @override
@@ -1248,12 +876,13 @@ class _ResultStage extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (state.masteryScore != null || state.confidence != null) ...[
+            if (state.masteryScore != null) ...[
               const SizedBox(height: 22),
               _ScoreSummaryCard(
-                masteryScore: state.masteryScore,
-                confidence: state.confidence,
+                score: state.masteryScore,
                 overallMasteryPercent: state.overallMasteryPercent,
+                correctCount: state.correctCount,
+                answeredCount: state.answeredCount,
                 copy: copy,
               ),
             ],
@@ -1266,10 +895,6 @@ class _ResultStage extends StatelessWidget {
               evidenceNotes: state.evidenceNotes,
               copy: copy,
             ),
-            if (isNarrativeLoading) ...[
-              const SizedBox(height: 14),
-              _NarrativeLoadingCard(copy: copy, message: narrativeMessage),
-            ],
             if (state.nodeReports.isNotEmpty) ...[
               const SizedBox(height: 18),
               _NodeBreakdownCard(nodes: state.nodeReports, copy: copy),
@@ -1321,23 +946,25 @@ class _ResultStage extends StatelessWidget {
 
 class _ScoreSummaryCard extends StatelessWidget {
   const _ScoreSummaryCard({
-    required this.masteryScore,
-    required this.confidence,
+    required this.score,
     required this.overallMasteryPercent,
+    required this.correctCount,
+    required this.answeredCount,
     required this.copy,
   });
 
-  final double? masteryScore;
-  final double? confidence;
+  final double? score;
   final int? overallMasteryPercent;
+  final int correctCount;
+  final int answeredCount;
   final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
-    final scorePercent = ((masteryScore ?? 0).clamp(0.0, 1.0) * 100).round();
-    final confidencePercent = confidence == null
-        ? null
-        : ((confidence!.clamp(0.0, 1.0)) * 100).round();
+    final scorePercent = ((score ?? 0).clamp(0.0, 1.0) * 100).round();
+    final correctText = answeredCount > 0
+        ? '$correctCount/$answeredCount ${copy.isIndonesian ? 'benar' : 'correct'}'
+        : (copy.isIndonesian ? 'Belum ada jawaban' : 'No answers');
     return Container(
       padding: const EdgeInsets.fromLTRB(17, 15, 17, 15),
       decoration: BoxDecoration(
@@ -1386,13 +1013,11 @@ class _ScoreSummaryCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   [
-                    if (overallMasteryPercent != null)
-                      '${copy.isIndonesian ? 'Keseluruhan' : 'Overall'} $overallMasteryPercent%',
-                    if (confidencePercent != null)
-                      '${copy.isIndonesian ? 'Keyakinan' : 'Confidence'} $confidencePercent%',
-                    if (overallMasteryPercent == null &&
-                        confidencePercent == null)
-                      'Mastery estimate from adaptive pretest',
+                    copy.isIndonesian ? 'Skor MCQ resmi' : 'Official MCQ score',
+                    correctText,
+                    if (overallMasteryPercent != null &&
+                        overallMasteryPercent != scorePercent)
+                      '${copy.isIndonesian ? 'Laporan' : 'Report'} $overallMasteryPercent%',
                   ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.muted,
@@ -1547,54 +1172,6 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
   }
 }
 
-class _NarrativeLoadingCard extends StatelessWidget {
-  const _NarrativeLoadingCard({required this.copy, required this.message});
-
-  final OnboardingCopy copy;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = message.trim().isNotEmpty
-        ? message.trim()
-        : (copy.isIndonesian
-              ? 'AI sedang menulis catatan personal...'
-              : 'AI is writing a personalized note...');
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: WicaraColors.fieldFill,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: WicaraColors.line),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.2,
-              valueColor: AlwaysStoppedAnimation<Color>(WicaraColors.secondary),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.muted,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ReportInsightList extends StatelessWidget {
   const _ReportInsightList({
     required this.title,
@@ -1708,9 +1285,6 @@ class _NodeBreakdownRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _statusColor(node.status);
-    final masteryText = node.masteryScore == null
-        ? null
-        : '${(node.masteryScore!.clamp(0.0, 1.0) * 100).round()}%';
     final reasoningText = _reasoningText(node, copy);
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1745,14 +1319,11 @@ class _NodeBreakdownRow extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (masteryText != null)
-                _MetricPill(
-                  label: copy.isIndonesian ? 'Mastery' : 'Mastery',
-                  value: masteryText,
-                ),
               _MetricPill(
                 label: copy.isIndonesian ? 'Benar' : 'Correct',
-                value: '${node.correctCount}/${node.attemptCount}',
+                value: node.answerPercent == null
+                    ? '${node.correctCount}/${node.attemptCount}'
+                    : _percentMetricText(node.answerPercent),
               ),
               if (node.difficultyReached.isNotEmpty)
                 _MetricPill(
@@ -1772,82 +1343,7 @@ class _NodeBreakdownRow extends StatelessWidget {
               ),
             ),
           ],
-          if (node.hasCanvasEvidence) ...[
-            const SizedBox(height: 9),
-            _NodeCanvasEvidencePreview(node: node, copy: copy),
-          ],
         ],
-      ),
-    );
-  }
-}
-
-class _NodeCanvasEvidencePreview extends StatelessWidget {
-  const _NodeCanvasEvidencePreview({required this.node, required this.copy});
-
-  final PretestNodeReport node;
-  final OnboardingCopy copy;
-
-  @override
-  Widget build(BuildContext context) {
-    final pathValue = node.canvasSnapshotPath;
-    final hasFile = pathValue != null && pathValue.trim().isNotEmpty;
-    final label = copy.isIndonesian
-        ? 'Canvas digunakan${node.canvasStrokeCount == null ? '' : ' • ${node.canvasStrokeCount} coretan'}'
-        : 'Canvas used${node.canvasStrokeCount == null ? '' : ' • ${node.canvasStrokeCount} strokes'}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: WicaraColors.softMuted,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 7),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 112,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: WicaraColors.pageBackground,
-              border: Border.all(color: WicaraColors.line),
-            ),
-            child: hasFile
-                ? Image.file(
-                    File(pathValue),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) {
-                      return _CanvasMissingPreview(copy: copy);
-                    },
-                  )
-                : _CanvasMissingPreview(copy: copy),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CanvasMissingPreview extends StatelessWidget {
-  const _CanvasMissingPreview({required this.copy});
-
-  final OnboardingCopy copy;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        copy.isIndonesian
-            ? 'Preview canvas tidak tersedia'
-            : 'Canvas preview unavailable',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: WicaraColors.softMuted,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
@@ -1989,7 +1485,20 @@ Color _statusColor(String status) {
   };
 }
 
+String _percentMetricText(double? value) {
+  if (value == null) {
+    return '--';
+  }
+  final clamped = value.clamp(0.0, 100.0);
+  return clamped == clamped.roundToDouble()
+      ? '${clamped.round()}%'
+      : '${clamped.toStringAsFixed(1)}%';
+}
+
 String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
+  if (!node.hasEvidence) {
+    return '';
+  }
   if (node.misconceptionDetected) {
     return copy.isIndonesian
         ? 'Reasoning menunjukkan miskonsepsi pada node ini.'
@@ -2002,8 +1511,8 @@ String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
   }
   if (node.reasoningQuality == 'not_provided') {
     return copy.isIndonesian
-        ? 'Tidak ada langkah tertulis, jadi confidence evidence lebih terbatas.'
-        : 'No written steps were provided, so evidence confidence is limited.';
+        ? 'Evidence tersimpan, tetapi tidak ada langkah tertulis untuk dianalisis.'
+        : 'Evidence was stored, but no written steps were available to analyze.';
   }
   final score = node.avgReasoningScore == null
       ? ''

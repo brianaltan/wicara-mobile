@@ -78,6 +78,7 @@ class ApiClient {
     Map<String, String>? queryParameters,
     Map<String, dynamic>? body,
     Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     final uri = Uri.parse(
       baseUrl,
@@ -88,7 +89,7 @@ class ApiClient {
     };
     final response = await _httpClient
         .post(uri, headers: mergedHeaders, body: jsonEncode(body ?? const {}))
-        .timeout(const Duration(seconds: 45));
+        .timeout(timeout);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final (msg, rawDetail) = _errorMessageAndDetail(
