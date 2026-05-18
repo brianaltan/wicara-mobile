@@ -266,6 +266,19 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
+  Future<WorkspaceSession> advancePhase({
+    required String workspaceId,
+    bool force = false,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceSession> startPosttest({required String workspaceId}) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
   Future<WorkspaceGenerateVideoResult> generateVideo({
     required String workspaceId,
     String generationMode = 'context_auto',

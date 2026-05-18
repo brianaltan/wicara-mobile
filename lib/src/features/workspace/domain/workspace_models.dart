@@ -39,6 +39,9 @@ class WorkspaceSession {
     required this.contentMode,
     required this.status,
     required this.events,
+    required this.currentPhase,
+    required this.phaseTransitionPending,
+    required this.posttestEligible,
     this.currentTopicDescription = '',
     this.learnerLanguage = 'en',
     this.latestMedia,
@@ -53,6 +56,9 @@ class WorkspaceSession {
   final String contentMode;
   final String status;
   final List<WorkspaceEvent> events;
+  final String currentPhase;
+  final bool phaseTransitionPending;
+  final bool posttestEligible;
   final WorkspaceMediaArtifact? latestMedia;
 }
 
@@ -105,11 +111,15 @@ class WorkspaceTutorResponse {
     required this.text,
     required this.intent,
     required this.nextActions,
+    required this.nextPhaseReady,
+    this.phaseReasoning,
   });
 
   final String text;
   final String intent;
   final List<String> nextActions;
+  final bool nextPhaseReady;
+  final String? phaseReasoning;
 }
 
 class WorkspaceMasteryUpdate {

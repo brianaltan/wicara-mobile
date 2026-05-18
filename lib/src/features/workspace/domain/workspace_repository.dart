@@ -43,6 +43,13 @@ abstract class WorkspaceRepository {
     Map<String, dynamic> metadata = const {},
   });
 
+  Future<WorkspaceSession> advancePhase({
+    required String workspaceId,
+    bool force = false,
+  });
+
+  Future<WorkspaceSession> startPosttest({required String workspaceId});
+
   Future<WorkspaceGenerateVideoResult> generateVideo({
     required String workspaceId,
     String generationMode = 'context_auto',
