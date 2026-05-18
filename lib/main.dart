@@ -14,6 +14,7 @@ import 'src/features/onboarding/data/api_onboarding_repository.dart';
 import 'src/features/onboarding/data/onboarding_profile_store.dart';
 import 'src/features/offline_learning/data/local_curriculum_repository.dart';
 import 'src/features/offline_learning/data/local_wicara_database.dart';
+import 'src/features/offline_pretest/data/local_pretest_repository.dart';
 import 'src/features/pretest/data/api_pretest_repository.dart';
 import 'src/features/pretest/data/pretest_session_store.dart';
 import 'src/features/workspace/data/api_workspace_repository.dart';
@@ -42,6 +43,7 @@ Future<void> main() async {
   final sessionStore = authSessionStore;
   final pretestStore = pretestSessionStore;
   final workspaceStore = workspaceSessionStore;
+  final localDatabase = LocalWicaraDatabase();
   final apiClient = ApiClient(
     baseUrl: ApiClient.resolveRuntimeBaseUrl(ApiClient.defaultBaseUrl),
   );
@@ -69,6 +71,12 @@ Future<void> main() async {
     displayName: authController.session?.displayName ?? 'Learner',
   );
 
+  final backendPretestRepository = ApiPretestRepository(
+    apiClient: apiClient,
+    sessionStore: sessionStore,
+    pretestSessionStore: pretestStore,
+  );
+
   runApp(
     WicaraApp(
       authController: authController,
@@ -87,10 +95,12 @@ Future<void> main() async {
         apiClient: apiClient,
         sessionStore: sessionStore,
       ),
-      pretestRepository: ApiPretestRepository(
-        apiClient: apiClient,
-        sessionStore: sessionStore,
+      pretestRepository: LocalPretestRepository(
+        localDatabase: localDatabase,
         pretestSessionStore: pretestStore,
+        backendRepository: backendPretestRepository,
+        forceLocalForPilot: _edgeLiteRtForceLocalForPilot,
+        allowBackendFallback: false,
       ),
       workspaceRepository: ApiWorkspaceRepository(
         apiClient: apiClient,

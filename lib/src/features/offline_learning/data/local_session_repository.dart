@@ -109,6 +109,37 @@ class LocalSessionRepository {
     return rows.map(_sessionFromRow).toList(growable: false);
   }
 
+  Future<void> updateSession({
+    required String sessionId,
+    String? status,
+    String? currentStage,
+    Map<String, dynamic>? metadata,
+    bool? dirty,
+  }) async {
+    final db = await _database.database;
+    final row = <String, Object?>{
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (status != null) {
+      row['status'] = status;
+    }
+    if (currentStage != null) {
+      row['current_stage'] = currentStage;
+    }
+    if (metadata != null) {
+      row['metadata_json'] = jsonEncode(metadata);
+    }
+    if (dirty != null) {
+      row['dirty'] = dirty ? 1 : 0;
+    }
+    await db.update(
+      LocalDbTables.localLearningSessions,
+      row,
+      where: 'id = ?',
+      whereArgs: <Object?>[sessionId],
+    );
+  }
+
   Future<LocalInputEventRecord> appendInputEvent({
     String? id,
     required String sessionId,

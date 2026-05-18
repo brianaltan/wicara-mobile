@@ -319,14 +319,14 @@ class _PretestPageState extends State<PretestPage> {
       return _PretestStateView(
         constraints: constraints,
         title: 'Loading pretest',
-        message: 'Fetching adaptive questions from backend.',
+        message: 'Preparing adaptive questions (local-first).',
       );
     }
     if (_questionError != null || _question == null) {
       return _PretestStateView(
         constraints: constraints,
         title: 'Pretest unavailable',
-        message: _questionError ?? 'Backend returned no question.',
+        message: _questionError ?? 'No pretest question available.',
         actionLabel: 'Try again',
         onAction: _loadQuestion,
       );
@@ -697,6 +697,17 @@ class _ReasoningStage extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    copy.isIndonesian
+                        ? 'Kalau kamu skip reasoning/canvas, evaluasi tetap jalan dari MCQ saja. LLM lokal dipakai saat ada reasoning teks.'
+                        : 'If you skip reasoning/canvas, evaluation still runs from MCQ only. Local LLM is used when text reasoning is provided.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: WicaraColors.softMuted,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
                     ),
                   ),
                   SizedBox(height: compact ? 18 : 27),
