@@ -423,6 +423,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
             _contentMode = _WorkspaceContentMode.videoProcessing;
           }
         });
+        _scrollToBottomIfNearBottom();
 
         if (status.isFinal) {
           if (status.isReady) {
@@ -1820,6 +1821,18 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     });
   }
 
+  void _scrollToBottomIfNearBottom() {
+    if (!_scrollController.hasClients) {
+      _scrollToBottom();
+      return;
+    }
+    final position = _scrollController.position;
+    final distanceToBottom = position.maxScrollExtent - position.pixels;
+    if (distanceToBottom <= 120) {
+      _scrollToBottom();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final copy = OnboardingCopy.forLanguage(
@@ -2019,9 +2032,6 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                       isPhaseSubmitting: _isPhaseSubmitting,
                       isVideoGenerating: _isVideoGenerating,
                       canGenerateVideo: _canGenerateVideoForCurrentTopic(),
-                      contentMode: _contentMode,
-                      videoStatusMessage: _videoStatusMessage,
-                      videoErrorMessage: _videoErrorMessage,
                       copy: copy,
                       material: material,
                     ),
@@ -4186,9 +4196,6 @@ class _WorkspaceFooter extends StatelessWidget {
     required this.isPhaseSubmitting,
     required this.isVideoGenerating,
     required this.canGenerateVideo,
-    required this.contentMode,
-    required this.videoStatusMessage,
-    required this.videoErrorMessage,
     required this.copy,
     required this.material,
   });
@@ -4203,9 +4210,6 @@ class _WorkspaceFooter extends StatelessWidget {
   final bool isPhaseSubmitting;
   final bool isVideoGenerating;
   final bool canGenerateVideo;
-  final _WorkspaceContentMode contentMode;
-  final String? videoStatusMessage;
-  final String? videoErrorMessage;
   final OnboardingCopy copy;
   final _LocalizedWorkspaceMaterial material;
 
@@ -4289,29 +4293,6 @@ class _WorkspaceFooter extends StatelessWidget {
                     : material.generateVideoFromChatLabel,
               ),
             ),
-            if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
-              const SizedBox(height: 8),
-              _WorkspaceSyncNotice(
-                icon: Icons.movie_creation_outlined,
-                text:
-                    videoStatusMessage ??
-                    material.generatingVideoContextMessage,
-              ),
-            ] else if (contentMode == _WorkspaceContentMode.videoFailed &&
-                (videoErrorMessage?.isNotEmpty ?? false)) ...[
-              const SizedBox(height: 8),
-              _WorkspaceSyncNotice(
-                icon: Icons.error_outline_rounded,
-                text: videoErrorMessage!,
-                isError: true,
-              ),
-            ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
-              const SizedBox(height: 8),
-              _WorkspaceSyncNotice(
-                icon: Icons.check_circle_rounded,
-                text: material.videoReadyMessage,
-              ),
-            ],
             const SizedBox(height: 10),
             _WorkspaceComposerInput(
               controller: controller,
