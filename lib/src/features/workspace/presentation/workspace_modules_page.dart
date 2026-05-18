@@ -1829,6 +1829,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final showStartPosttestButton = workspace?.posttestEligible ?? false;
     final canAdvancePhase = _canAdvancePhase(workspace);
     final canForceAdvancePhase = _canForceAdvancePhase(workspace);
+    final showCheckUnderstanding =
+        (workspace?.currentPhase ?? 'engage') == 'evaluate';
     final workspaceDescription =
         (_workspace?.currentTopicDescription.trim().isNotEmpty ?? false)
         ? _workspace!.currentTopicDescription.trim()
@@ -1992,6 +1994,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                   unawaited(_startLearningChat());
                                 },
                                 onOpenCanvas: _openCanvas,
+                                showCheckUnderstanding: showCheckUnderstanding,
                               ),
                             ),
                           );
@@ -2474,6 +2477,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.onAnswerQuiz,
     required this.onStartChat,
     required this.onOpenCanvas,
+    required this.showCheckUnderstanding,
     this.weeklyReport,
     this.onDismissReport,
   });
@@ -2498,6 +2502,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final ValueChanged<String> onAnswerQuiz;
   final VoidCallback onStartChat;
   final VoidCallback onOpenCanvas;
+  final bool showCheckUnderstanding;
   final WeeklyLearningReport? weeklyReport;
   final VoidCallback? onDismissReport;
 
@@ -2571,7 +2576,8 @@ class _WorkspaceChatPanel extends StatelessWidget {
           ],
           if (!isLoadingWorkspace &&
               workspaceError == null &&
-              chatEntries.isNotEmpty) ...[
+              chatEntries.isNotEmpty &&
+              showCheckUnderstanding) ...[
             const SizedBox(height: 14),
             _WorkspaceQuizCard(
               quizState: quizState,
