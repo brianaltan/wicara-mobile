@@ -17,11 +17,15 @@ class WorkspaceCompletionResult {
     required this.trackId,
     required this.moduleId,
     required this.moduleTitle,
+    required this.moduleCompleted,
+    required this.requestedEarlyPosttest,
   });
 
   final String trackId;
   final String moduleId;
   final String moduleTitle;
+  final bool moduleCompleted;
+  final bool requestedEarlyPosttest;
 }
 
 class WorkspaceSession {
@@ -33,6 +37,8 @@ class WorkspaceSession {
     required this.contentMode,
     required this.status,
     required this.events,
+    this.currentTopicDescription = '',
+    this.learnerLanguage = 'en',
     this.latestMedia,
   });
 
@@ -40,6 +46,8 @@ class WorkspaceSession {
   final String trackId;
   final String moduleId;
   final String currentTopic;
+  final String currentTopicDescription;
+  final String learnerLanguage;
   final String contentMode;
   final String status;
   final List<WorkspaceEvent> events;

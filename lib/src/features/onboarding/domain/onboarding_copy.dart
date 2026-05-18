@@ -4,7 +4,20 @@ class OnboardingCopy {
   const OnboardingCopy._(this.isIndonesian);
 
   factory OnboardingCopy.forLanguage(String preferredLanguage) {
-    return OnboardingCopy._(preferredLanguage == 'Bahasa Indonesia');
+    final normalized = preferredLanguage.trim().toLowerCase().replaceAll(
+      '_',
+      '-',
+    );
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'ind' ||
+        normalized == 'indo' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa' ||
+        normalized == 'bahasa indonesia' ||
+        normalized.contains('indo');
+    return OnboardingCopy._(isIndonesian);
   }
 
   final bool isIndonesian;

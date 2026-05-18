@@ -209,9 +209,7 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   void _goHome() {
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(
+    Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.home,
       (route) => false,
       arguments: const {'open_goal_history': true},
@@ -244,10 +242,7 @@ class _PretestPageState extends State<PretestPage> {
                     0.0,
                     constraints.maxHeight - verticalPadding * 2,
                   );
-                  final canvasWidth = math.min(
-                    availableWidth,
-                    860.0,
-                  );
+                  final canvasWidth = math.min(availableWidth, 860.0);
                   final canvasHeight = math.min(
                     math.max(availableHeight, 220.0),
                     constraints.maxHeight,
@@ -599,7 +594,9 @@ class _QuestionStage extends StatelessWidget {
                     label: Text(addEvidenceLabel),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: WicaraColors.secondaryDeep,
-                      side: const BorderSide(color: WicaraColors.secondaryLight),
+                      side: const BorderSide(
+                        color: WicaraColors.secondaryLight,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(13),
                       ),
@@ -775,7 +772,12 @@ class _ReasoningFooter extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(horizontalPadding, 11, horizontalPadding, 14),
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          11,
+          horizontalPadding,
+          14,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1008,7 +1010,8 @@ class _ScoreSummaryCard extends StatelessWidget {
                       '${copy.isIndonesian ? 'Keseluruhan' : 'Overall'} $overallMasteryPercent%',
                     if (confidencePercent != null)
                       '${copy.isIndonesian ? 'Keyakinan' : 'Confidence'} $confidencePercent%',
-                    if (overallMasteryPercent == null && confidencePercent == null)
+                    if (overallMasteryPercent == null &&
+                        confidencePercent == null)
                       'Mastery estimate from adaptive pretest',
                   ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1130,7 +1133,9 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
           if (strengths.isNotEmpty) ...[
             const SizedBox(height: 18),
             _ReportInsightList(
-              title: copy.isIndonesian ? 'Yang sudah kuat' : 'What looks strong',
+              title: copy.isIndonesian
+                  ? 'Yang sudah kuat'
+                  : 'What looks strong',
               icon: Icons.check_circle_outline_rounded,
               color: WicaraColors.secondary,
               items: strengths,
@@ -1139,7 +1144,9 @@ class _KnowledgeGapDiagnosisCard extends StatelessWidget {
           if (gaps.isNotEmpty) ...[
             const SizedBox(height: 14),
             _ReportInsightList(
-              title: copy.isIndonesian ? 'Yang perlu diperbaiki' : 'What needs work',
+              title: copy.isIndonesian
+                  ? 'Yang perlu diperbaiki'
+                  : 'What needs work',
               icon: Icons.warning_amber_rounded,
               color: WicaraColors.accentCoral,
               items: gaps,
@@ -1302,10 +1309,7 @@ class _NodeBreakdownRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              _TinyBadge(
-                label: node.status.toUpperCase(),
-                color: statusColor,
-              ),
+              _TinyBadge(label: node.status.toUpperCase(), color: statusColor),
             ],
           ),
           const SizedBox(height: 9),
@@ -1320,8 +1324,20 @@ class _NodeBreakdownRow extends StatelessWidget {
                 ),
               _MetricPill(
                 label: copy.isIndonesian ? 'Benar' : 'Correct',
-                value: '${node.correctCount}/${node.attemptCount}',
+                value: node.answerPercent == null
+                    ? '${node.correctCount}/${node.attemptCount}'
+                    : _percentMetricText(node.answerPercent),
               ),
+              if (node.evidencePercent != null)
+                _MetricPill(
+                  label: copy.isIndonesian ? 'Evidence' : 'Evidence',
+                  value: _percentMetricText(node.evidencePercent),
+                ),
+              if (node.confidencePercent != null)
+                _MetricPill(
+                  label: copy.isIndonesian ? 'Confidence' : 'Confidence',
+                  value: _percentMetricText(node.confidencePercent),
+                ),
               if (node.difficultyReached.isNotEmpty)
                 _MetricPill(
                   label: copy.isIndonesian ? 'Level' : 'Level',
@@ -1375,7 +1391,9 @@ class _RecommendedFocusCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  copy.isIndonesian ? 'Fokus path berikutnya' : 'Next path focus',
+                  copy.isIndonesian
+                      ? 'Fokus path berikutnya'
+                      : 'Next path focus',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: WicaraColors.text,
                     fontSize: 16,
@@ -1478,6 +1496,16 @@ Color _statusColor(String status) {
     'gap' || 'probably_gap' => WicaraColors.accentCoral,
     _ => WicaraColors.primaryDeep,
   };
+}
+
+String _percentMetricText(double? value) {
+  if (value == null) {
+    return '--';
+  }
+  final clamped = value.clamp(0.0, 100.0);
+  return clamped == clamped.roundToDouble()
+      ? '${clamped.round()}%'
+      : '${clamped.toStringAsFixed(1)}%';
 }
 
 String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
@@ -1670,10 +1698,7 @@ class _CanvasPromptBubble extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        _CanvasQuickActionButton(
-          label: buttonLabel,
-          onPressed: onUseCanvas,
-        ),
+        _CanvasQuickActionButton(label: buttonLabel, onPressed: onUseCanvas),
       ],
     );
   }

@@ -45,14 +45,20 @@ class ApiOnboardingRepository implements OnboardingRepository {
   }
 
   String _languageCode(String label) {
-    final normalized = label.trim().toLowerCase();
+    final normalized = label.trim().toLowerCase().replaceAll('_', '-');
     return switch (normalized) {
-      'bahasa indonesia' || 'indonesian' => 'id',
-      'english' => 'en',
+      'id' ||
+      'id-id' ||
+      'ind' ||
+      'indo' ||
+      'bahasa' ||
+      'bahasa indonesia' ||
+      'indonesian' => 'id',
+      'en' || 'en-us' || 'en-gb' || 'eng' || 'english' => 'en',
       'bahasa melayu' || 'malay' => 'ms',
       'filipino' || 'tagalog' => 'fil',
       'vietnamese' || 'tieng viet' => 'vi',
-      _ => normalized.isEmpty ? 'id' : normalized,
+      _ => normalized.isEmpty ? 'en' : normalized,
     };
   }
 }

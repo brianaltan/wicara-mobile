@@ -14,6 +14,7 @@ import '../../../core/widgets/language_chip.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
 import '../../curriculum/domain/curriculum_repository.dart';
+import '../../learning_goal/domain/learning_goal_repository.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../../onboarding/domain/onboarding_options.dart';
@@ -75,6 +76,7 @@ bool _shouldOpenGoalHistory(Object? arguments) {
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.homeRepository,
     required this.authController,
     required this.onboardingController,
@@ -83,6 +85,7 @@ class AppHomePage extends StatefulWidget {
   });
 
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final HomeRepository homeRepository;
   final AuthController authController;
   final OnboardingController onboardingController;
@@ -109,14 +112,15 @@ class _AppHomePageState extends State<AppHomePage> {
   String? _dailyEvaluationSessionId;
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
-  DailyEvaluationResult? _posttestResult;
+  AdaptivePosttestResult? _posttestResult;
   String? _posttestSessionId;
   DailyEvaluationSession? _posttestSessionData;
   List<PretestQuestion> _backendPosttestQuestions = const [];
   bool _isLoadingPosttest = false;
   bool _isSubmittingPosttest = false;
   String? _posttestError;
-  String _lastCompletedTrackId = '';
+  String _lastPosttestTrackId = '';
+  String _lastPosttestModuleId = '';
   String? _selectedGoalSubject;
   String? _expandedGoalTrackId;
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
@@ -131,9 +135,7 @@ class _AppHomePageState extends State<AppHomePage> {
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
-    final shouldOpenGoalHistory = _shouldOpenGoalHistory(
-      widget.routeArguments,
-    );
+    final shouldOpenGoalHistory = _shouldOpenGoalHistory(widget.routeArguments);
     _autoOpenWorkspacePending =
         _shouldAutoOpenWorkspace(widget.routeArguments) &&
         !shouldOpenGoalHistory;
@@ -167,7 +169,9 @@ class _AppHomePageState extends State<AppHomePage> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             const SnackBar(
-              content: Text('Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.'),
+              content: Text(
+                'Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -442,12 +446,13 @@ class _AppHomePageState extends State<AppHomePage> {
     if (!mounted) return;
     _retryHomeSnapshot();
     if (result is WorkspaceCompletionResult) {
-      _lastCompletedTrackId = result.trackId;
-      _openPosttest(trackId: result.trackId);
+      _lastPosttestTrackId = result.trackId;
+      _lastPosttestModuleId = result.moduleId;
+      _openPosttest(trackId: result.trackId, moduleId: result.moduleId);
     }
   }
 
-  Future<void> _openPosttest({String? trackId}) async {
+  Future<void> _openPosttest({String? trackId, String? moduleId}) async {
     setState(() {
       _selectedTab = _HomeTab.home;
       _showGalleryDetail = false;
@@ -467,10 +472,11 @@ class _AppHomePageState extends State<AppHomePage> {
       _isLoadingPosttest = true;
     });
     try {
+      final resolvedTrackId = trackId ?? _lastPosttestTrackId;
+      final resolvedModuleId = moduleId ?? _lastPosttestModuleId;
       final session = await widget.homeRepository.startPosttest(
-        trackId: (trackId ?? _lastCompletedTrackId).isEmpty
-            ? null
-            : (trackId ?? _lastCompletedTrackId),
+        trackId: resolvedTrackId.isEmpty ? null : resolvedTrackId,
+        moduleId: resolvedModuleId.isEmpty ? null : resolvedModuleId,
       );
       if (!mounted) {
         return;
@@ -576,7 +582,9 @@ class _AppHomePageState extends State<AppHomePage> {
     if (session.questions.isEmpty) {
       return 0;
     }
-    return session.progress.completed.clamp(0, session.questions.length - 1).toInt();
+    return session.progress.completed
+        .clamp(0, session.questions.length - 1)
+        .toInt();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -707,8 +715,11 @@ class _AppHomePageState extends State<AppHomePage> {
       if (_posttestError != null || _backendPosttestQuestions.isEmpty) {
         return _DashboardStatePage(
           constraints: constraints,
-          title: copy.isIndonesian ? 'Posttest tidak tersedia' : 'Posttest unavailable',
-          message: _posttestError ??
+          title: copy.isIndonesian
+              ? 'Posttest tidak tersedia'
+              : 'Posttest unavailable',
+          message:
+              _posttestError ??
               (copy.isIndonesian
                   ? 'Backend tidak mengembalikan soal posttest.'
                   : 'Backend returned no posttest questions.'),
@@ -740,11 +751,10 @@ class _AppHomePageState extends State<AppHomePage> {
     }
 
     if (_showPosttestResult) {
-      return _EvaluationCompletePage(
+      return _PosttestAnalysisPage(
         constraints: constraints,
         result: _posttestResult,
         onBackHome: _openHome,
-        onActionSelected: _handleRecommendedAction,
       );
     }
 
@@ -859,7 +869,9 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         homeRepository: widget.homeRepository,
         curriculumRepository: widget.curriculumRepository,
-        preferredLanguage: widget.onboardingController.profile.preferredLanguage,
+        learningGoalRepository: widget.learningGoalRepository,
+        preferredLanguage:
+            widget.onboardingController.profile.preferredLanguage,
         onBack: _openHome,
         showLearningReport: _showLearningReport,
         showKnowledgeMap: _showKnowledgeMap,
@@ -1559,9 +1571,7 @@ class _GoalHistoryCard extends StatelessWidget {
                                   track.title,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(
                                         fontSize: 15,
                                         height: 1.18,
@@ -1793,9 +1803,7 @@ String? _resolveExpandedGoalTrackId({
   return goals.first.id;
 }
 
-LearningTrackModuleSummary? _currentModuleForGoal(
-  LearningTrackSummary track,
-) {
+LearningTrackModuleSummary? _currentModuleForGoal(LearningTrackSummary track) {
   for (final status in const ['active', 'ready', 'in_progress']) {
     for (final module in track.modules) {
       if (module.status.toLowerCase() == status) {
@@ -1837,9 +1845,7 @@ String _goalStatusLabel(String status, OnboardingCopy copy) {
     case 'needs review':
       return copy.isIndonesian ? 'Perlu review' : 'Needs review';
     default:
-      return status.isEmpty
-          ? (copy.isIndonesian ? 'Aktif' : 'Active')
-          : status;
+      return status.isEmpty ? (copy.isIndonesian ? 'Aktif' : 'Active') : status;
   }
 }
 
@@ -3900,6 +3906,311 @@ class _EvaluationCompletePage extends StatelessWidget {
   }
 }
 
+class _PosttestAnalysisPage extends StatelessWidget {
+  const _PosttestAnalysisPage({
+    required this.constraints,
+    required this.result,
+    required this.onBackHome,
+  });
+
+  final BoxConstraints constraints;
+  final AdaptivePosttestResult? result;
+  final VoidCallback onBackHome;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final resolved = result;
+    final passed = resolved?.passed ?? false;
+    final scoreFraction =
+        ((resolved?.scorePercent ?? 0).clamp(0, 100).toDouble()) / 100;
+    final nodes = resolved?.nodeResults ?? const <PosttestNodeResult>[];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _LearningSurfaceHeader(
+              title: 'Posttest Analysis',
+              languageCode: 'EN',
+              onBack: onBackHome,
+            ),
+            const SizedBox(height: 25),
+            Text(
+              passed
+                  ? (copy.isIndonesian
+                        ? 'Mastery terkonfirmasi'
+                        : 'Mastery confirmed')
+                  : (copy.isIndonesian
+                        ? 'Perlu retake node lemah'
+                        : 'Retake weak nodes'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              copy.isIndonesian
+                  ? 'Posttest memakai MCQ sebagai anchor. Evidence dan confidence membantu analisis, tapi tidak mengubah benar/salah.'
+                  : 'MCQ correctness is the anchor. Evidence and confidence improve analysis, but do not flip correctness.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 26),
+            _Panel(
+              padding: const EdgeInsets.fromLTRB(18, 17, 18, 18),
+              child: Row(
+                children: [
+                  Expanded(child: _EvaluationScoreRing(score: scoreFraction)),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _EvaluationStat(
+                          value: _percentText(resolved?.answerPercent ?? 0),
+                          label: copy.isIndonesian
+                              ? 'Correctness'
+                              : 'Correctness',
+                        ),
+                        const SizedBox(height: 17),
+                        _EvaluationStat(
+                          value: _percentText(resolved?.evidencePercent ?? 0),
+                          label: copy.isIndonesian ? 'Evidence' : 'Evidence',
+                        ),
+                        const SizedBox(height: 17),
+                        _EvaluationStat(
+                          value:
+                              '${resolved?.passedNodeCount ?? 0}/${resolved?.totalNodeCount ?? 0}',
+                          label: copy.isIndonesian
+                              ? 'Nodes passed'
+                              : 'Nodes passed',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _PosttestNodeResultsPanel(nodes: nodes),
+            const SizedBox(height: 18),
+            _Panel(
+              padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+              child: Row(
+                children: [
+                  Icon(
+                    passed
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.refresh_rounded,
+                    color: passed
+                        ? WicaraColors.secondary
+                        : WicaraColors.accentCoral,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      passed
+                          ? (copy.isIndonesian
+                                ? 'Semua node melewati mastery gate. Kamu bisa lanjut ke materi berikutnya.'
+                                : 'All nodes passed the mastery gate. Continue to the next material.')
+                          : (copy.isIndonesian
+                                ? 'Review node yang belum lulus, lalu retake posttest.'
+                                : 'Review the nodes that did not pass, then retake the posttest.'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.text,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+            _BackHomeButton(
+              label: passed
+                  ? (copy.isIndonesian ? 'Lanjut belajar' : 'Continue learning')
+                  : (copy.isIndonesian
+                        ? 'Review node lemah'
+                        : 'Review weak nodes'),
+              onPressed: onBackHome,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PosttestNodeResultsPanel extends StatelessWidget {
+  const _PosttestNodeResultsPanel({required this.nodes});
+
+  final List<PosttestNodeResult> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            copy.isIndonesian ? 'Hasil per node' : 'Node results',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (nodes.isEmpty)
+            Text(
+              copy.isIndonesian
+                  ? 'Belum ada node posttest yang dinilai.'
+                  : 'No posttest nodes have been evaluated yet.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            for (var index = 0; index < nodes.length; index++) ...[
+              _PosttestNodeResultRow(node: nodes[index]),
+              if (index != nodes.length - 1) const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PosttestNodeResultRow extends StatelessWidget {
+  const _PosttestNodeResultRow({required this.node});
+
+  final PosttestNodeResult node;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final statusColor = node.passed
+        ? WicaraColors.secondary
+        : WicaraColors.accentCoral;
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  node.conceptTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WicaraColors.text,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _SoftBadge(node.passed ? 'Passed' : 'Retake'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _PosttestMetricChip(
+                label: copy.isIndonesian ? 'Benar' : 'Correct',
+                value: _percentText(node.answerPercent),
+              ),
+              _PosttestMetricChip(
+                label: 'Evidence',
+                value: _percentText(node.evidencePercent),
+              ),
+              _PosttestMetricChip(
+                label: 'Confidence',
+                value: _percentText(node.confidencePercent),
+              ),
+              _PosttestMetricChip(
+                label: copy.isIndonesian ? 'Skor' : 'Score',
+                value: node.scaledScore.toStringAsFixed(1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            node.passed
+                ? (copy.isIndonesian
+                      ? '${node.correctCount}/${node.totalQuestions} jawaban benar. Node ini lulus gate.'
+                      : '${node.correctCount}/${node.totalQuestions} correct. This node passed the gate.')
+                : (copy.isIndonesian
+                      ? '${node.correctCount}/${node.totalQuestions} jawaban benar. Correctness harus minimal 70%.'
+                      : '${node.correctCount}/${node.totalQuestions} correct. Correctness must be at least 70%.'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: statusColor,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PosttestMetricChip extends StatelessWidget {
+  const _PosttestMetricChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Text(
+        '$label $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+String _percentText(double value) {
+  final clamped = value.clamp(0.0, 100.0);
+  return clamped == clamped.roundToDouble()
+      ? '${clamped.round()}%'
+      : '${clamped.toStringAsFixed(1)}%';
+}
+
 class _EvaluationScoreRing extends StatefulWidget {
   const _EvaluationScoreRing({required this.score});
 
@@ -4099,8 +4410,14 @@ Color _conceptStatusColor(String status) {
 }
 
 String _languageCode(String language) {
-  return switch (language.trim().toLowerCase()) {
-    'id' || 'indonesian' || 'bahasa indonesia' => 'ID',
+  return switch (language.trim().toLowerCase().replaceAll('_', '-')) {
+    'id' ||
+    'id-id' ||
+    'ind' ||
+    'indo' ||
+    'indonesian' ||
+    'bahasa' ||
+    'bahasa indonesia' => 'ID',
     'ms' || 'bahasa melayu' => 'MS',
     'fil' || 'filipino' => 'FIL',
     'vi' || 'vietnamese' => 'VI',
@@ -4109,8 +4426,14 @@ String _languageCode(String language) {
 }
 
 String _apiLocale(String language) {
-  return switch (language.trim().toLowerCase()) {
-    'id' || 'indonesian' || 'bahasa indonesia' => 'id',
+  return switch (language.trim().toLowerCase().replaceAll('_', '-')) {
+    'id' ||
+    'id-id' ||
+    'ind' ||
+    'indo' ||
+    'indonesian' ||
+    'bahasa' ||
+    'bahasa indonesia' => 'id',
     _ => 'en',
   };
 }
@@ -6778,6 +7101,7 @@ class _ProgressHub extends StatelessWidget {
     required this.constraints,
     required this.homeRepository,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.preferredLanguage,
     required this.onBack,
     required this.showLearningReport,
@@ -6792,6 +7116,7 @@ class _ProgressHub extends StatelessWidget {
   final BoxConstraints constraints;
   final HomeRepository homeRepository;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final String preferredLanguage;
   final VoidCallback onBack;
   final bool showLearningReport;
@@ -6817,6 +7142,7 @@ class _ProgressHub extends StatelessWidget {
       return _KnowledgeMapDetail(
         constraints: constraints,
         curriculumRepository: curriculumRepository,
+        learningGoalRepository: learningGoalRepository,
         preferredLanguage: preferredLanguage,
         onBack: onCloseKnowledgeMap,
       );
@@ -7252,6 +7578,8 @@ class _LearningReportContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
+            _LearningGainCard(report: report),
+            const SizedBox(height: 18),
             _ReportPerformancePanel(report: report),
             const SizedBox(height: 18),
             Row(
@@ -7382,6 +7710,124 @@ String _reportRangeOptionLabel(_ReportRangeOption option) {
     _ReportRangeOption.last4Weeks => 'Last 4 weeks',
   };
 }
+
+class _LearningGainCard extends StatelessWidget {
+  const _LearningGainCard({required this.report});
+
+  final WeeklyLearningReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPairedEvidence = report.pairedConceptCount > 0;
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.trending_up_rounded,
+                color: WicaraColors.secondary,
+                size: 21,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Learning gain',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (hasPairedEvidence)
+                _SoftBadge('${report.pairedConceptCount} paired'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (!hasPairedEvidence)
+            Text(
+              'Not enough paired pretest and posttest evidence yet.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Pretest',
+                    value: '${report.pretestScorePercent ?? 0}%',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Posttest',
+                    value: '${report.posttestScorePercent ?? 0}%',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _LearningGainMetric(
+                    label: 'Gain',
+                    value: _signedPercent(report.learningGainPercent ?? 0),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningGainMetric extends StatelessWidget {
+  const _LearningGainMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: WicaraColors.fieldFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: WicaraColors.text,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _signedPercent(int value) => value > 0 ? '+$value%' : '$value%';
 
 class _ReportPerformancePanel extends StatelessWidget {
   const _ReportPerformancePanel({required this.report});
@@ -7926,12 +8372,14 @@ class _KnowledgeMapDetail extends StatefulWidget {
   const _KnowledgeMapDetail({
     required this.constraints,
     required this.curriculumRepository,
+    required this.learningGoalRepository,
     required this.preferredLanguage,
     required this.onBack,
   });
 
   final BoxConstraints constraints;
   final CurriculumRepository curriculumRepository;
+  final LearningGoalRepository learningGoalRepository;
   final String preferredLanguage;
   final VoidCallback onBack;
 
@@ -7957,6 +8405,7 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
   bool _isLoadingCurriculum = true;
   bool _isLoadingMoreSections = false;
   bool _isUsingFallbackGraph = true;
+  bool _isCreatingGoal = false;
   int _curriculumRequestSerial = 0;
 
   @override
@@ -8127,6 +8576,10 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
             detailFuture: _loadConceptDetail(node, fallback),
             fallback: fallback,
             onClose: () => Navigator.of(sheetContext).pop(),
+            onUseAsGoal: () async {
+              Navigator.of(sheetContext).pop();
+              await _confirmGraphGoal(node);
+            },
           ),
         );
       },
@@ -8151,6 +8604,143 @@ class _KnowledgeMapDetailState extends State<_KnowledgeMapDetail> {
     } catch (_) {
       return fallback;
     }
+  }
+
+  Future<void> _confirmGraphGoal(_KnowledgeNode node) async {
+    if (_isCreatingGoal) {
+      return;
+    }
+    final copy = _HomeCopyScope.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          copy.isIndonesian
+              ? 'Gunakan node ini sebagai goal?'
+              : 'Use this as your learning goal?',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              node.label,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              copy.isIndonesian
+                  ? 'WICARA akan membuat goal baru dari node graph ini dan membuka pretest adaptif.'
+                  : 'WICARA will create a new goal from this graph node and open the adaptive pretest.',
+              style: const TextStyle(fontSize: 13, height: 1.35),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              copy.isIndonesian ? 'Pilih node lain' : 'Choose another node',
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(copy.isIndonesian ? 'Mulai pretest' : 'Start pretest'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) {
+      return;
+    }
+
+    setState(() => _isCreatingGoal = true);
+    try {
+      await widget.learningGoalRepository.createLearningGoalFromConcept(
+        conceptCode: node.id,
+        subjectCode: _selectedSubjectCode,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+    } on ActiveGoalConflictException catch (conflict) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      await _showGraphGoalConflictDialog(conflict);
+    } on LearningGoalException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isCreatingGoal = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  Future<void> _showGraphGoalConflictDialog(
+    ActiveGoalConflictException conflict,
+  ) async {
+    final copy = _HomeCopyScope.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          copy.isIndonesian
+              ? 'Goal ini sudah aktif'
+              : 'This goal is already active',
+        ),
+        content: Text(
+          copy.isIndonesian
+              ? 'Kamu sudah punya goal aktif untuk "${conflict.existingTopic}". Lanjutkan goal itu atau pilih node lain.'
+              : 'You already have an active goal for "${conflict.existingTopic}". Continue that goal or choose another node.',
+          style: const TextStyle(fontSize: 13, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(
+              copy.isIndonesian ? 'Pilih node lain' : 'Choose another node',
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _continueExistingGraphGoal(conflict);
+            },
+            child: Text(
+              copy.isIndonesian
+                  ? 'Lanjutkan goal ini'
+                  : 'Continue existing goal',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _continueExistingGraphGoal(ActiveGoalConflictException conflict) {
+    if (conflict.existingNextAction == 'continue_learning' ||
+        conflict.existingNextAction == 'enter_workspace') {
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.home,
+        arguments: {'open_goal_history': true},
+      );
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
   }
 
   @override
@@ -8252,10 +8842,9 @@ class _SubjectMapTabs extends StatelessWidget {
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
         final columns = width >= 420 ? 3 : 2;
-        final itemWidth = ((width - (8 * (columns - 1))) / columns).clamp(
-          104.0,
-          140.0,
-        ).toDouble();
+        final itemWidth = ((width - (8 * (columns - 1))) / columns)
+            .clamp(104.0, 140.0)
+            .toDouble();
 
         return Wrap(
           spacing: 8,
@@ -8858,7 +9447,7 @@ class _KnowledgeGraphLayout {
             return sectionCompare;
           }
           return a.y.compareTo(b.y);
-      });
+        });
       final headerLabel = _levelLabel(levelNodes, sectionLabelByNodeId);
       final headerWidth = math.min(
         maxWidth,
@@ -9252,11 +9841,13 @@ class _ConceptDetailBottomSheet extends StatelessWidget {
     required this.detailFuture,
     required this.fallback,
     required this.onClose,
+    required this.onUseAsGoal,
   });
 
   final Future<_ConceptDetailData> detailFuture;
   final _ConceptDetailData fallback;
   final VoidCallback onClose;
+  final VoidCallback onUseAsGoal;
 
   @override
   Widget build(BuildContext context) {
@@ -9294,6 +9885,7 @@ class _ConceptDetailBottomSheet extends StatelessWidget {
                       isLoading:
                           snapshot.connectionState == ConnectionState.waiting,
                       onClose: onClose,
+                      onUseAsGoal: onUseAsGoal,
                     ),
                   ],
                 ),
@@ -9418,11 +10010,13 @@ class _KnowledgeConceptDetailPanel extends StatefulWidget {
     required this.detail,
     required this.isLoading,
     required this.onClose,
+    required this.onUseAsGoal,
   });
 
   final _ConceptDetailData detail;
   final bool isLoading;
   final VoidCallback onClose;
+  final VoidCallback onUseAsGoal;
 
   @override
   State<_KnowledgeConceptDetailPanel> createState() =>
@@ -9561,6 +10155,16 @@ class _KnowledgeConceptDetailPanelState
                   fontWeight: FontWeight.w600,
                   height: 1.55,
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: widget.isLoading ? null : widget.onUseAsGoal,
+              icon: const Icon(Icons.flag_outlined, size: 18),
+              label: Text(
+                copy.isIndonesian
+                    ? 'Gunakan sebagai goal baru'
+                    : 'Use as new goal',
               ),
             ),
             const SizedBox(height: 16),
