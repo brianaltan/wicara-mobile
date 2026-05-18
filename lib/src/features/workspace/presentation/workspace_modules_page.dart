@@ -1501,6 +1501,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
             : _workspaceMaterial.topicTitle,
         moduleCompleted: moduleCompleted,
         requestedEarlyPosttest: requestedEarlyPosttest,
+        workspaceSessionId: _workspace?.id,
       ),
     );
   }

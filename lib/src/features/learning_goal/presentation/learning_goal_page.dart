@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -27,9 +26,7 @@ class LearningGoalPage extends StatefulWidget {
 class _LearningGoalPageState extends State<LearningGoalPage> {
   final _controller = TextEditingController();
   bool _isGenerating = false;
-  bool _isCheckingActive = true;
   bool _isComplete = false;
-  ActiveLearningGoal? _activeGoal;
   LearningGoalResolution? _resolution;
 
   @override
@@ -43,7 +40,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
   void initState() {
     super.initState();
     _controller.addListener(_handleTopicChanged);
-    unawaited(_loadActiveGoal());
   }
 
   void _handleTopicChanged() {
@@ -51,24 +47,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
       return;
     }
     setState(() {});
-  }
-
-  Future<void> _loadActiveGoal() async {
-    try {
-      final activeGoal = await widget.learningGoalRepository.fetchActiveGoal();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _activeGoal = activeGoal;
-        _isCheckingActive = false;
-      });
-    } on LearningGoalException catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _isCheckingActive = false);
-    }
   }
 
   Future<void> _generatePretest() async {
@@ -125,9 +103,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: Text(
-          isId ? 'Node ini sudah aktif' : 'This node is already active',
-        ),
+        title: Text(isId ? 'Goal aktif ditemukan' : 'Active goal found'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,8 +136,8 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
             const SizedBox(height: 10),
             Text(
               isId
-                  ? 'Kamu bisa membuat goal lain selama node-nya belum aktif. Pilih node berbeda, atau lanjutkan goal aktif ini.'
-                  : 'You can create another goal as long as that node is not active. Choose a different node, or continue this active goal.',
+                  ? 'Kamu bisa lanjutkan goal ini, atau kembali memilih node.'
+                  : 'You can continue this goal, or go back to choose a node.',
               style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.text,
                 fontWeight: FontWeight.w600,
@@ -176,7 +152,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
               Navigator.of(dialogContext).pop();
               setState(() => _resolution = null);
             },
-            child: Text(isId ? 'Pilih node lain' : 'Choose another node'),
+            child: Text(isId ? 'Kembali' : 'Back'),
           ),
           TextButton(
             onPressed: () {
@@ -265,9 +241,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     if (resolution == null || _isGenerating) {
       return;
     }
-    if (await _showDuplicateNodeWarningIfNeeded(suggestion)) {
-      return;
-    }
     final confirmed = await _showGoalConfirmationDialog(suggestion);
     if (!mounted || !confirmed) {
       return;
@@ -332,9 +305,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     if (_isGenerating) {
       setState(() => _isGenerating = false);
     }
-    if (await _showDuplicateNodeWarningIfNeeded(concept)) {
-      return;
-    }
     final confirmed = await _showGoalConfirmationDialog(concept);
     if (!mounted || !confirmed) {
       return;
@@ -395,125 +365,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           ),
         ) ??
         false;
-  }
-
-  Future<bool> _showDuplicateNodeWarningIfNeeded(
-    LearningConceptSuggestion concept,
-  ) async {
-    final duplicateGoal = _duplicateActiveGoalFor(concept);
-    if (duplicateGoal == null) {
-      return false;
-    }
-    await _showDuplicateNodeDialog(duplicateGoal, concept);
-    return true;
-  }
-
-  ActiveLearningGoal? _duplicateActiveGoalFor(
-    LearningConceptSuggestion concept,
-  ) {
-    final activeGoal = _activeGoal;
-    if (activeGoal == null) {
-      return null;
-    }
-    final activeConcept = activeGoal.targetConcept;
-    if (activeConcept != null) {
-      if (activeConcept.conceptId.isNotEmpty &&
-          activeConcept.conceptId == concept.conceptId) {
-        return activeGoal;
-      }
-      if (activeConcept.conceptCode.isNotEmpty &&
-          activeConcept.conceptCode == concept.conceptCode) {
-        return activeGoal;
-      }
-      if (_sameLooseText(activeConcept.title, concept.title)) {
-        return activeGoal;
-      }
-    }
-    if (_sameLooseText(activeGoal.rawTopic, concept.title)) {
-      return activeGoal;
-    }
-    return null;
-  }
-
-  Future<void> _showDuplicateNodeDialog(
-    ActiveLearningGoal activeGoal,
-    LearningConceptSuggestion concept,
-  ) async {
-    final copy = OnboardingCopy.forLanguage(
-      widget.onboardingController.profile.preferredLanguage,
-    );
-    final isId = copy.isIndonesian;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          isId ? 'Node ini sudah aktif' : 'This node is already active',
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isId
-                  ? 'Kamu bisa membuat goal lain selama node-nya belum aktif.'
-                  : 'You can create another goal as long as that node is not active.',
-              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.text,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: WicaraColors.accentAmber.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: WicaraColors.accentAmber.withValues(alpha: 0.24),
-                ),
-              ),
-              child: Text(
-                concept.title,
-                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
-                  color: WicaraColors.text,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              isId
-                  ? 'Pilih node lain untuk goal baru, atau lanjutkan goal aktif ini.'
-                  : 'Choose a different node for a new goal, or continue this active goal.',
-              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                color: WicaraColors.text,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              setState(() => _resolution = null);
-            },
-            child: Text(isId ? 'Pilih node lain' : 'Choose another node'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _continueActiveGoal(nextAction: activeGoal.nextAction);
-            },
-            child: Text(isId ? 'Lanjutkan goal ini' : 'Continue active goal'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _showNodeDetail(
@@ -693,8 +544,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                     copy: copy,
                     subjectChoices: subjectChoices,
                     selectedSubjectCode: selectedSubjectCode,
-                    isCheckingActive: _isCheckingActive,
-                    activeGoal: _activeGoal,
                     controller: _controller,
                     resolution: _resolution!,
                     onBack: _goBack,
@@ -818,15 +667,6 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.stretch,
                                         children: [
-                                          if (_isCheckingActive ||
-                                              _activeGoal != null) ...[
-                                            _ExistingGoalNotice(
-                                              activeGoal: _activeGoal,
-                                              copy: copy,
-                                              isChecking: _isCheckingActive,
-                                            ),
-                                            const SizedBox(height: 16),
-                                          ],
                                           Text(
                                             copy.learningTopicLabel,
                                             textAlign: TextAlign.center,
@@ -913,8 +753,6 @@ class _ResolvedLearningGoalLayout extends StatelessWidget {
     required this.copy,
     required this.subjectChoices,
     required this.selectedSubjectCode,
-    required this.isCheckingActive,
-    required this.activeGoal,
     required this.controller,
     required this.resolution,
     required this.onBack,
@@ -931,8 +769,6 @@ class _ResolvedLearningGoalLayout extends StatelessWidget {
   final OnboardingCopy copy;
   final List<_SubjectChoice> subjectChoices;
   final String selectedSubjectCode;
-  final bool isCheckingActive;
-  final ActiveLearningGoal? activeGoal;
   final TextEditingController controller;
   final LearningGoalResolution resolution;
   final VoidCallback onBack;
@@ -1010,14 +846,6 @@ class _ResolvedLearningGoalLayout extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (isCheckingActive || activeGoal != null) ...[
-                      _ExistingGoalNotice(
-                        activeGoal: activeGoal,
-                        copy: copy,
-                        isChecking: isCheckingActive,
-                      ),
-                      const SizedBox(height: 14),
-                    ],
                     Text(
                       copy.learningTopicLabel,
                       textAlign: TextAlign.center,
@@ -1911,37 +1739,6 @@ class _LevelNoteBox extends StatelessWidget {
   }
 }
 
-class _ExistingGoalNotice extends StatelessWidget {
-  const _ExistingGoalNotice({
-    required this.activeGoal,
-    required this.copy,
-    required this.isChecking,
-  });
-
-  final ActiveLearningGoal? activeGoal;
-  final OnboardingCopy copy;
-  final bool isChecking;
-
-  @override
-  Widget build(BuildContext context) {
-    final description = isChecking
-        ? copy.isIndonesian
-              ? 'Mengecek goal aktif yang sudah ada.'
-              : 'Checking your existing active goals.'
-        : copy.isIndonesian
-        ? 'Kamu bisa membuat goal lain selama node itu belum aktif.'
-        : 'You can create another goal as long as that node is not active.';
-    return _NoticeBox(
-      icon: Icons.info_outline_rounded,
-      title: copy.isIndonesian
-          ? 'Goal baru harus memakai node berbeda'
-          : 'New goals need a different node',
-      description: description,
-      color: WicaraColors.secondary,
-    );
-  }
-}
-
 class _NoticeBox extends StatelessWidget {
   const _NoticeBox({
     required this.icon,
@@ -2079,10 +1876,4 @@ IconData _levelNoteIcon(String? relation) {
     'at_current_level' => Icons.check_circle_outline_rounded,
     _ => Icons.info_outline_rounded,
   };
-}
-
-bool _sameLooseText(String left, String right) {
-  final normalizedLeft = left.trim().toLowerCase();
-  final normalizedRight = right.trim().toLowerCase();
-  return normalizedLeft.isNotEmpty && normalizedLeft == normalizedRight;
 }

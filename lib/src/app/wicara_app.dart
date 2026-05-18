@@ -371,6 +371,7 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<DailyEvaluationSession> startPosttest({
+    String? workspaceSessionId,
     String? learningGoalId,
     String? trackId,
     String? moduleId,

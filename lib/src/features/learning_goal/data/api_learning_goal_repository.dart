@@ -143,6 +143,7 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
     String? conceptId,
     String? conceptCode,
     String? subjectCode,
+    String? language,
   }) async {
     final token = _requireToken();
     try {
@@ -156,6 +157,8 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
             'concept_code': _nullableString(conceptCode),
           if (_nullableString(subjectCode) != null)
             'subject_code': _nullableString(subjectCode),
+          if (_nullableString(language) != null)
+            'language': _normalizeLanguage(language),
         },
       );
       final bootstrap = LearningGoalBootstrap(
@@ -266,9 +269,7 @@ LearningConceptSuggestion _conceptFromJson(Map<String, dynamic> json) {
     title: _stringValue(json['title']),
     description: _stringValue(json['description']),
     idDesc: _stringValue(
-      json['id_desc'].isEmpty
-          ? json['description']
-          : json['id_desc'],
+      json['id_desc'].isEmpty ? json['description'] : json['id_desc'],
     ),
     enDesc: _stringValue(json['en_desc']),
     subjectCode: _stringValue(json['subject_code']),

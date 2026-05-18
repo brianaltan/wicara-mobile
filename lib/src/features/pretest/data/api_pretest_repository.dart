@@ -151,7 +151,7 @@ PretestQuestion questionFromJson(Map<String, dynamic> json) {
     packId: _string(json['pack_id']),
     stepLabel: _string(json['step_label']).isNotEmpty
         ? _string(json['step_label'])
-        : 'Question ${_intFromProgress(progress, 'current', fallback: 1)} of ${_intFromProgress(progress, 'max', fallback: 10)}',
+        : 'Question ${_intFromProgress(progress, 'current', fallback: 1)} - Up to ${_intFromProgress(progress, 'max', fallback: 10)} questions',
     topic: conceptTitle.isNotEmpty ? conceptTitle : _string(json['topic']),
     prompt: _string(json['prompt']),
     helper: _string(json['helper']),
@@ -178,6 +178,11 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
   final targetTitle = target is Map ? _string(target['title']) : '';
   final recommendedPath = _string(diagnosis['recommended_path']);
   final pathOptions = diagnosis['path_options'];
+  final scorePercent =
+      _double(diagnosis['pure_answer_percent']) ??
+      _double(diagnosis['score_percent']);
+  final answeredCount = _int(diagnosis['pure_answer_total']) ?? 0;
+  final correctCount = _int(diagnosis['pure_answer_score']) ?? 0;
   final strengths = analysis is Map
       ? _stringList(analysis['strengths'])
       : const <String>[];
@@ -190,12 +195,7 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
   final recommendedFocus = analysis is Map
       ? _stringList(analysis['recommended_focus'])
       : const <String>[];
-  final masteryScore = target is Map
-      ? _double(target['mastery_score'])
-      : _percentToUnit(diagnosis['score_percent']);
-  final confidence = target is Map
-      ? _double(target['confidence'])
-      : _percentToUnit(diagnosis['confidence_percent']);
+  final masteryScore = _percentToUnit(scorePercent);
   final overallMasteryPercent =
       _int(diagnosis['overall_mastery_percent']) ??
       (analysis is Map ? _int(analysis['overall_mastery_percent']) : null);
@@ -204,7 +204,11 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
     gapLabel: target is Map ? _string(target['status']).toUpperCase() : 'DONE',
     message: _string(diagnosis['summary']),
     pathTitle: 'Personalized path generated',
-    pathMeta: _scoreMeta(masteryScore: masteryScore, confidence: confidence),
+    pathMeta: _scoreMeta(
+      scorePercent: scorePercent,
+      correctCount: correctCount,
+      answeredCount: answeredCount,
+    ),
     pathDescription: _pathDescription(recommendedPath),
     recommendedPath: recommendedPath.isEmpty
         ? 'target_from_basics'
@@ -216,8 +220,9 @@ KnowledgeState knowledgeStateFromDiagnosis(Map<String, dynamic> diagnosis) {
               .toList(growable: false)
         : const [],
     masteryScore: masteryScore,
-    confidence: confidence,
     overallMasteryPercent: overallMasteryPercent,
+    correctCount: correctCount,
+    answeredCount: answeredCount,
     strengths: strengths,
     gaps: gaps,
     evidenceNotes: evidenceNotes,
@@ -309,6 +314,7 @@ List<PretestNodeReport> _nodeReports(Object? value) {
           scorePercent: _double(node['score_percent']),
           confidencePercent: _double(node['confidence_percent']),
           metricSource: _string(node['metric_source']),
+          hasEvidence: summary['has_evidence'] == true,
           diagnosticSignals: _stringList(summary['diagnostic_signals']),
           carelessMistakePossible: summary['careless_mistake_possible'] == true,
           misconceptionDetected: summary['misconception_detected'] == true,
@@ -318,15 +324,17 @@ List<PretestNodeReport> _nodeReports(Object? value) {
       .toList(growable: false);
 }
 
-String _scoreMeta({double? masteryScore, double? confidence}) {
-  if (masteryScore == null && confidence == null) {
+String _scoreMeta({
+  required double? scorePercent,
+  required int correctCount,
+  required int answeredCount,
+}) {
+  if (scorePercent == null) {
     return 'Adaptive pretest complete';
   }
-  final scoreText = masteryScore == null
-      ? null
-      : 'Score ${(masteryScore * 100).round()}%';
-  final confidenceText = confidence == null
-      ? null
-      : 'confidence ${(confidence * 100).round()}%';
-  return [scoreText, confidenceText].whereType<String>().join(' • ');
+  final parts = <String>['Score ${scorePercent.round()}%'];
+  if (answeredCount > 0) {
+    parts.add('$correctCount/$answeredCount correct');
+  }
+  return parts.join(' • ');
 }

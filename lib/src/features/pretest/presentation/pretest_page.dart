@@ -10,7 +10,6 @@ import '../../onboarding/domain/onboarding_copy.dart';
 import '../domain/pretest_models.dart';
 import '../domain/pretest_repository.dart';
 import 'widgets/assessment_option_tile.dart';
-import 'widgets/confidence_picker.dart';
 import 'widgets/fishbone_canvas.dart';
 import 'widgets/knowledge_state_card.dart';
 import 'widgets/rich_math_text.dart';
@@ -37,7 +36,6 @@ class _PretestPageState extends State<PretestPage> {
   _PretestStage _stage = _PretestStage.question;
   PretestQuestion? _question;
   String _selectedOptionId = '';
-  int _confidence = 6;
   bool _isSubmitting = false;
   bool _isLoadingQuestion = true;
   String? _questionError;
@@ -87,6 +85,9 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Future<void> _submitAnswer() async {
+    if (_isSubmitting) {
+      return;
+    }
     if (_selectedOptionId.isEmpty) {
       _showMessage('Pilih jawaban sebelum lanjut.');
       return;
@@ -104,6 +105,9 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Future<void> _submitReasoning() async {
+    if (_isSubmitting) {
+      return;
+    }
     await _submitCurrentAnswer(
       typedReasoning: _reasoningController.text,
       usedCanvas: _canvasSnapshots.isNotEmpty,
@@ -114,13 +118,16 @@ class _PretestPageState extends State<PretestPage> {
     required String typedReasoning,
     required bool usedCanvas,
   }) async {
+    if (_isSubmitting) {
+      return;
+    }
     setState(() => _isSubmitting = true);
     try {
       final result = await widget.pretestRepository.submitAnswer(
         PretestAnswer(
           questionId: _question?.id ?? '',
           optionId: _selectedOptionId,
-          confidence: _confidence,
+          confidence: 0,
           typedReasoning: typedReasoning,
           usedCanvas: usedCanvas,
         ),
@@ -131,6 +138,10 @@ class _PretestPageState extends State<PretestPage> {
       if (result.completed) {
         setState(() {
           _knowledgeState = result.diagnosis;
+          _question = null;
+          _selectedOptionId = '';
+          _reasoningController.clear();
+          _canvasSnapshots.clear();
           _stage = _PretestStage.result;
         });
       } else if (result.nextQuestion != null) {
@@ -299,6 +310,14 @@ class _PretestPageState extends State<PretestPage> {
   }
 
   Widget _stageView(BoxConstraints constraints, OnboardingCopy copy) {
+    if (_stage == _PretestStage.result) {
+      return _ResultStage(
+        constraints: constraints,
+        copy: copy,
+        result: _knowledgeState,
+        onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
+      );
+    }
     if (_isLoadingQuestion) {
       return _PretestStateView(
         constraints: constraints,
@@ -319,6 +338,7 @@ class _PretestPageState extends State<PretestPage> {
 
     return switch (_stage) {
       _PretestStage.question => _QuestionStage(
+        key: ValueKey(question.id),
         constraints: constraints,
         copy: copy,
         question: question,
@@ -326,11 +346,9 @@ class _PretestPageState extends State<PretestPage> {
             .clamp(0.0, 1.0)
             .toDouble(),
         selectedOptionId: _selectedOptionId,
-        confidence: _confidence,
         isSubmitting: _isSubmitting,
         onClose: _goHome,
         onSelected: (id) => setState(() => _selectedOptionId = id),
-        onConfidenceChanged: (value) => setState(() => _confidence = value),
         submitLabel: copy.isIndonesian ? 'Kirim jawaban' : 'Submit answer',
         addEvidenceLabel: copy.isIndonesian
             ? 'Tambah cara / coretan'
@@ -350,12 +368,7 @@ class _PretestPageState extends State<PretestPage> {
         onUseCanvas: _openLargeCanvas,
         onSubmit: _submitReasoning,
       ),
-      _PretestStage.result => _ResultStage(
-        constraints: constraints,
-        copy: copy,
-        result: _knowledgeState,
-        onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
-      ),
+      _PretestStage.result => const SizedBox.shrink(),
     };
   }
 }
@@ -427,16 +440,15 @@ class _PretestStateView extends StatelessWidget {
 
 class _QuestionStage extends StatelessWidget {
   const _QuestionStage({
+    super.key,
     required this.constraints,
     required this.copy,
     required this.question,
     required this.progressValue,
     required this.selectedOptionId,
-    required this.confidence,
     required this.isSubmitting,
     required this.onClose,
     required this.onSelected,
-    required this.onConfidenceChanged,
     required this.submitLabel,
     required this.addEvidenceLabel,
     required this.onSubmit,
@@ -448,11 +460,9 @@ class _QuestionStage extends StatelessWidget {
   final PretestQuestion question;
   final double progressValue;
   final String selectedOptionId;
-  final int confidence;
   final bool isSubmitting;
   final VoidCallback onClose;
   final ValueChanged<String> onSelected;
-  final ValueChanged<int> onConfidenceChanged;
   final String submitLabel;
   final String addEvidenceLabel;
   final VoidCallback onSubmit;
@@ -574,12 +584,6 @@ class _QuestionStage extends StatelessWidget {
                       const SizedBox(height: 10),
                   ],
                   const SizedBox(height: 19),
-                  ConfidencePicker(
-                    value: confidence,
-                    onChanged: onConfidenceChanged,
-                    copy: copy,
-                  ),
-                  const SizedBox(height: 20),
                   GradientButton(
                     label: submitLabel,
                     onPressed: selectedOptionId.isEmpty ? null : onSubmit,
@@ -676,8 +680,8 @@ class _ReasoningStage extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     copy.isIndonesian
-                        ? 'Opsional: tulis langkahmu atau lampirkan coretan. Ini menaikkan confidence diagnosis, tapi jawaban pilihan ganda tetap jadi anchor.'
-                        : 'Optional: type your steps or attach canvas work. This helps diagnosis confidence, but your MCQ answer stays the anchor.',
+                        ? 'Opsional: tulis langkahmu atau lampirkan coretan. Ini hanya menjadi feedback diagnostik; skor tetap dari MCQ.'
+                        : 'Optional: type your steps or attach canvas work. This only adds diagnostic feedback; the score stays MCQ-only.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
@@ -872,12 +876,13 @@ class _ResultStage extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (state.masteryScore != null || state.confidence != null) ...[
+            if (state.masteryScore != null) ...[
               const SizedBox(height: 22),
               _ScoreSummaryCard(
-                masteryScore: state.masteryScore,
-                confidence: state.confidence,
+                score: state.masteryScore,
                 overallMasteryPercent: state.overallMasteryPercent,
+                correctCount: state.correctCount,
+                answeredCount: state.answeredCount,
                 copy: copy,
               ),
             ],
@@ -941,23 +946,25 @@ class _ResultStage extends StatelessWidget {
 
 class _ScoreSummaryCard extends StatelessWidget {
   const _ScoreSummaryCard({
-    required this.masteryScore,
-    required this.confidence,
+    required this.score,
     required this.overallMasteryPercent,
+    required this.correctCount,
+    required this.answeredCount,
     required this.copy,
   });
 
-  final double? masteryScore;
-  final double? confidence;
+  final double? score;
   final int? overallMasteryPercent;
+  final int correctCount;
+  final int answeredCount;
   final OnboardingCopy copy;
 
   @override
   Widget build(BuildContext context) {
-    final scorePercent = ((masteryScore ?? 0).clamp(0.0, 1.0) * 100).round();
-    final confidencePercent = confidence == null
-        ? null
-        : ((confidence!.clamp(0.0, 1.0)) * 100).round();
+    final scorePercent = ((score ?? 0).clamp(0.0, 1.0) * 100).round();
+    final correctText = answeredCount > 0
+        ? '$correctCount/$answeredCount ${copy.isIndonesian ? 'benar' : 'correct'}'
+        : (copy.isIndonesian ? 'Belum ada jawaban' : 'No answers');
     return Container(
       padding: const EdgeInsets.fromLTRB(17, 15, 17, 15),
       decoration: BoxDecoration(
@@ -1006,13 +1013,11 @@ class _ScoreSummaryCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   [
-                    if (overallMasteryPercent != null)
-                      '${copy.isIndonesian ? 'Keseluruhan' : 'Overall'} $overallMasteryPercent%',
-                    if (confidencePercent != null)
-                      '${copy.isIndonesian ? 'Keyakinan' : 'Confidence'} $confidencePercent%',
-                    if (overallMasteryPercent == null &&
-                        confidencePercent == null)
-                      'Mastery estimate from adaptive pretest',
+                    copy.isIndonesian ? 'Skor MCQ resmi' : 'Official MCQ score',
+                    correctText,
+                    if (overallMasteryPercent != null &&
+                        overallMasteryPercent != scorePercent)
+                      '${copy.isIndonesian ? 'Laporan' : 'Report'} $overallMasteryPercent%',
                   ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.muted,
@@ -1280,9 +1285,6 @@ class _NodeBreakdownRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _statusColor(node.status);
-    final masteryText = node.masteryScore == null
-        ? null
-        : '${(node.masteryScore!.clamp(0.0, 1.0) * 100).round()}%';
     final reasoningText = _reasoningText(node, copy);
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1317,27 +1319,12 @@ class _NodeBreakdownRow extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (masteryText != null)
-                _MetricPill(
-                  label: copy.isIndonesian ? 'Mastery' : 'Mastery',
-                  value: masteryText,
-                ),
               _MetricPill(
                 label: copy.isIndonesian ? 'Benar' : 'Correct',
                 value: node.answerPercent == null
                     ? '${node.correctCount}/${node.attemptCount}'
                     : _percentMetricText(node.answerPercent),
               ),
-              if (node.evidencePercent != null)
-                _MetricPill(
-                  label: copy.isIndonesian ? 'Evidence' : 'Evidence',
-                  value: _percentMetricText(node.evidencePercent),
-                ),
-              if (node.confidencePercent != null)
-                _MetricPill(
-                  label: copy.isIndonesian ? 'Confidence' : 'Confidence',
-                  value: _percentMetricText(node.confidencePercent),
-                ),
               if (node.difficultyReached.isNotEmpty)
                 _MetricPill(
                   label: copy.isIndonesian ? 'Level' : 'Level',
@@ -1509,6 +1496,9 @@ String _percentMetricText(double? value) {
 }
 
 String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
+  if (!node.hasEvidence) {
+    return '';
+  }
   if (node.misconceptionDetected) {
     return copy.isIndonesian
         ? 'Reasoning menunjukkan miskonsepsi pada node ini.'
@@ -1521,8 +1511,8 @@ String _reasoningText(PretestNodeReport node, OnboardingCopy copy) {
   }
   if (node.reasoningQuality == 'not_provided') {
     return copy.isIndonesian
-        ? 'Tidak ada langkah tertulis, jadi confidence evidence lebih terbatas.'
-        : 'No written steps were provided, so evidence confidence is limited.';
+        ? 'Evidence tersimpan, tetapi tidak ada langkah tertulis untuk dianalisis.'
+        : 'Evidence was stored, but no written steps were available to analyze.';
   }
   final score = node.avgReasoningScore == null
       ? ''

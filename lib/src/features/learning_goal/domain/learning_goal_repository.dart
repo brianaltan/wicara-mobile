@@ -7,8 +7,8 @@ class LearningGoalException implements Exception {
   String toString() => message;
 }
 
-/// Thrown when the user confirms a goal for a node that is already active.
-/// Carries enough info to let the UI continue that goal or choose another node.
+/// Thrown when the backend returns an active-goal conflict.
+/// Carries enough info to let the UI continue that goal.
 class ActiveGoalConflictException implements Exception {
   const ActiveGoalConflictException({
     required this.existingGoalId,
@@ -29,7 +29,7 @@ class ActiveGoalConflictException implements Exception {
   @override
   String toString() =>
       'You already have an active goal for "$existingTopic". '
-      'Choose another node or continue the existing goal.';
+      'Continue the existing goal or go back.';
 }
 
 class LearningGoalBootstrap {
@@ -154,6 +154,7 @@ abstract class LearningGoalRepository {
     String? conceptId,
     String? conceptCode,
     String? subjectCode,
+    String? language,
   });
 
   Future<void> cancelGoal({required String learningGoalId});

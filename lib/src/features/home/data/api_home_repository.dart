@@ -176,12 +176,16 @@ class ApiHomeRepository implements HomeRepository {
 
   @override
   Future<DailyEvaluationSession> startPosttest({
+    String? workspaceSessionId,
     String? learningGoalId,
     String? trackId,
     String? moduleId,
   }) async {
     final token = _requireToken();
     final body = <String, dynamic>{};
+    if ((workspaceSessionId ?? '').isNotEmpty) {
+      body['workspace_session_id'] = workspaceSessionId;
+    }
     if ((learningGoalId ?? '').isNotEmpty) {
       body['learning_goal_id'] = learningGoalId;
     }
@@ -195,6 +199,7 @@ class ApiHomeRepository implements HomeRepository {
       '/api/v1/posttests/start',
       headers: {'Authorization': 'Bearer $token'},
       body: body,
+      timeout: const Duration(seconds: 300),
     );
     return _posttestSessionFromJson(json);
   }
@@ -421,16 +426,14 @@ class ApiHomeRepository implements HomeRepository {
         .toInt();
     return DailyEvaluationSession(
       sessionId: _string(json['session_id']),
-      title: 'Adaptive Posttest',
+      title: 'Posttest Mastery Check',
       status: _stringWithFallback(json['status'], 'active'),
-      language: 'id',
-      source: 'adaptive_generated',
-      reviewDue: ReviewDueSummary(
-        title: 'Posttest siap',
-        dueCount: totalQuestions,
-        summary: '$totalQuestions soal untuk validasi mastery per node.',
-        actionLabel: 'Mulai',
+      language: _stringWithFallback(json['language'], 'id'),
+      source: _stringWithFallback(
+        json['posttest_source'],
+        'adaptive_generated',
       ),
+      reviewDue: const ReviewDueSummary(),
       progress: DailyEvaluationProgress(
         current: safeCurrent,
         total: totalQuestions,
@@ -439,20 +442,8 @@ class ApiHomeRepository implements HomeRepository {
       ),
       currentQuestion: currentQuestion,
       questions: parsedQuestions,
-      retentionForecast: const RetentionForecast(
-        title: 'Target posttest',
-        basis: 'Pass score per node minimal 7.0.',
-        points: [
-          RetentionForecastPoint(label: 'Pre', retentionPercent: 0),
-          RetentionForecastPoint(label: 'Post', retentionPercent: 100),
-        ],
-      ),
-      recommendationCallout: const RecommendationCallout(
-        title: 'Mastery gate',
-        message: 'Node dengan skor <7 wajib retake dan badge tidak diberikan.',
-        impactLabel: 'Posttest',
-        actionLabel: 'Jawab',
-      ),
+      retentionForecast: const RetentionForecast(),
+      recommendationCallout: const RecommendationCallout(),
     );
   }
 

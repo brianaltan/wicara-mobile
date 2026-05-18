@@ -77,6 +77,8 @@ class KnowledgeState {
     this.masteryScore,
     this.confidence,
     this.overallMasteryPercent,
+    this.correctCount = 0,
+    this.answeredCount = 0,
     this.strengths = const [],
     this.gaps = const [],
     this.evidenceNotes = const [],
@@ -95,6 +97,8 @@ class KnowledgeState {
   final double? masteryScore;
   final double? confidence;
   final int? overallMasteryPercent;
+  final int correctCount;
+  final int answeredCount;
   final List<String> strengths;
   final List<String> gaps;
   final List<String> evidenceNotes;
@@ -119,6 +123,7 @@ class PretestNodeReport {
     this.scorePercent,
     this.confidencePercent,
     this.metricSource = '',
+    this.hasEvidence = false,
     this.diagnosticSignals = const [],
     this.carelessMistakePossible = false,
     this.misconceptionDetected = false,
@@ -139,6 +144,7 @@ class PretestNodeReport {
   final double? scorePercent;
   final double? confidencePercent;
   final String metricSource;
+  final bool hasEvidence;
   final List<String> diagnosticSignals;
   final bool carelessMistakePossible;
   final bool misconceptionDetected;

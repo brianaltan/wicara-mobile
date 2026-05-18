@@ -19,6 +19,7 @@ class WorkspaceCompletionResult {
     required this.moduleTitle,
     required this.moduleCompleted,
     required this.requestedEarlyPosttest,
+    this.workspaceSessionId,
   });
 
   final String trackId;
@@ -26,6 +27,7 @@ class WorkspaceCompletionResult {
   final String moduleTitle;
   final bool moduleCompleted;
   final bool requestedEarlyPosttest;
+  final String? workspaceSessionId;
 }
 
 class WorkspaceSession {
