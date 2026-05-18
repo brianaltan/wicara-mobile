@@ -608,6 +608,11 @@ class WeeklyLearningReport {
     required this.unlockedThisWeek,
     required this.upcomingRecommendations,
     required this.consistencySummary,
+    this.dataQuality = const ReportDataQuality(),
+    this.effortImpact = const ReportEffortImpact(),
+    this.conceptMovers = const [],
+    this.weeklyTimeline = const [],
+    this.weeklyNarrative = const WeeklyNarrative(),
   });
 
   final String rangeLabel;
@@ -632,6 +637,11 @@ class WeeklyLearningReport {
   final UnlockedConceptSummary unlockedThisWeek;
   final List<RecommendedNextAction> upcomingRecommendations;
   final ConsistencySummary consistencySummary;
+  final ReportDataQuality dataQuality;
+  final ReportEffortImpact effortImpact;
+  final List<ReportConceptMover> conceptMovers;
+  final List<WeeklyTimelinePoint> weeklyTimeline;
+  final WeeklyNarrative weeklyNarrative;
 }
 
 class ReportPerformanceGroup {
@@ -679,6 +689,104 @@ class ConsistencySummary {
   final String title;
   final String narrative;
   final String signal;
+}
+
+class ReportDataQuality {
+  const ReportDataQuality({
+    this.confidenceLabel = 'low',
+    this.confidenceScore = 0,
+    this.coverageStatus = 'seeded_baseline',
+    this.attemptsCovered = 0,
+    this.pairedConcepts = 0,
+    this.notes = const [],
+  });
+
+  final String confidenceLabel;
+  final int confidenceScore;
+  final String coverageStatus;
+  final int attemptsCovered;
+  final int pairedConcepts;
+  final List<String> notes;
+}
+
+class ReportEffortImpact {
+  const ReportEffortImpact({
+    this.attemptCount = 0,
+    this.activeDays = 0,
+    this.retentionMinutes = 0,
+    this.reviewDueCount = 0,
+    this.newGapsCount = 0,
+    this.impactScoreDelta = 0,
+    this.efficiencyLabel = 'no_signal',
+    this.narrative = '',
+  });
+
+  final int attemptCount;
+  final int activeDays;
+  final int retentionMinutes;
+  final int reviewDueCount;
+  final int newGapsCount;
+  final int impactScoreDelta;
+  final String efficiencyLabel;
+  final String narrative;
+}
+
+class ReportConceptMover {
+  const ReportConceptMover({
+    this.conceptId,
+    required this.title,
+    required this.movementType,
+    required this.status,
+    required this.masteryBeforePercent,
+    required this.masteryAfterPercent,
+    required this.masteryDeltaPercent,
+    required this.evidenceDelta,
+    this.nextReviewDate,
+    required this.reason,
+  });
+
+  final String? conceptId;
+  final String title;
+  final String movementType;
+  final String status;
+  final int masteryBeforePercent;
+  final int masteryAfterPercent;
+  final int masteryDeltaPercent;
+  final int evidenceDelta;
+  final String? nextReviewDate;
+  final String reason;
+}
+
+class WeeklyTimelinePoint {
+  const WeeklyTimelinePoint({
+    required this.label,
+    required this.rangeStart,
+    required this.rangeEnd,
+    required this.score,
+    required this.fixedGaps,
+    required this.remainingGaps,
+    required this.attemptCount,
+  });
+
+  final String label;
+  final String rangeStart;
+  final String rangeEnd;
+  final int score;
+  final int fixedGaps;
+  final int remainingGaps;
+  final int attemptCount;
+}
+
+class WeeklyNarrative {
+  const WeeklyNarrative({
+    this.improved = '',
+    this.stagnant = '',
+    this.focus = '',
+  });
+
+  final String improved;
+  final String stagnant;
+  final String focus;
 }
 
 double _averagePercent(Iterable<double> values) {
