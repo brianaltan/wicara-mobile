@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
@@ -363,30 +364,76 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       workspace: workspace,
       metadata: metadata,
     );
-    final requestId =
-        'workspace_local_tutor_${workspaceId}_${DateTime.now().microsecondsSinceEpoch}';
-    final routeResult = await edgeModelRouter.routeAndGenerate(
-      task: task,
-      prompt: prompt,
-      requestId: requestId,
-      temperature: 0.25,
-      maxTokens: 220,
-      allowCloudFallback: edgeCloudFallbackAllowed,
-    );
-    final parsedBeforeTransition = _parseTutorOverridePayload(
-      routeResult.text,
-      phase: phaseState.currentPhase,
-      normalizedEventType: normalizedEventType,
-      textPayload: textPayload,
-      metadata: metadata,
-    );
+    final isBriefGreeting =
+        normalizedEventType == 'text' && _isBriefGreeting(textPayload);
+    late final EdgeRouteResult routeResult;
+    late final _TutorOverridePayload parsedBeforeTransition;
+    if (isBriefGreeting) {
+      routeResult = const EdgeRouteResult(
+        text: '',
+        decision: EdgeRouteDecision(
+          target: EdgeRuntimeTarget.deterministicLocal,
+          reason: 'brief_greeting_detected',
+          requiresNetwork: false,
+          privacySensitive: true,
+          userVisibleFallback: false,
+        ),
+        audit: EdgeRouteAudit(
+          runtimeTarget: 'deterministic_local',
+          modelId: 'deterministic-greeting-v1',
+          executionLocation: 'device',
+          networkRequired: false,
+          fallbackUsed: false,
+          routeReason: 'brief_greeting_detected',
+          latencyMs: 0,
+          inputChars: 0,
+          outputChars: 0,
+          createdAtIso8601: '',
+        ),
+      );
+      parsedBeforeTransition = _briefGreetingPayload(
+        phase: phaseState.currentPhase,
+        languageCode: workspace?.learnerLanguage,
+      );
+    } else {
+      final requestId =
+          'workspace_local_tutor_${workspaceId}_${DateTime.now().microsecondsSinceEpoch}';
+      routeResult = await edgeModelRouter.routeAndGenerate(
+        task: task,
+        prompt: prompt,
+        requestId: requestId,
+        temperature: 0.25,
+        maxTokens: 220,
+        allowCloudFallback: edgeCloudFallbackAllowed,
+      );
+      parsedBeforeTransition = _parseTutorOverridePayload(
+        routeResult.text,
+        phase: phaseState.currentPhase,
+        normalizedEventType: normalizedEventType,
+        textPayload: textPayload,
+        metadata: metadata,
+      );
+    }
+    final previousTutorText = _latestTutorText(workspace);
+    var sanitizedParsed = parsedBeforeTransition;
+    if (_isRepetitiveResponse(sanitizedParsed.text, previousTutorText)) {
+      sanitizedParsed = sanitizedParsed.copyWith(
+        text: _antiRepeatResponse(
+          languageCode: workspace?.learnerLanguage,
+          phase: phaseState.currentPhase,
+          learnerText: textPayload,
+        ),
+        nextPhaseReady: false,
+        phaseReasoning: 'anti_repeat_guard_applied',
+      );
+    }
     final transition = _orchestrator.applyTutorSignal(
       workspaceId: workspaceId,
-      nextPhaseReady: parsedBeforeTransition.nextPhaseReady,
-      phaseReasoning: parsedBeforeTransition.phaseReasoning,
+      nextPhaseReady: sanitizedParsed.nextPhaseReady,
+      phaseReasoning: sanitizedParsed.phaseReasoning,
       countLearnerTurn: _countsAsLearnerTurn(normalizedEventType),
     );
-    final parsed = parsedBeforeTransition.copyWith(
+    final parsed = sanitizedParsed.copyWith(
       nextPhaseReady: transition.nextPhaseReady,
       phaseReasoning: transition.transitionReason,
       currentPhase: transition.phaseBefore,
@@ -405,8 +452,11 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       'transition_pending': transition.phaseTransitionPending,
       'auto_advanced': transition.autoAdvanced,
       'transition_reason': transition.transitionReason,
-      'model_output_raw': routeResult.text,
+      'model_output_raw': isBriefGreeting
+          ? '[deterministic_greeting]'
+          : routeResult.text,
       'parsed_next_phase_ready': parsed.nextPhaseReady,
+      if (isBriefGreeting) 'greeting_handler': true,
     };
     return _LocalTutorOverride(
       tutorResponse: tutorResponse,
@@ -561,6 +611,167 @@ Metadata event: ${jsonEncode(metadata)}
           ? 'local_fallback_detected_ready_for_next_phase'
           : 'local_fallback_not_ready_for_phase_transition',
     );
+  }
+
+  _TutorOverridePayload _briefGreetingPayload({
+    required String phase,
+    required String? languageCode,
+  }) {
+    final normalized = _string(languageCode).toLowerCase();
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa-indonesia';
+    final text = isIndonesian
+        ? 'Halo, siap. Kamu mau mulai dari mana dulu: variabel, koefisien, atau suku?'
+        : 'Hi, ready to start. Do you want to begin with variables, coefficients, or terms?';
+    return _TutorOverridePayload(
+      currentPhase: phase,
+      text: text,
+      intent: _defaultIntentForPhase(phase, 'text'),
+      nextActions: _defaultNextActionsForPhase(
+        phase,
+        intent: 'spark_curiosity',
+      ),
+      nextPhaseReady: false,
+      phaseReasoning: 'brief_greeting_detected',
+    );
+  }
+
+  bool _isBriefGreeting(String text) {
+    final normalized = text.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return false;
+    }
+    final compact = normalized.replaceAll(RegExp(r'[^\w\s]'), '');
+    return compact == 'halo' ||
+        compact == 'hallo' ||
+        compact == 'hai' ||
+        compact == 'hi' ||
+        compact == 'hello' ||
+        compact == 'pagi' ||
+        compact == 'siang' ||
+        compact == 'sore' ||
+        compact == 'malam';
+  }
+
+  String? _latestTutorText(WorkspaceSession? workspace) {
+    final events = workspace?.events;
+    if (events == null || events.isEmpty) {
+      return null;
+    }
+    for (final event in events.reversed) {
+      if (event.actorType != 'tutor') {
+        continue;
+      }
+      final text = event.textPayload.trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  bool _isRepetitiveResponse(String current, String? previous) {
+    if (previous == null || previous.trim().isEmpty) {
+      return false;
+    }
+    final normalizedCurrent = _normalizeForRepeat(current);
+    final normalizedPrevious = _normalizeForRepeat(previous);
+    if (normalizedCurrent.isEmpty || normalizedPrevious.isEmpty) {
+      return false;
+    }
+    if (normalizedCurrent == normalizedPrevious) {
+      return true;
+    }
+    if (normalizedCurrent.startsWith("imagine you're") &&
+        normalizedPrevious.startsWith("imagine you're")) {
+      return true;
+    }
+    if ((normalizedCurrent.length - normalizedPrevious.length).abs() <= 12 &&
+        (normalizedCurrent.contains(normalizedPrevious) ||
+            normalizedPrevious.contains(normalizedCurrent))) {
+      return true;
+    }
+    final similarity = _roughSimilarity(normalizedCurrent, normalizedPrevious);
+    return similarity >= 0.86;
+  }
+
+  String _antiRepeatResponse({
+    required String? languageCode,
+    required String phase,
+    required String learnerText,
+  }) {
+    final normalized = _string(languageCode).toLowerCase();
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa-indonesia';
+
+    if (isIndonesian) {
+      return switch (phase) {
+        'engage' =>
+          'Mantap, kita fokus dari jawabanmu. Menurutmu bagian mana yang paling bikin bingung: variabel, koefisien, atau suku?',
+        'explore' =>
+          'Oke, uji cepat: dari ekspresimu, mana suku sejenis yang bisa digabung dan kenapa?',
+        'explain' =>
+          'Bagus. Coba jelaskan lagi dengan kata-katamu sendiri, lalu beri satu contoh singkat.',
+        'elaborate' =>
+          'Lanjut latihan: sederhanakan 3x + 2 - x + 5, lalu jelaskan langkahnya singkat.',
+        'evaluate' =>
+          'Jawabanmu sudah dicatat. Coba cek lagi bagian yang paling ragu, lalu perbaiki satu langkah.',
+        _ =>
+          learnerText.trim().isEmpty
+              ? 'Masuk. Tambahkan satu langkah konkret berikutnya.'
+              : 'Masuk. Lanjutkan dari poin terakhirmu dan tambahkan satu langkah konkret.',
+      };
+    }
+
+    return switch (phase) {
+      'engage' =>
+        'Great, let us use your answer directly. Which part feels most confusing: variables, coefficients, or terms?',
+      'explore' =>
+        'Quick check: from your expression, which like terms can be combined, and why?',
+      'explain' =>
+        'Nice. Restate the idea in your own words and give one short example.',
+      'elaborate' =>
+        'Try this: simplify 3x + 2 - x + 5, then explain your steps briefly.',
+      'evaluate' =>
+        'I noted your answer. Recheck the step you are least sure about and revise it once.',
+      _ =>
+        learnerText.trim().isEmpty
+            ? 'Good point. Add one concrete next step.'
+            : 'Good point. Continue from your last step and add one concrete next step.',
+    };
+  }
+
+  String _normalizeForRepeat(String text) {
+    return text
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  double _roughSimilarity(String a, String b) {
+    final shorter = a.length <= b.length ? a : b;
+    final longer = a.length <= b.length ? b : a;
+    if (shorter.isEmpty || longer.isEmpty) {
+      return 0;
+    }
+    var matchCount = 0;
+    final window = math.max(1, shorter.length ~/ 8);
+    for (var index = 0; index < shorter.length; index++) {
+      final char = shorter[index];
+      final start = math.max(0, index - window);
+      final end = math.min(longer.length, index + window + 1);
+      if (longer.substring(start, end).contains(char)) {
+        matchCount += 1;
+      }
+    }
+    return matchCount / shorter.length;
   }
 
   EdgeTaskType? _taskForPhase({
