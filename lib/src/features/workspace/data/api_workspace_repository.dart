@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../../edge_ai/domain/edge_model_router.dart';
@@ -458,6 +460,13 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       'parsed_next_phase_ready': parsed.nextPhaseReady,
       if (isBriefGreeting) 'greeting_handler': true,
     };
+    debugPrint(
+      'WORKSPACE_5E phase_before=${transition.phaseBefore} '
+      'model_output_raw=${isBriefGreeting ? "[deterministic_greeting]" : routeResult.text.replaceAll("\n", " ")} '
+      'parsed_next_phase_ready=${parsed.nextPhaseReady} '
+      'phase_after=${transition.phaseAfter} '
+      'transition_reason=${transition.transitionReason}',
+    );
     return _LocalTutorOverride(
       tutorResponse: tutorResponse,
       overrideJson: parsed.toJson(),

@@ -13,6 +13,7 @@ import '../../onboarding/domain/onboarding_copy.dart';
 import '../../pretest/domain/multiplication_assessment_bank.dart';
 import '../../pretest/presentation/widgets/rich_math_text.dart';
 import '../../pretest/presentation/widgets/fishbone_canvas.dart';
+import '../domain/local_5e_orchestrator.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
 
@@ -1844,7 +1845,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final canAdvancePhase = _canAdvancePhase(workspace);
     final canForceAdvancePhase = _canForceAdvancePhase(workspace);
     final showCheckUnderstanding =
-        (workspace?.currentPhase ?? 'engage') == 'evaluate';
+        Local5EOrchestrator.normalizePhase(
+          workspace?.currentPhase ?? 'engage',
+        ) ==
+        'evaluate';
     final workspaceDescription =
         (_workspace?.currentTopicDescription.trim().isNotEmpty ?? false)
         ? _workspace!.currentTopicDescription.trim()
