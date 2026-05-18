@@ -130,7 +130,9 @@ class LocalPretestQuestionGenerator {
                   requestId: requestId,
                   schemaName: 'pretest_local_pack_v1',
                   temperature: 0.2,
-                  maxTokens: 320,
+                  // 3 difficulty sections often exceed 320 tokens and get truncated.
+                  // Give the model more room so JSON can close properly.
+                  maxTokens: 720,
                   system:
                       "You are WICARA's on-device adaptive pretest item generator. Return valid JSON only.",
                   user: _prompt(
@@ -150,9 +152,17 @@ class LocalPretestQuestionGenerator {
           totalLatencyMs += response.base.metrics.totalMs;
 
           final parsedPrimary = _parseJsonObject(response.parsedJsonString);
-          final parsed = parsedPrimary.isNotEmpty
+          final parsedRaw = parsedPrimary.isNotEmpty
               ? parsedPrimary
               : _parseJsonObject(response.rawText);
+          final parsed = parsedRaw.isNotEmpty
+              ? parsedRaw
+              : _extractPackFromPossiblyTruncatedJson(response.rawText);
+          if (parsedRaw.isEmpty && parsed.isNotEmpty) {
+            _debugLog(
+              'PACK_GEN[$conceptCode] attempt=$attempt recovered_partial_json keys=${parsed.keys.join(',')}',
+            );
+          }
           final partial = _normalizePackPartial(parsed);
           rawOutputPreview = _preview(response.rawText, maxLength: 2400);
           parsedOutputPreview = parsed.isEmpty
@@ -617,6 +627,101 @@ Map<String, dynamic> _parseJsonObject(String raw) {
     }
   }
   return const <String, dynamic>{};
+}
+
+Map<String, dynamic> _extractPackFromPossiblyTruncatedJson(String raw) {
+  final source = _stripMarkdownCodeFence(raw);
+  if (source.isEmpty) {
+    return const <String, dynamic>{};
+  }
+  final recovered = <String, dynamic>{};
+  for (final difficulty in LocalPretestQuestionGenerator._difficulties) {
+    final match = RegExp('"$difficulty"\\s*:\\s*\\{').firstMatch(source);
+    if (match == null) {
+      continue;
+    }
+    final openBraceIndex = source.indexOf('{', match.start);
+    if (openBraceIndex < 0) {
+      continue;
+    }
+    final closeBraceIndex = _findMatchingClosingBrace(source, openBraceIndex);
+    if (closeBraceIndex == null) {
+      continue;
+    }
+    final objectJson = source.substring(openBraceIndex, closeBraceIndex + 1);
+    try {
+      final decoded = jsonDecode(objectJson);
+      if (decoded is Map<String, dynamic>) {
+        recovered[difficulty] = decoded;
+      } else if (decoded is Map) {
+        recovered[difficulty] = decoded.cast<String, dynamic>();
+      }
+    } catch (_) {
+      // ignore invalid partial object and continue extracting others.
+    }
+  }
+  return recovered;
+}
+
+int? _findMatchingClosingBrace(String source, int openBraceIndex) {
+  var depth = 0;
+  var inString = false;
+  var escaping = false;
+
+  for (var index = openBraceIndex; index < source.length; index++) {
+    final char = source[index];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+      if (char == '\\') {
+        escaping = true;
+        continue;
+      }
+      if (char == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char == '"') {
+      inString = true;
+      continue;
+    }
+    if (char == '{') {
+      depth += 1;
+      continue;
+    }
+    if (char == '}') {
+      depth -= 1;
+      if (depth == 0) {
+        return index;
+      }
+      if (depth < 0) {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+String _stripMarkdownCodeFence(String raw) {
+  var trimmed = raw.trim();
+  if (!trimmed.startsWith('```')) {
+    return trimmed;
+  }
+  final firstNewline = trimmed.indexOf('\n');
+  if (firstNewline < 0) {
+    return trimmed;
+  }
+  trimmed = trimmed.substring(firstNewline + 1);
+  final closingFence = trimmed.lastIndexOf('```');
+  if (closingFence >= 0) {
+    trimmed = trimmed.substring(0, closingFence);
+  }
+  return trimmed.trim();
 }
 
 List<String> _missingDifficulties(Map<String, Map<String, dynamic>> pack) {
