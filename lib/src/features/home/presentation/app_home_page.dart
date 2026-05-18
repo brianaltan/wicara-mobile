@@ -741,9 +741,11 @@ class _AppHomePageState extends State<AppHomePage> {
         onSelected: _selectPosttestAnswer,
         isSubmitting: _isSubmittingPosttest,
         sectionLabel: session.title,
-        subtitle: 'Jawab 3 soal per node untuk mengecek mastery.',
-        nextLabel: 'Lanjut',
-        finishLabel: 'Selesai posttest',
+        subtitle: copy.isIndonesian
+            ? 'Jawab 3 soal per node untuk mengecek mastery.'
+            : 'Answer 3 questions per node to check mastery.',
+        nextLabel: copy.isIndonesian ? 'Lanjut' : 'Continue',
+        finishLabel: copy.isIndonesian ? 'Selesai posttest' : 'Finish posttest',
         onSubmit: () {
           _nextPosttestQuestion();
         },
@@ -3155,7 +3157,7 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Not confident',
+                    copy.notConfidentLabel,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
@@ -3165,7 +3167,7 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    'Very confident',
+                    copy.veryConfidentLabel,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: WicaraColors.muted,
                       fontWeight: FontWeight.w600,
@@ -3177,7 +3179,7 @@ class _DailyEvaluationCardState extends State<_DailyEvaluationCard> {
           ),
           const SizedBox(height: 20),
           GradientButton(
-            label: 'Take Daily Evaluation',
+            label: copy.takeDailyEvaluationLabel,
             onPressed: widget.onTakeEvaluation,
           ),
         ],
@@ -3198,10 +3200,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
     required this.onSelected,
     required this.isSubmitting,
     required this.onSubmit,
-    this.sectionLabel = 'Quick check-in',
-    this.subtitle = 'Answer five questions to strengthen your memory.',
-    this.nextLabel = 'Next question',
-    this.finishLabel = 'Finish evaluation',
+    this.sectionLabel,
+    this.subtitle,
+    this.nextLabel,
+    this.finishLabel,
   });
 
   final BoxConstraints constraints;
@@ -3214,22 +3216,30 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
   final ValueChanged<String> onSelected;
   final bool isSubmitting;
   final VoidCallback onSubmit;
-  final String sectionLabel;
-  final String subtitle;
-  final String nextLabel;
-  final String finishLabel;
+  final String? sectionLabel;
+  final String? subtitle;
+  final String? nextLabel;
+  final String? finishLabel;
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final progress = totalQuestions == 0
         ? 0.0
         : (questionIndex + 1) / totalQuestions;
-    final progressLabel = '${questionIndex + 1} of $totalQuestions';
+    final progressLabel = copy.dailyQuestionProgressLabel(
+      questionIndex + 1,
+      totalQuestions,
+    );
     final isLastQuestion = questionIndex == totalQuestions - 1;
     final reviewDue = session?.reviewDue ?? const ReviewDueSummary();
     final forecast = session?.retentionForecast ?? const RetentionForecast();
     final callout =
         session?.recommendationCallout ?? const RecommendationCallout();
+    final resolvedSectionLabel = sectionLabel ?? copy.dailyEvalsWordmark;
+    final resolvedSubtitle = subtitle ?? copy.dailyEvalsQuickCheckin;
+    final resolvedNextLabel = nextLabel ?? copy.nextQuestionLabel;
+    final resolvedFinishLabel = finishLabel ?? copy.finishDailyEvalsLabel;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 30),
@@ -3239,8 +3249,12 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _LearningSurfaceHeader(
-              title: session?.title ?? 'Daily Evaluation',
-              languageCode: _languageCode(session?.language ?? 'en'),
+              title: _dailyEvaluationHeaderTitle(
+                session?.title,
+                fallback: resolvedSectionLabel,
+                copy: copy,
+              ),
+              languageCode: copy.isIndonesian ? 'ID' : 'EN',
               onBack: onBack,
               leadingIcon: Icons.close_rounded,
             ),
@@ -3248,9 +3262,9 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
             _ReviewDueCard(reviewDue: reviewDue),
             const SizedBox(height: 28),
             _DailyEvaluationSectionTitle(
-              label: sectionLabel,
+              label: resolvedSectionLabel,
               progressLabel: progressLabel,
-              subtitle: subtitle,
+              subtitle: resolvedSubtitle,
             ),
             const SizedBox(height: 12),
             _EvaluationProgressLine(value: progress),
@@ -3315,7 +3329,9 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
                   ],
                   const SizedBox(height: 22),
                   GradientButton(
-                    label: isLastQuestion ? finishLabel : nextLabel,
+                    label: isLastQuestion
+                        ? resolvedFinishLabel
+                        : resolvedNextLabel,
                     onPressed: selectedOptionId == null ? null : onSubmit,
                     isLoading: isSubmitting,
                   ),
@@ -3402,6 +3418,29 @@ class _ReviewDueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final title = _localizedKnownDailyCopy(
+      reviewDue.title,
+      copy: copy,
+      english: 'Review due',
+      indonesian: copy.reviewDueLabel,
+      fallback: copy.reviewDueLabel,
+    );
+    final summary = _localizedReviewDueSummary(reviewDue, copy);
+    final actionLabel = _localizedKnownDailyCopy(
+      _localizedKnownDailyCopy(
+        reviewDue.actionLabel,
+        copy: copy,
+        english: 'Start',
+        indonesian: copy.getStartedLabel,
+        fallback: copy.getStartedLabel,
+      ),
+      copy: copy,
+      english: 'Continue',
+      indonesian: copy.continueLabel,
+      fallback: copy.getStartedLabel,
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       decoration: BoxDecoration(
@@ -3432,7 +3471,7 @@ class _ReviewDueCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  reviewDue.title,
+                  title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -3440,9 +3479,7 @@ class _ReviewDueCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  reviewDue.summary.isEmpty
-                      ? '${reviewDue.dueCount} items ready for review'
-                      : reviewDue.summary,
+                  summary,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: WicaraColors.muted,
                     fontWeight: FontWeight.w600,
@@ -3468,7 +3505,7 @@ class _ReviewDueCard extends StatelessWidget {
               ],
             ),
             child: Text(
-              reviewDue.actionLabel,
+              actionLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -3542,24 +3579,22 @@ class _RetentionForecastPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final points = forecast.points.isEmpty
-        ? const [
-            RetentionForecastPoint(label: 'Today', retentionPercent: 100),
-            RetentionForecastPoint(label: 'Day 1', retentionPercent: 70),
-            RetentionForecastPoint(label: 'Day 2', retentionPercent: 52),
-            RetentionForecastPoint(label: 'Day 7', retentionPercent: 38),
-            RetentionForecastPoint(
-              label: 'Day 14',
-              retentionPercent: 25,
-              projected: true,
-            ),
-            RetentionForecastPoint(
-              label: 'Day 30',
-              retentionPercent: 17,
-              projected: true,
-            ),
-          ]
-        : forecast.points;
+    final copy = _HomeCopyScope.of(context);
+    final points = _retentionPointsForLanguage(forecast.points, copy);
+    final title = _localizedKnownDailyCopy(
+      forecast.title,
+      copy: copy,
+      english: 'Your retention forecast',
+      indonesian: copy.retentionForecastLabel,
+      fallback: copy.retentionForecastLabel,
+    );
+    final basis = _localizedKnownDailyCopy(
+      forecast.basis,
+      copy: copy,
+      english: 'Based on the Ebbinghaus forgetting curve MVP.',
+      indonesian: copy.retentionForecastBasisLabel,
+      fallback: copy.retentionForecastBasisLabel,
+    );
 
     return _Panel(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
@@ -3570,7 +3605,7 @@ class _RetentionForecastPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  forecast.title,
+                  title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -3586,9 +3621,7 @@ class _RetentionForecastPanel extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            forecast.basis.isEmpty
-                ? 'Based on the Ebbinghaus forgetting curve MVP.'
-                : forecast.basis,
+            basis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
@@ -3709,6 +3742,10 @@ class _RetentionCalloutBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final actionLabel = _localizedCalloutAction(callout.actionLabel, copy);
+    final impactLabel = _localizedCalloutImpact(callout.impactLabel, copy);
+
     return Container(
       margin: const EdgeInsets.only(right: 12, top: 14),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -3729,7 +3766,7 @@ class _RetentionCalloutBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            callout.actionLabel,
+            actionLabel,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.secondaryDeep,
               fontWeight: FontWeight.w800,
@@ -3737,7 +3774,7 @@ class _RetentionCalloutBubble extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            callout.impactLabel,
+            impactLabel,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.accentMint,
               fontSize: 11,
@@ -3757,6 +3794,9 @@ class _RetentionCoachingNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
+    final resolvedMessage = _localizedRetentionMessage(message, copy);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
       decoration: BoxDecoration(
@@ -3781,9 +3821,7 @@ class _RetentionCoachingNote extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              message.isEmpty
-                  ? 'Keep reviewing to move the curve up and improve long-term retention.'
-                  : message,
+              resolvedMessage,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: WicaraColors.text,
                 fontWeight: FontWeight.w600,
@@ -3828,8 +3866,8 @@ class _EvaluationCompletePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _LearningSurfaceHeader(
-              title: 'Evaluation Complete',
-              languageCode: 'EN',
+              title: copy.evaluationCompleteLabel,
+              languageCode: copy.isIndonesian ? 'ID' : 'EN',
               onBack: onBackHome,
             ),
             const SizedBox(height: 25),
@@ -3862,17 +3900,17 @@ class _EvaluationCompletePage extends StatelessWidget {
                       children: [
                         _EvaluationStat(
                           value: '${result?.reviewedCount ?? 0}',
-                          label: 'Reviewed',
+                          label: copy.reviewedLabel,
                         ),
                         const SizedBox(height: 17),
                         _EvaluationStat(
                           value: '${result?.correctCount ?? 0}',
-                          label: 'Correct',
+                          label: copy.correctLabel,
                         ),
                         const SizedBox(height: 17),
                         _EvaluationStat(
                           value: '${result?.reviewAgainCount ?? 0}',
-                          label: 'To review again',
+                          label: copy.toReviewAgainLabel,
                         ),
                       ],
                     ),
@@ -3896,7 +3934,7 @@ class _EvaluationCompletePage extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             _BackHomeButton(
-              label: result?.backToHome.label ?? 'Back to Home',
+              label: result?.backToHome.label,
               onPressed: onBackHome,
             ),
           ],
@@ -4365,6 +4403,7 @@ class _EvaluationConceptsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     return _Panel(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 13),
       child: Column(
@@ -4373,7 +4412,7 @@ class _EvaluationConceptsPanel extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1),
             child: Text(
-              'Reviewed concepts',
+              copy.reviewedConceptsLabel,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -4382,9 +4421,9 @@ class _EvaluationConceptsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (concepts.isEmpty)
-            const _ConceptResultTile(
-              title: 'No concepts reviewed yet',
-              status: 'Pending',
+            _ConceptResultTile(
+              title: copy.noReviewedConceptsLabel,
+              status: copy.pendingLabel,
               statusColor: WicaraColors.muted,
             ),
           for (final concept in concepts) ...[
@@ -4403,10 +4442,164 @@ class _EvaluationConceptsPanel extends StatelessWidget {
 
 Color _conceptStatusColor(String status) {
   return switch (status.toLowerCase()) {
-    'strong' || 'good' => WicaraColors.accentMint,
-    'review' => WicaraColors.accentAmber,
+    'strong' || 'good' || 'kuat' || 'bagus' => WicaraColors.accentMint,
+    'review' || 'tinjau' => WicaraColors.accentAmber,
     _ => WicaraColors.primaryDeep,
   };
+}
+
+String _dailyEvaluationHeaderTitle(
+  String? title, {
+  required String fallback,
+  required OnboardingCopy copy,
+}) {
+  final trimmed = title?.trim() ?? '';
+  final normalized = trimmed.toLowerCase();
+  if (trimmed.isEmpty) {
+    return fallback;
+  }
+  if (normalized == 'daily evaluation' ||
+      normalized == 'daily evals' ||
+      normalized == 'evaluasi harian') {
+    return copy.dailyEvaluationLabel;
+  }
+  return trimmed;
+}
+
+String _localizedKnownDailyCopy(
+  String value, {
+  required OnboardingCopy copy,
+  required String english,
+  required String indonesian,
+  String? fallback,
+}) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    return fallback ?? indonesian;
+  }
+  if (copy.isIndonesian &&
+      trimmed.toLowerCase() == english.trim().toLowerCase()) {
+    return indonesian;
+  }
+  return trimmed;
+}
+
+String _localizedReviewDueSummary(
+  ReviewDueSummary reviewDue,
+  OnboardingCopy copy,
+) {
+  final summary = reviewDue.summary.trim();
+  if (summary.isEmpty) {
+    return copy.reviewDueSummaryLabel(reviewDue.dueCount);
+  }
+  if (copy.isIndonesian &&
+      summary.toLowerCase() == '${reviewDue.dueCount} items ready for review') {
+    return copy.reviewDueSummaryLabel(reviewDue.dueCount);
+  }
+  return summary;
+}
+
+List<RetentionForecastPoint> _retentionPointsForLanguage(
+  List<RetentionForecastPoint> points,
+  OnboardingCopy copy,
+) {
+  final source = points.isEmpty
+      ? const [
+          RetentionForecastPoint(label: 'Today', retentionPercent: 100),
+          RetentionForecastPoint(label: 'Day 1', retentionPercent: 70),
+          RetentionForecastPoint(label: 'Day 2', retentionPercent: 52),
+          RetentionForecastPoint(label: 'Day 7', retentionPercent: 38),
+          RetentionForecastPoint(
+            label: 'Day 14',
+            retentionPercent: 25,
+            projected: true,
+          ),
+          RetentionForecastPoint(
+            label: 'Day 30',
+            retentionPercent: 17,
+            projected: true,
+          ),
+        ]
+      : points;
+  if (!copy.isIndonesian) {
+    return source;
+  }
+  return [
+    for (final point in source)
+      RetentionForecastPoint(
+        label: _localizedRetentionPointLabel(point.label, copy),
+        retentionPercent: point.retentionPercent,
+        projected: point.projected,
+      ),
+  ];
+}
+
+String _localizedRetentionPointLabel(String label, OnboardingCopy copy) {
+  final trimmed = label.trim();
+  if (!copy.isIndonesian) {
+    return trimmed;
+  }
+  final normalized = trimmed.toLowerCase();
+  if (normalized == 'today') {
+    return 'Hari ini';
+  }
+  if (normalized.startsWith('day ')) {
+    return 'Hari ${trimmed.substring(4)}';
+  }
+  return trimmed;
+}
+
+String _localizedCalloutAction(String value, OnboardingCopy copy) {
+  final reviewNow = _localizedKnownDailyCopy(
+    value,
+    copy: copy,
+    english: 'Review now',
+    indonesian: copy.reviewNowLabel,
+    fallback: copy.reviewNowLabel,
+  );
+  return _localizedKnownDailyCopy(
+    reviewNow,
+    copy: copy,
+    english: 'Back to home',
+    indonesian: copy.backToHomeLabel,
+    fallback: copy.reviewNowLabel,
+  );
+}
+
+String _localizedCalloutImpact(String value, OnboardingCopy copy) {
+  final highImpact = _localizedKnownDailyCopy(
+    value,
+    copy: copy,
+    english: 'High impact',
+    indonesian: copy.highImpactLabel,
+    fallback: copy.highImpactLabel,
+  );
+  return _localizedKnownDailyCopy(
+    highImpact,
+    copy: copy,
+    english: 'Maintained',
+    indonesian: copy.maintainedLabel,
+    fallback: copy.highImpactLabel,
+  );
+}
+
+String _localizedRetentionMessage(String message, OnboardingCopy copy) {
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) {
+    return copy.retentionCoachingLabel;
+  }
+  if (!copy.isIndonesian) {
+    return trimmed;
+  }
+  final normalized = trimmed.toLowerCase();
+  if (normalized ==
+      'keep reviewing to move the curve up and improve long-term retention.') {
+    return copy.retentionCoachingLabel;
+  }
+  if (normalized == "you are caught up for today's review queue.") {
+    return 'Kamu sudah menyelesaikan antrian review hari ini.';
+  }
+  return trimmed;
 }
 
 String _languageCode(String language) {
@@ -4681,12 +4874,13 @@ class _RecommendedNextActionsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final copy = _HomeCopyScope.of(context);
     final rows = actions.isEmpty
-        ? const [
+        ? [
             RecommendedNextAction(
-              title: 'Continue learning',
+              title: copy.continueLearningLabel,
               actionType: 'continue_learning',
-              reason: 'Go to your learning path.',
+              reason: copy.continueLearningReason,
             ),
           ]
         : actions;
@@ -4697,7 +4891,7 @@ class _RecommendedNextActionsPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Recommended next actions',
+            copy.recommendedNextActionsLabel,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -4797,10 +4991,10 @@ class _ActionRecommendationTile extends StatelessWidget {
 }
 
 class _BackHomeButton extends StatelessWidget {
-  const _BackHomeButton({required this.onPressed, this.label = 'Back to Home'});
+  const _BackHomeButton({required this.onPressed, this.label});
 
   final VoidCallback onPressed;
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -4826,7 +5020,7 @@ class _BackHomeButton extends StatelessWidget {
             height: 47,
             child: Center(
               child: Text(
-                label.isNotEmpty ? label : copy.backToHomeLabel,
+                label?.isNotEmpty == true ? label! : copy.backToHomeLabel,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
