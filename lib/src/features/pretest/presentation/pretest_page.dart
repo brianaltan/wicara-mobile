@@ -212,7 +212,7 @@ class _PretestPageState extends State<PretestPage> {
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.home,
       (route) => false,
-      arguments: const {'auto_open_workspace': true},
+      arguments: const {'open_goal_history': true},
     );
   }
 

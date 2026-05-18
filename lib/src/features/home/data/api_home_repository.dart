@@ -585,6 +585,8 @@ class ApiHomeRepository implements HomeRepository {
         .map(
           (track) => LearningTrackSummary(
             id: _string(track['id']),
+            subjectCode: _string(track['subject_code']),
+            subjectName: _string(track['subject_name']),
             title: _string(track['title']),
             status: _string(track['status']),
             progressPercent: _int(track['progress_percent']),

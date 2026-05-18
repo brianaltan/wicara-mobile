@@ -424,13 +424,14 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   const _FailingCurriculumRepository();
 
   @override
-  Future<List<CurriculumSubject>> fetchSubjects() async {
+  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'id'}) async {
     throw UnimplementedError();
   }
 
   @override
   Future<CurriculumKnowledgeMap> fetchKnowledgeMap({
     required String subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
@@ -439,6 +440,7 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   Future<CurriculumConceptDetail> fetchConceptDetail({
     required String conceptCode,
     String? subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
@@ -934,8 +936,8 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
     required String moduleId,
   }) {
     return const WorkspaceSessionHistory(
-      activeWorkspaceId: null,
-      workspaceIds: [],
+      activeWorkspaceId: 'workspace-perkalian',
+      workspaceIds: ['workspace-perkalian'],
     );
   }
 
@@ -950,7 +952,20 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
   Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
     required String trackId,
     required String moduleId,
-  }) async => const [];
+  }) async {
+    return const [
+      WorkspaceSessionSummary(
+        id: 'workspace-perkalian',
+        trackId: 'track-perkalian',
+        moduleId: 'module-perkalian',
+        title: 'Perkalian',
+        preview: 'Latihan perkalian',
+        messageCount: 1,
+        createdAt: '2026-05-18T00:00:00Z',
+        updatedAt: '2026-05-18T00:00:00Z',
+      ),
+    ];
+  }
 
   @override
   Future<WorkspaceSession> fetchWorkspace(String workspaceId) async {
@@ -1012,8 +1027,17 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
       eventIndex: 2,
       eventType: 'media_generated',
       actorType: 'system',
-      textPayload: 'Video queued',
-      metadata: const {},
+      textPayload: '',
+      metadata: metadata,
+    );
+    final workspace = WorkspaceSession(
+      id: workspaceId,
+      trackId: 'track-perkalian',
+      moduleId: 'module-perkalian',
+      currentTopic: 'Perkalian',
+      contentMode: 'chat',
+      status: 'active',
+      events: [event],
     );
     return WorkspaceGenerateVideoResult(
       queue: const WorkspaceAnimationQueue(
@@ -1022,15 +1046,7 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
         status: 'queued',
       ),
       event: event,
-      workspace: WorkspaceSession(
-        id: workspaceId,
-        trackId: 'track-perkalian',
-        moduleId: 'module-perkalian',
-        currentTopic: 'Perkalian',
-        contentMode: 'chat',
-        status: 'active',
-        events: [event],
-      ),
+      workspace: workspace,
     );
   }
 
