@@ -4406,8 +4406,14 @@ Color _conceptStatusColor(String status) {
 }
 
 String _languageCode(String language) {
-  return switch (language.trim().toLowerCase()) {
-    'id' || 'indonesian' || 'bahasa indonesia' => 'ID',
+  return switch (language.trim().toLowerCase().replaceAll('_', '-')) {
+    'id' ||
+    'id-id' ||
+    'ind' ||
+    'indo' ||
+    'indonesian' ||
+    'bahasa' ||
+    'bahasa indonesia' => 'ID',
     'ms' || 'bahasa melayu' => 'MS',
     'fil' || 'filipino' => 'FIL',
     'vi' || 'vietnamese' => 'VI',
@@ -4416,8 +4422,14 @@ String _languageCode(String language) {
 }
 
 String _apiLocale(String language) {
-  return switch (language.trim().toLowerCase()) {
-    'id' || 'indonesian' || 'bahasa indonesia' => 'id',
+  return switch (language.trim().toLowerCase().replaceAll('_', '-')) {
+    'id' ||
+    'id-id' ||
+    'ind' ||
+    'indo' ||
+    'indonesian' ||
+    'bahasa' ||
+    'bahasa indonesia' => 'id',
     _ => 'en',
   };
 }

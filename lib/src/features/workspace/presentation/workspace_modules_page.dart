@@ -127,8 +127,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     if (arguments == null || !arguments.isValid) {
       setState(() {
         _isLoadingWorkspace = false;
-        _workspaceError =
-            'Open a track module from Home or Queue before using workspace.';
+        _workspaceError = _workspaceMaterial.openTrackModuleMessage;
       });
       return;
     }
@@ -299,6 +298,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         return _WorkspaceHistorySheet(
           sessions: sessions,
           activeSessionId: _activeSessionId,
+          material: _workspaceMaterial,
         );
       },
     );
@@ -314,7 +314,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final workspace = _workspace;
     if (workspace == null) {
       setState(() {
-        _workspaceError = 'Workspace is not ready yet.';
+        _workspaceError = _workspaceMaterial.workspaceNotReadyMessage;
       });
       return;
     }
@@ -333,7 +333,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       _quizState = _WorkspaceQuizState.unanswered;
       _selectedQuizAnswer = null;
       _latestVideoStatus = null;
-      _videoStatusMessage = 'Queueing video generation...';
+      _videoStatusMessage = _workspaceMaterial.queueingVideoMessage;
       _videoErrorMessage = null;
       _workspaceError = null;
     });
@@ -361,7 +361,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         _latestVideoArtifact =
             _withResolvedArtifactUrls(result.workspace.latestMedia) ??
             _latestVideoArtifact;
-        _videoStatusMessage = 'Video queued. Waiting for worker...';
+        _videoStatusMessage = _workspaceMaterial.videoQueuedMessage;
       });
 
       await _pollVideoStatus(jobId: result.queue.jobId);
@@ -387,9 +387,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         setState(() {
           _isVideoGenerating = false;
           _contentMode = _WorkspaceContentMode.videoFailed;
-          _videoErrorMessage =
-              'Video generation timed out after ${_videoPollingTimeout.inMinutes} minutes.';
-          _videoStatusMessage = 'Generation timeout.';
+          _videoErrorMessage = _workspaceMaterial.videoTimedOutMessage(
+            _videoPollingTimeout.inMinutes,
+          );
+          _videoStatusMessage = _workspaceMaterial.generationTimeoutMessage;
         });
         _scrollToBottom();
         return;
@@ -612,13 +613,25 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   String _normalizedLanguageCode() {
-    final workspaceLanguage = _workspace?.learnerLanguage.toLowerCase().trim();
+    final workspaceLanguage = _workspace?.learnerLanguage
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', '-');
     final preferredLanguage = (workspaceLanguage?.isNotEmpty ?? false)
         ? workspaceLanguage!
-        : widget.onboardingController.profile.preferredLanguage.toLowerCase();
+        : widget.onboardingController.profile.preferredLanguage
+              .toLowerCase()
+              .trim()
+              .replaceAll('_', '-');
     return switch (preferredLanguage) {
-      'indonesian' || 'id' || 'id-id' => 'id',
-      'english' || 'en' || 'en-us' => 'en',
+      'indonesian' ||
+      'ind' ||
+      'indo' ||
+      'bahasa' ||
+      'bahasa indonesia' ||
+      'id' ||
+      'id-id' => 'id',
+      'english' || 'eng' || 'en' || 'en-us' || 'en-gb' => 'en',
       _ => 'en',
     };
   }
@@ -1345,10 +1358,11 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     if (existing != null && existing.id == status.artifactId) {
       return existing;
     }
+    final material = _workspaceMaterial;
     return WorkspaceMediaArtifact(
       id: status.artifactId,
-      title: fallback?.currentTopic ?? 'Generated video',
-      subtitle: 'Video generated from workspace session.',
+      title: fallback?.currentTopic ?? material.generatedVideoFallbackTitle,
+      subtitle: material.generatedVideoSubtitle,
       status: status.status,
       durationSeconds: 0,
       durationLabel: '--:--',
@@ -1447,19 +1461,18 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final shouldStart = await showDialog<bool>(
       context: context,
       builder: (context) {
+        final material = _workspaceMaterial;
         return AlertDialog(
-          title: const Text('Workspace not finished yet'),
-          content: const Text(
-            'You have not finished this workspace module. Starting the posttest now may skip practice evidence for this concept.',
-          ),
+          title: Text(material.posttestWarningTitle),
+          content: Text(material.posttestWarningBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep learning'),
+              child: Text(material.keepLearningLabel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Start posttest'),
+              child: Text(material.startPosttestDialogLabel),
             ),
           ],
         );
@@ -1516,7 +1529,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     if (message.isEmpty) return;
     if (_isLoadingWorkspace || _workspace == null) {
       setState(() {
-        _workspaceError = 'Chat session is still loading.';
+        _workspaceError = _workspaceMaterial.chatLoadingMessage;
       });
       return;
     }
@@ -1535,7 +1548,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     }
     if (_isLoadingWorkspace || _workspace == null) {
       setState(() {
-        _workspaceError = 'Chat session is still loading.';
+        _workspaceError = _workspaceMaterial.chatLoadingMessage;
       });
       return;
     }
@@ -1569,7 +1582,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final workspace = _workspace;
     if (workspace == null) {
       setState(() {
-        _workspaceError = 'Workspace is not ready yet.';
+        _workspaceError = _workspaceMaterial.workspaceNotReadyMessage;
       });
       return;
     }
@@ -1619,7 +1632,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
         _workspaceError = error.message;
         _chatEntries.add(
           _WorkspaceChatEntry.text(
-            text: 'Workspace sync failed: ${error.message}',
+            text: _workspaceMaterial.workspaceSyncFailedMessage(error.message),
             isUser: false,
           ),
         );
@@ -1633,8 +1646,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
           if (event.eventType == 'canvas_sent') {
             final count = event.metadata['element_count'];
             return _WorkspaceChatEntry.text(
-              text:
-                  'Canvas snapshot sent${count == null ? '' : ' ($count marks)'}',
+              text: _workspaceMaterial.canvasSnapshotSentLabel(count),
               isUser: true,
             );
           }
@@ -1757,7 +1769,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'Workspace',
+                                material.workspaceTitleLabel,
                                 style: Theme.of(context).textTheme.headlineSmall
                                     ?.copyWith(fontWeight: FontWeight.w600),
                               ),
@@ -1783,7 +1795,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                           unawaited(_startNewChatSession());
                                         },
                                   icon: const Icon(Icons.add_comment_outlined),
-                                  label: const Text('New chat'),
+                                  label: Text(material.newChatLabel),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1794,7 +1806,9 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                   },
                                   icon: const Icon(Icons.history_rounded),
                                   label: Text(
-                                    'History (${_sessionHistory.length})',
+                                    material.historyButtonLabel(
+                                      _sessionHistory.length,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1810,7 +1824,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                             icon: const Icon(
                               Icons.assignment_turned_in_outlined,
                             ),
-                            label: const Text('Start Posttest'),
+                            label: Text(material.startPosttestButtonLabel),
                           ),
                         ],
                       ),
@@ -1875,6 +1889,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                       videoStatusMessage: _videoStatusMessage,
                       videoErrorMessage: _videoErrorMessage,
                       copy: copy,
+                      material: material,
                     ),
                   ],
                 ),
@@ -1904,10 +1919,12 @@ class _WorkspaceHistorySheet extends StatelessWidget {
   const _WorkspaceHistorySheet({
     required this.sessions,
     required this.activeSessionId,
+    required this.material,
   });
 
   final List<WorkspaceSessionSummary> sessions;
   final String? activeSessionId;
+  final _LocalizedWorkspaceMaterial material;
 
   @override
   Widget build(BuildContext context) {
@@ -1921,7 +1938,7 @@ class _WorkspaceHistorySheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
               child: Text(
-                'Chat history',
+                material.chatHistoryTitle,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: WicaraColors.ink,
                   fontWeight: FontWeight.w800,
@@ -1946,7 +1963,7 @@ class _WorkspaceHistorySheet extends StatelessWidget {
                           : WicaraColors.muted,
                     ),
                     title: Text(
-                      session.title.isEmpty ? 'New chat' : session.title,
+                      material.historySessionTitle(session.title),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w800),
@@ -1975,9 +1992,7 @@ class _WorkspaceHistorySheet extends StatelessWidget {
     if (session.preview.isNotEmpty) {
       parts.add(session.preview);
     }
-    final countLabel = session.messageCount == 1
-        ? '1 message'
-        : '${session.messageCount} messages';
+    final countLabel = material.historyMessageCountLabel(session.messageCount);
     parts.add(countLabel);
     final timeLabel = _compactDate(session.updatedAt);
     if (timeLabel.isNotEmpty) {
@@ -2000,6 +2015,7 @@ class _WorkspaceHistorySheet extends StatelessWidget {
 
 class _LocalizedWorkspaceMaterial {
   const _LocalizedWorkspaceMaterial({
+    required this.isIndonesian,
     required this.topicTitle,
     required this.workspaceIntroLine1,
     required this.workspaceIntroLine2,
@@ -2018,6 +2034,7 @@ class _LocalizedWorkspaceMaterial {
     required this.syncedDescription,
   });
 
+  final bool isIndonesian;
   final String topicTitle;
   final String workspaceIntroLine1;
   final String workspaceIntroLine2;
@@ -2035,12 +2052,143 @@ class _LocalizedWorkspaceMaterial {
   final String loadingDescription;
   final String syncedDescription;
 
+  String get workspaceTitleLabel =>
+      isIndonesian ? 'Ruang belajar' : 'Workspace';
+  String get newChatLabel => isIndonesian ? 'Chat baru' : 'New chat';
+  String get chatHistoryTitle => isIndonesian ? 'Riwayat chat' : 'Chat history';
+  String get startPosttestButtonLabel =>
+      isIndonesian ? 'Mulai Posttest' : 'Start Posttest';
+  String get posttestWarningTitle =>
+      isIndonesian ? 'Workspace belum selesai' : 'Workspace not finished yet';
+  String get posttestWarningBody => isIndonesian
+      ? 'Kamu belum menyelesaikan modul workspace ini. Mulai posttest sekarang dapat melewati bukti latihan untuk konsep ini.'
+      : 'You have not finished this workspace module. Starting the posttest now may skip practice evidence for this concept.';
+  String get keepLearningLabel =>
+      isIndonesian ? 'Lanjut belajar' : 'Keep learning';
+  String get startPosttestDialogLabel =>
+      isIndonesian ? 'Mulai posttest' : 'Start posttest';
+  String get workspaceNotReadyMessage =>
+      isIndonesian ? 'Workspace belum siap.' : 'Workspace is not ready yet.';
+  String get openTrackModuleMessage => isIndonesian
+      ? 'Buka modul track dari Beranda atau Antrian sebelum memakai workspace.'
+      : 'Open a track module from Home or Queue before using workspace.';
+  String get chatLoadingMessage => isIndonesian
+      ? 'Sesi chat masih dimuat.'
+      : 'Chat session is still loading.';
+  String get connectingWorkspaceMessage => isIndonesian
+      ? 'Menghubungkan ke workspace backend...'
+      : 'Connecting to backend workspace...';
+  String get savingEvidenceMessage => isIndonesian
+      ? 'Menyimpan bukti workspace...'
+      : 'Saving workspace evidence...';
+  String get queueingVideoMessage => isIndonesian
+      ? 'Menyiapkan pembuatan video...'
+      : 'Queueing video generation...';
+  String get videoQueuedMessage => isIndonesian
+      ? 'Video masuk antrean. Menunggu worker...'
+      : 'Video queued. Waiting for worker...';
+  String videoTimedOutMessage(int minutes) => isIndonesian
+      ? 'Pembuatan video melewati batas waktu setelah $minutes menit.'
+      : 'Video generation timed out after $minutes minutes.';
+  String get generationTimeoutMessage =>
+      isIndonesian ? 'Waktu pembuatan habis.' : 'Generation timeout.';
+  String get buildingScenesMessage => isIndonesian
+      ? 'Membangun scene, narasi, dan rendering...'
+      : 'Building scenes, narration, and rendering...';
+  String get generatingVideoTitle =>
+      isIndonesian ? 'Membuat video' : 'Generating video';
+  String get generatedVideoFallbackTitle =>
+      isIndonesian ? 'Video yang dibuat' : 'Generated video';
+  String get savedGeneratedVideoTitle =>
+      isIndonesian ? 'Video tersimpan' : 'Saved generated video';
+  String get generatedVideoSubtitle => isIndonesian
+      ? 'Rendering video selesai dan siap di workspace.'
+      : 'Video rendering finished and is ready in your workspace.';
+  String get aiVideoChip => isIndonesian ? 'Video AI' : 'AI video';
+  String get readyUrlChip => isIndonesian ? 'URL siap' : 'Ready URL';
+  String get playGeneratedVideoLabel =>
+      isIndonesian ? 'Putar video' : 'Play generated video';
+  String get videoUrlUnavailableLabel =>
+      isIndonesian ? 'URL video tidak tersedia' : 'Video URL unavailable';
+  String get videoGenerationFailedTitle =>
+      isIndonesian ? 'Pembuatan video gagal' : 'Video generation failed';
+  String get videoGenerationFailedMessage =>
+      isIndonesian ? 'Pembuatan video gagal.' : 'Video generation failed.';
+  String get retryGenerateVideoLabel =>
+      isIndonesian ? 'Coba buat video lagi' : 'Retry generate video';
+  String get generatingVideoButtonLabel =>
+      isIndonesian ? 'Membuat video...' : 'Generating video...';
+  String get generateVideoFromChatLabel => isIndonesian
+      ? 'Buat video dari chat ini'
+      : 'Generate video from this chat';
+  String get generatingVideoContextMessage => isIndonesian
+      ? 'Membuat video dari konteks percakapan terakhirmu...'
+      : 'Generating video from your latest conversation context...';
+  String get videoReadyMessage => isIndonesian
+      ? 'Video siap. Kamu bisa memutarnya dari kartu chat terbaru.'
+      : 'Video ready. You can play it from the latest chat card.';
+  String get failedToLoadVideoMessage => isIndonesian
+      ? 'Gagal memuat video dari URL backend.'
+      : 'Failed to load video from backend URL.';
+  String get openFullscreenTooltip =>
+      isIndonesian ? 'Buka layar penuh' : 'Open fullscreen';
+  String durationChipLabel(String durationLabel) =>
+      isIndonesian ? 'Durasi $durationLabel' : 'Duration $durationLabel';
+  String get canvasAttachedPrompt => isIndonesian
+      ? 'Kanvas sudah terlampir. Tambahkan sketsa lain jika perlu.'
+      : 'Canvas work is attached. Add another sketch if needed.';
+  String get canvasPrompt => isIndonesian
+      ? 'Butuh papan tulis? Buka kanvas dan kirim sketsamu di sini.'
+      : 'Need a whiteboard? Open canvas and send your sketch here.';
+  String get openCanvasLabel => isIndonesian ? 'Buka kanvas' : 'Open canvas';
+  String get useCanvasLabel => isIndonesian ? 'Pakai kanvas' : 'Use canvas';
+  String get canvasSentLabel =>
+      isIndonesian ? 'Kanvas terkirim' : 'Canvas sent';
+  String canvasSnapshotSentLabel(Object? count) {
+    final suffix = count == null
+        ? ''
+        : isIndonesian
+        ? ' ($count tanda)'
+        : ' ($count marks)';
+    return isIndonesian
+        ? 'Snapshot kanvas terkirim$suffix'
+        : 'Canvas snapshot sent$suffix';
+  }
+
+  String canvasMarksLabel(int count, bool hasAttachment) {
+    final markText = isIndonesian ? '$count tanda' : '$count marks';
+    if (!hasAttachment) {
+      return markText;
+    }
+    return isIndonesian
+        ? '$markText - kertas terlampir'
+        : '$markText - paper attached';
+  }
+
+  String historyButtonLabel(int count) =>
+      isIndonesian ? 'Riwayat ($count)' : 'History ($count)';
+
+  String historySessionTitle(String title) =>
+      title.isEmpty ? newChatLabel : title;
+
+  String historyMessageCountLabel(int count) {
+    if (isIndonesian) {
+      return '$count pesan';
+    }
+    return count == 1 ? '1 message' : '$count messages';
+  }
+
+  String workspaceSyncFailedMessage(String message) => isIndonesian
+      ? 'Sinkronisasi workspace gagal: $message'
+      : 'Workspace sync failed: $message';
+
   factory _LocalizedWorkspaceMaterial.fromAssessmentPack(
     HardcodedAssessmentPack pack, {
     required String languageCode,
   }) {
     if (languageCode == 'id') {
       return _LocalizedWorkspaceMaterial(
+        isIndonesian: true,
         topicTitle: pack.topicTitle,
         workspaceIntroLine1: pack.workspaceIntroLine1,
         workspaceIntroLine2: pack.workspaceIntroLine2,
@@ -2065,6 +2213,7 @@ class _LocalizedWorkspaceMaterial {
 
     if (pack.id == 'multiplication') {
       return const _LocalizedWorkspaceMaterial(
+        isIndonesian: false,
         topicTitle: 'Multiplication',
         workspaceIntroLine1:
             "Let's start the multiplication workspace with a short 5E chat.",
@@ -2093,6 +2242,7 @@ class _LocalizedWorkspaceMaterial {
     }
 
     return const _LocalizedWorkspaceMaterial(
+      isIndonesian: false,
       topicTitle: 'Algebra',
       workspaceIntroLine1:
           "Let's start the algebra workspace with a short 5E chat.",
@@ -2227,9 +2377,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
           ),
           if (isLoadingWorkspace) ...[
             const SizedBox(height: 10),
-            const _WorkspaceSyncNotice(
+            _WorkspaceSyncNotice(
               icon: Icons.cloud_sync_outlined,
-              text: 'Connecting to backend workspace...',
+              text: material.connectingWorkspaceMessage,
             ),
           ] else if (workspaceError != null) ...[
             const SizedBox(height: 10),
@@ -2240,9 +2390,9 @@ class _WorkspaceChatPanel extends StatelessWidget {
             ),
           ] else if (isAppendingEvent) ...[
             const SizedBox(height: 10),
-            const _WorkspaceSyncNotice(
+            _WorkspaceSyncNotice(
               icon: Icons.sync_rounded,
-              text: 'Saving workspace evidence...',
+              text: material.savingEvidenceMessage,
             ),
           ],
           if (videoTemplateHint != null) ...[
@@ -2278,6 +2428,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: _WorkspaceCanvasPromptBubble(
               hasCanvasWork: canvasSnapshots.isNotEmpty,
+              material: material,
               onUseCanvas: onOpenCanvas,
             ),
           ),
@@ -2286,7 +2437,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
             if (entry.isCanvas)
               Align(
                 alignment: Alignment.centerRight,
-                child: _CanvasSnapshotBubble(snapshot: entry.snapshot!),
+                child: _CanvasSnapshotBubble(
+                  snapshot: entry.snapshot!,
+                  material: material,
+                ),
               )
             else if (entry.isUser)
               _WorkspaceBubble(text: entry.text!, isUser: true)
@@ -2299,15 +2453,15 @@ class _WorkspaceChatPanel extends StatelessWidget {
             const SizedBox(height: 14),
             _WorkspaceVideoLoadingCard(
               progress: latestVideoStatus?.progress ?? 0,
-              message:
-                  videoStatusMessage ??
-                  'Building scenes, narration, and rendering...',
+              material: material,
+              message: videoStatusMessage ?? material.buildingScenesMessage,
             ),
           ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
             const SizedBox(height: 14),
             _GeneratedWorkspaceVideoCard(
               artifact: latestVideoArtifact,
               status: latestVideoStatus,
+              material: material,
             ),
           ] else if (contentMode == _WorkspaceContentMode.videoFailed) ...[
             const SizedBox(height: 14),
@@ -2315,7 +2469,8 @@ class _WorkspaceChatPanel extends StatelessWidget {
               errorMessage:
                   videoErrorMessage ??
                   latestVideoStatus?.error ??
-                  'Video generation failed.',
+                  material.videoGenerationFailedMessage,
+              material: material,
               onRetry: onGenerateVideo,
             ),
           ],
@@ -2596,10 +2751,12 @@ class _WorkspaceTopicCard extends StatelessWidget {
 class _WorkspaceCanvasPromptBubble extends StatelessWidget {
   const _WorkspaceCanvasPromptBubble({
     required this.hasCanvasWork,
+    required this.material,
     required this.onUseCanvas,
   });
 
   final bool hasCanvasWork;
+  final _LocalizedWorkspaceMaterial material;
   final VoidCallback onUseCanvas;
 
   @override
@@ -2624,8 +2781,8 @@ class _WorkspaceCanvasPromptBubble extends StatelessWidget {
           ),
           child: Text(
             hasCanvasWork
-                ? 'Canvas work is attached. Add another sketch if needed.'
-                : 'Need a whiteboard? Open canvas and send your sketch here.',
+                ? material.canvasAttachedPrompt
+                : material.canvasPrompt,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: WicaraColors.muted,
               fontWeight: FontWeight.w600,
@@ -2635,7 +2792,9 @@ class _WorkspaceCanvasPromptBubble extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _WorkspaceCanvasQuickActionButton(
-          label: hasCanvasWork ? 'Open canvas' : 'Use canvas',
+          label: hasCanvasWork
+              ? material.openCanvasLabel
+              : material.useCanvasLabel,
           onPressed: onUseCanvas,
         ),
       ],
@@ -2697,17 +2856,19 @@ class _WorkspaceVideoLoadingCard extends StatelessWidget {
   const _WorkspaceVideoLoadingCard({
     required this.progress,
     required this.message,
+    required this.material,
   });
 
   final int progress;
   final String message;
+  final _LocalizedWorkspaceMaterial material;
 
   @override
   Widget build(BuildContext context) {
     final normalizedProgress = (progress.clamp(0, 100)) / 100;
     return _WorkspaceRichBubble(
       icon: Icons.movie_creation_outlined,
-      title: 'Generating video',
+      title: material.generatingVideoTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2743,17 +2904,20 @@ class _WorkspaceVideoLoadingCard extends StatelessWidget {
 }
 
 class _GeneratedWorkspaceVideoCard extends StatelessWidget {
-  const _GeneratedWorkspaceVideoCard({this.artifact, this.status});
+  const _GeneratedWorkspaceVideoCard({
+    required this.material,
+    this.artifact,
+    this.status,
+  });
 
+  final _LocalizedWorkspaceMaterial material;
   final WorkspaceMediaArtifact? artifact;
   final WorkspaceAnimationJobStatus? status;
 
   @override
   Widget build(BuildContext context) {
-    final title = artifact?.title ?? 'Generated video';
-    final subtitle =
-        artifact?.subtitle ??
-        'Video rendering finished and is ready in your workspace.';
+    final title = artifact?.title ?? material.generatedVideoFallbackTitle;
+    final subtitle = artifact?.subtitle ?? material.generatedVideoSubtitle;
     final durationLabel = artifact?.durationLabel.isNotEmpty == true
         ? artifact!.durationLabel
         : '--:--';
@@ -2763,7 +2927,7 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
 
     return _WorkspaceRichBubble(
       icon: Icons.video_collection_outlined,
-      title: 'Saved generated video',
+      title: material.savedGeneratedVideoTitle,
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFFF8FBFF),
@@ -2850,10 +3014,10 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
                     children: [
                       _GeneratedVideoChip(durationLabel),
                       const SizedBox(width: 7),
-                      const _GeneratedVideoChip('AI video'),
+                      _GeneratedVideoChip(material.aiVideoChip),
                       if (playbackUrl.isNotEmpty) ...[
                         const SizedBox(width: 7),
-                        const _GeneratedVideoChip('Ready URL'),
+                        _GeneratedVideoChip(material.readyUrlChip),
                       ],
                       const Spacer(),
                       Icon(
@@ -2876,6 +3040,7 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
                                     title: title,
                                     videoUrl: playbackUrl,
                                     durationLabel: durationLabel,
+                                    material: material,
                                   );
                                 },
                               );
@@ -2884,8 +3049,8 @@ class _GeneratedWorkspaceVideoCard extends StatelessWidget {
                       icon: const Icon(Icons.play_arrow_rounded),
                       label: Text(
                         canPlay
-                            ? 'Play generated video'
-                            : 'Video URL unavailable',
+                            ? material.playGeneratedVideoLabel
+                            : material.videoUrlUnavailableLabel,
                       ),
                     ),
                   ),
@@ -2956,17 +3121,19 @@ class _WorkspaceVideoPreviewPainter extends CustomPainter {
 class _WorkspaceVideoFailedCard extends StatelessWidget {
   const _WorkspaceVideoFailedCard({
     required this.errorMessage,
+    required this.material,
     required this.onRetry,
   });
 
   final String errorMessage;
+  final _LocalizedWorkspaceMaterial material;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     return _WorkspaceRichBubble(
       icon: Icons.error_outline_rounded,
-      title: 'Video generation failed',
+      title: material.videoGenerationFailedTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2982,7 +3149,7 @@ class _WorkspaceVideoFailedCard extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry generate video'),
+            label: Text(material.retryGenerateVideoLabel),
           ),
         ],
       ),
@@ -2994,6 +3161,7 @@ class _WorkspaceVideoPlayerDialog extends StatefulWidget {
   const _WorkspaceVideoPlayerDialog({
     required this.title,
     required this.videoUrl,
+    required this.material,
     this.durationLabel,
     this.isFullscreen = false,
     this.initialPosition,
@@ -3001,6 +3169,7 @@ class _WorkspaceVideoPlayerDialog extends StatefulWidget {
 
   final String title;
   final String videoUrl;
+  final _LocalizedWorkspaceMaterial material;
   final String? durationLabel;
   final bool isFullscreen;
   final Duration? initialPosition;
@@ -3051,7 +3220,7 @@ class _WorkspaceVideoPlayerDialogState
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load video from backend URL.';
+        _errorMessage = widget.material.failedToLoadVideoMessage;
       });
     }
   }
@@ -3081,6 +3250,7 @@ class _WorkspaceVideoPlayerDialogState
         return _WorkspaceVideoPlayerDialog(
           title: widget.title,
           videoUrl: widget.videoUrl,
+          material: widget.material,
           durationLabel: widget.durationLabel,
           isFullscreen: true,
           initialPosition: currentPosition,
@@ -3154,7 +3324,7 @@ class _WorkspaceVideoPlayerDialogState
                   onPressed: () => _openFullscreenPlayer(controller),
                   icon: const Icon(Icons.open_in_full_rounded),
                   color: foreground,
-                  tooltip: 'Open fullscreen',
+                  tooltip: widget.material.openFullscreenTooltip,
                 ),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -3171,7 +3341,9 @@ class _WorkspaceVideoPlayerDialogState
             const SizedBox(height: 2),
             Align(
               alignment: Alignment.centerLeft,
-              child: _GeneratedVideoChip('Duration ${widget.durationLabel}'),
+              child: _GeneratedVideoChip(
+                widget.material.durationChipLabel(widget.durationLabel!),
+              ),
             ),
           ],
           const SizedBox(height: 6),
@@ -3663,9 +3835,10 @@ class _WorkspaceQuizOption extends StatelessWidget {
 }
 
 class _CanvasSnapshotBubble extends StatelessWidget {
-  const _CanvasSnapshotBubble({required this.snapshot});
+  const _CanvasSnapshotBubble({required this.snapshot, required this.material});
 
   final CanvasWorkSnapshot snapshot;
+  final _LocalizedWorkspaceMaterial material;
 
   @override
   Widget build(BuildContext context) {
@@ -3697,7 +3870,7 @@ class _CanvasSnapshotBubble extends StatelessWidget {
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  'Canvas sent',
+                  material.canvasSentLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -3718,7 +3891,10 @@ class _CanvasSnapshotBubble extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '${snapshot.elementCount} marks${snapshot.hasAttachment ? ' • paper attached' : ''}',
+            material.canvasMarksLabel(
+              snapshot.elementCount,
+              snapshot.hasAttachment,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3743,6 +3919,7 @@ class _WorkspaceFooter extends StatelessWidget {
     required this.videoStatusMessage,
     required this.videoErrorMessage,
     required this.copy,
+    required this.material,
   });
 
   final TextEditingController controller;
@@ -3754,6 +3931,7 @@ class _WorkspaceFooter extends StatelessWidget {
   final String? videoStatusMessage;
   final String? videoErrorMessage;
   final OnboardingCopy copy;
+  final _LocalizedWorkspaceMaterial material;
 
   @override
   Widget build(BuildContext context) {
@@ -3786,8 +3964,8 @@ class _WorkspaceFooter extends StatelessWidget {
               ),
               label: Text(
                 isVideoGenerating
-                    ? 'Generating video...'
-                    : 'Generate video from this chat',
+                    ? material.generatingVideoButtonLabel
+                    : material.generateVideoFromChatLabel,
               ),
             ),
             if (contentMode == _WorkspaceContentMode.videoProcessing) ...[
@@ -3796,7 +3974,7 @@ class _WorkspaceFooter extends StatelessWidget {
                 icon: Icons.movie_creation_outlined,
                 text:
                     videoStatusMessage ??
-                    'Generating video from your latest conversation context...',
+                    material.generatingVideoContextMessage,
               ),
             ] else if (contentMode == _WorkspaceContentMode.videoFailed &&
                 (videoErrorMessage?.isNotEmpty ?? false)) ...[
@@ -3808,9 +3986,9 @@ class _WorkspaceFooter extends StatelessWidget {
               ),
             ] else if (contentMode == _WorkspaceContentMode.videoReady) ...[
               const SizedBox(height: 8),
-              const _WorkspaceSyncNotice(
+              _WorkspaceSyncNotice(
                 icon: Icons.check_circle_rounded,
-                text: 'Video ready. You can play it from the latest chat card.',
+                text: material.videoReadyMessage,
               ),
             ],
             const SizedBox(height: 10),

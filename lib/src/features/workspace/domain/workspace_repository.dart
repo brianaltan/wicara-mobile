@@ -48,7 +48,7 @@ abstract class WorkspaceRepository {
     String generationMode = 'context_auto',
     String? templateId,
     Map<String, dynamic>? specJson,
-    String language = 'id',
+    String language = 'en',
     String qualityProfile = 'standard',
     String? conceptId,
     Map<String, dynamic> metadata = const {},
