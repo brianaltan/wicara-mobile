@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,9 @@ import 'package:flutter/material.dart';
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../edge_ai/data/litert_gemma_runtime.dart';
 import '../../edge_ai/presentation/edge_runtime_status_panel.dart';
+import '../../offline_pretest/domain/local_pretest_question_generator.dart';
 import '../../onboarding/application/onboarding_controller.dart';
 import '../../onboarding/domain/onboarding_copy.dart';
 import '../domain/pretest_models.dart';
@@ -34,6 +37,8 @@ class PretestPage extends StatefulWidget {
 
 class _PretestPageState extends State<PretestPage> {
   final _reasoningController = TextEditingController(text: '');
+  StreamSubscription<LocalQuestionGenerationProgress>?
+  _questionGenerationProgressSubscription;
 
   _PretestStage _stage = _PretestStage.question;
   PretestQuestion? _question;
@@ -44,15 +49,27 @@ class _PretestPageState extends State<PretestPage> {
   String? _questionError;
   KnowledgeState? _knowledgeState;
   final List<CanvasWorkSnapshot> _canvasSnapshots = [];
+  LocalQuestionGenerationProgress? _questionGenerationProgress;
 
   @override
   void initState() {
     super.initState();
+    _questionGenerationProgressSubscription = LocalPretestQuestionGenerator
+        .progressStream
+        .listen((progress) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _questionGenerationProgress = progress.active ? progress : null;
+          });
+        });
     _loadQuestion();
   }
 
   @override
   void dispose() {
+    _questionGenerationProgressSubscription?.cancel();
     _reasoningController.dispose();
     super.dispose();
   }
@@ -217,6 +234,20 @@ class _PretestPageState extends State<PretestPage> {
     );
   }
 
+  void _exitWhileGenerating() {
+    unawaited(defaultEdgeAiRuntime.unload());
+    _showMessage('Keluar pretest. Proses generate akan dihentikan.');
+    _goHome();
+  }
+
+  bool get _showQuestionGenerationOverlay {
+    final progress = _questionGenerationProgress;
+    if (progress == null || !progress.active) {
+      return false;
+    }
+    return _isLoadingQuestion || _isSubmitting;
+  }
+
   void _openLargeCanvas() {
     showDialog<void>(
       context: context,
@@ -294,12 +325,23 @@ class _PretestPageState extends State<PretestPage> {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, stageConstraints) {
-                          return AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: KeyedSubtree(
-                              key: ValueKey(_stage),
-                              child: _stageView(stageConstraints, copy),
-                            ),
+                          return Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                child: KeyedSubtree(
+                                  key: ValueKey(_stage),
+                                  child: _stageView(stageConstraints, copy),
+                                ),
+                              ),
+                              if (_showQuestionGenerationOverlay)
+                                _QuestionGenerationOverlay(
+                                  progress: _questionGenerationProgress!,
+                                  copy: copy,
+                                  onExit: _exitWhileGenerating,
+                                ),
+                            ],
                           );
                         },
                       ),
@@ -373,6 +415,201 @@ class _PretestPageState extends State<PretestPage> {
         onContinue: _isSubmitting ? () {} : _selectPathAndGoHome,
       ),
     };
+  }
+}
+
+class _QuestionGenerationOverlay extends StatelessWidget {
+  const _QuestionGenerationOverlay({
+    required this.progress,
+    required this.copy,
+    required this.onExit,
+  });
+
+  final LocalQuestionGenerationProgress progress;
+  final OnboardingCopy copy;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    final eta = progress.estimatedRemainingSeconds;
+    final etaText = eta == null
+        ? ''
+        : copy.isIndonesian
+        ? 'Estimasi sisa ${eta}s'
+        : 'Estimated ${eta}s remaining';
+    final progressText = copy.isIndonesian
+        ? 'Percobaan ${progress.attempt}/${progress.maxAttempts}'
+        : 'Attempt ${progress.attempt}/${progress.maxAttempts}';
+    final rawOutput = progress.rawOutputPreview;
+    final parsedOutput = progress.parsedOutputPreview;
+    final showDebugOutput = rawOutput.isNotEmpty || parsedOutput.isNotEmpty;
+    final overlayMaxHeight = MediaQuery.sizeOf(context).height * 0.8;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ModalBarrier(
+          color: Colors.black.withValues(alpha: 0.18),
+          dismissible: false,
+        ),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Container(
+              width: double.infinity,
+              constraints: BoxConstraints(
+                maxWidth: 360,
+                maxHeight: overlayMaxHeight,
+              ),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: WicaraColors.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: WicaraColors.shadowBlue.withValues(alpha: 0.22),
+                    blurRadius: 20,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      copy.isIndonesian
+                          ? 'Menyusun soal di device...'
+                          : 'Generating questions on-device...',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: WicaraColors.text,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: progress.progress.clamp(0.0, 1.0),
+                        minHeight: 8,
+                        color: WicaraColors.secondary,
+                        backgroundColor: WicaraColors.line,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      progress.message,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      etaText.isEmpty
+                          ? progressText
+                          : '$progressText • $etaText',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.softMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: onExit,
+                        icon: const Icon(Icons.exit_to_app_rounded, size: 16),
+                        label: Text(
+                          copy.isIndonesian ? 'Keluar pretest' : 'Exit pretest',
+                        ),
+                      ),
+                    ),
+                    if (showDebugOutput) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        copy.isIndonesian
+                            ? 'Debug output model'
+                            : 'Model debug output',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: WicaraColors.text,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (rawOutput.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _LlmOutputPreview(
+                          title: copy.isIndonesian
+                              ? 'Raw response'
+                              : 'Raw response',
+                          content: rawOutput,
+                        ),
+                      ],
+                      if (parsedOutput.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _LlmOutputPreview(
+                          title: copy.isIndonesian
+                              ? 'Parsed JSON'
+                              : 'Parsed JSON',
+                          content: parsedOutput,
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LlmOutputPreview extends StatelessWidget {
+  const _LlmOutputPreview({required this.title, required this.content});
+
+  final String title;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: WicaraColors.pageBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: WicaraColors.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 130),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                content,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontFamily: 'monospace',
+                  height: 1.25,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

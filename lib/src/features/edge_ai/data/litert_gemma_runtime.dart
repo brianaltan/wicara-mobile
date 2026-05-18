@@ -87,6 +87,8 @@ class LiteRtGemmaRuntime implements EdgeAiRuntime {
       'system': request.system,
       'user': request.user,
       'schemaName': request.schemaName,
+      'temperature': request.temperature,
+      'maxTokens': request.maxTokens,
     });
     return EdgeJsonGenerationResult.fromMap(map);
   }

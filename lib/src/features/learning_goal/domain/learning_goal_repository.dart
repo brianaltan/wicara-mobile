@@ -138,6 +138,8 @@ abstract class LearningGoalRepository {
 
   Future<LearningGoalBootstrap> confirmResolvedGoal({
     required String resolutionId,
+    String? targetConceptCode,
+    String? targetSubjectCode,
   });
 
   Future<LearningGoalResolution> selectResolvedConcept({

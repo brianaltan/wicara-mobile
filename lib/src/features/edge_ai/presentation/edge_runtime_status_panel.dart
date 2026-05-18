@@ -121,7 +121,7 @@ class _EdgeRuntimeStatusPanelState extends State<EdgeRuntimeStatusPanel> {
     _installPollInFlight = false;
   }
 
-  Future<void> _installModel() async {
+  Future<void> _installModel({bool overwrite = false}) async {
     final url = _modelUrlController.text.trim();
     if (url.isEmpty) {
       setState(() {
@@ -139,15 +139,17 @@ class _EdgeRuntimeStatusPanelState extends State<EdgeRuntimeStatusPanel> {
     try {
       final installed = await widget.runtime.installModel(
         url: url,
-        overwrite: false,
+        overwrite: overwrite,
       );
       if (!mounted) {
         return;
       }
       setState(() {
         _isInstalling = false;
-        _installSummary = installed.skipped
+        _installSummary = installed.skipped && !overwrite
             ? 'Model sudah ada di device (${installed.modelPath}).'
+            : overwrite
+            ? 'Model di-reinstall (${_formatBytes(installed.bytesDownloaded)} dalam ${installed.downloadMs ?? 0} ms).'
             : 'Model terpasang (${_formatBytes(installed.bytesDownloaded)} dalam ${installed.downloadMs ?? 0} ms).';
       });
       _stopInstallProgressPolling();
@@ -185,9 +187,16 @@ class _EdgeRuntimeStatusPanelState extends State<EdgeRuntimeStatusPanel> {
       }
       setState(() {
         _isInitializing = false;
-        _errorText = 'Initialize failed: $error';
+        _errorText = _friendlyInitializeError(error.toString());
       });
     }
+  }
+
+  String _friendlyInitializeError(String raw) {
+    if (raw.contains('INITIALIZE_FAILED')) {
+      return 'Initialize gagal. Biasanya karena file model korup/tidak cocok dengan runtime di device ini. Coba "Reinstall model" lalu initialize ulang.';
+    }
+    return 'Initialize failed: $raw';
   }
 
   Future<void> _runTestPrompt() async {
@@ -342,6 +351,17 @@ class _EdgeRuntimeStatusPanelState extends State<EdgeRuntimeStatusPanel> {
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
+                      if (status != null &&
+                          status.raw['modelFileBytes'] is int) ...[
+                        Text(
+                          'model_size=${_formatBytes(status.raw['modelFileBytes'] as int)}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: WicaraColors.muted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       TextField(
                         controller: _modelUrlController,
@@ -386,10 +406,18 @@ class _EdgeRuntimeStatusPanelState extends State<EdgeRuntimeStatusPanel> {
                         runSpacing: 8,
                         children: [
                           FilledButton(
-                            onPressed: _isInstalling ? null : _installModel,
+                            onPressed: _isInstalling
+                                ? null
+                                : () => _installModel(overwrite: false),
                             child: Text(
                               _isInstalling ? 'Installing...' : 'Install model',
                             ),
+                          ),
+                          OutlinedButton(
+                            onPressed: _isInstalling
+                                ? null
+                                : () => _installModel(overwrite: true),
+                            child: const Text('Reinstall model'),
                           ),
                           OutlinedButton(
                             onPressed: _isLoading ? null : _refreshStatus,

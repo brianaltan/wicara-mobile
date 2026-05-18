@@ -10,6 +10,7 @@ import 'local_graph_scope_builder.dart';
 import 'local_pretest_decision_engine.dart';
 import 'local_pretest_diagnosis_service.dart';
 import 'local_pretest_models.dart';
+import 'local_pretest_question_generator.dart';
 import '../../pretest/domain/pretest_models.dart';
 import '../../pretest/domain/pretest_repository.dart';
 import '../../pretest/data/api_pretest_repository.dart';
@@ -26,6 +27,7 @@ class LocalPretestEngine {
     LocalPretestDecisionEngine? decisionEngine,
     LocalEvidenceEvaluator? evidenceEvaluator,
     LocalPretestDiagnosisService? diagnosisService,
+    LocalPretestQuestionGenerator? questionGenerator,
     LocalGraphScopeBuilder? graphScopeBuilder,
     ApiPretestRepository? backendRepository,
     this.forceLocalForPilot = true,
@@ -53,6 +55,8 @@ class LocalPretestEngine {
        _decisionEngine = decisionEngine ?? LocalPretestDecisionEngine(),
        _evidenceEvaluator = evidenceEvaluator ?? const LocalEvidenceEvaluator(),
        _diagnosisService = diagnosisService ?? LocalPretestDiagnosisService(),
+       _questionGenerator =
+           questionGenerator ?? const LocalPretestQuestionGenerator(),
        _backendRepository = backendRepository;
 
   final LocalWicaraDatabase _database;
@@ -65,6 +69,7 @@ class LocalPretestEngine {
   final LocalPretestDecisionEngine _decisionEngine;
   final LocalEvidenceEvaluator _evidenceEvaluator;
   final LocalPretestDiagnosisService _diagnosisService;
+  final LocalPretestQuestionGenerator _questionGenerator;
   final ApiPretestRepository? _backendRepository;
   final bool forceLocalForPilot;
   final bool allowBackendFallback;
@@ -163,7 +168,22 @@ class LocalPretestEngine {
       throw const PretestException('State pretest lokal tidak valid.');
     }
     final graphScope = _map(metadata['graph_scope']);
-    final question = _questionFromState(state: state, graphScope: graphScope);
+    final generatedPackCountBefore = _generatedPackCount(state);
+    final question = await _questionFromState(
+      state: state,
+      graphScope: graphScope,
+    );
+    if (_generatedPackCount(state) != generatedPackCountBefore) {
+      final nextMetadata = <String, dynamic>{
+        ...metadata,
+        'decision_state': state,
+      };
+      await _localSessions.updateSession(
+        sessionId: active.id,
+        metadata: nextMetadata,
+        dirty: true,
+      );
+    }
     _activeLocalSessionId = active.id;
     return _toPretestQuestion(question);
   }
@@ -180,7 +200,10 @@ class LocalPretestEngine {
       throw const PretestException('Session pretest lokal tidak valid.');
     }
 
-    final question = _questionFromState(state: state, graphScope: graphScope);
+    final question = await _questionFromState(
+      state: state,
+      graphScope: graphScope,
+    );
     if (answer.questionId.trim() != question.id) {
       throw const PretestException(
         'Question mismatch. Muat ulang pretest dan coba lagi.',
@@ -319,7 +342,8 @@ class LocalPretestEngine {
       'current_question_id': _localQuestionId(nextConceptCode, nextDifficulty),
       'question_count': nextQuestionCount,
     };
-    final nextQuestion = _buildQuestion(
+    final nextQuestion = await _buildQuestion(
+      decisionState: progressedState,
       conceptCode: nextConceptCode,
       difficulty: nextDifficulty,
       graphScope: graphScope,
@@ -438,6 +462,37 @@ class LocalPretestEngine {
     final nodeResults =
         (decisionState['node_results'] as Map?)?.cast<String, dynamic>() ??
         const <String, dynamic>{};
+    final generatedPacks = _map(decisionState['generated_packs']);
+    final generatedPackSources = <String>[];
+    var readyPackCount = 0;
+    var partialPackCount = 0;
+    var failedPackCount = 0;
+    var droppedDifficultyCount = 0;
+    var maxRetryUsed = 0;
+    for (final rawPack in generatedPacks.values) {
+      final wrapped = _map(rawPack);
+      final source = _string(wrapped['source']);
+      final status = _string(wrapped['status']);
+      final attemptCount = _int(wrapped['attempt_count']);
+      final droppedDifficulties = _stringList(wrapped['dropped_difficulties']);
+      if (source.isNotEmpty) {
+        generatedPackSources.add(source);
+      }
+      if (status == 'ready') {
+        readyPackCount += 1;
+      } else if (status == 'partial') {
+        partialPackCount += 1;
+      } else if (status == 'failed') {
+        failedPackCount += 1;
+      }
+      droppedDifficultyCount += droppedDifficulties.length;
+      if (attemptCount > maxRetryUsed) {
+        maxRetryUsed = attemptCount;
+      }
+    }
+    final generatedByLiteRt = generatedPackSources.any(
+      (source) => source.toLowerCase().contains('litert'),
+    );
     var usesLiteRt = false;
     for (final rawNode in nodeResults.values) {
       if (rawNode is! Map) {
@@ -462,11 +517,20 @@ class LocalPretestEngine {
       }
     }
     return <String, dynamic>{
-      'primary_ai_runtime': usesLiteRt
+      'primary_ai_runtime': usesLiteRt || generatedByLiteRt
           ? 'litert_gemma4'
           : 'deterministic_local_heuristic',
       'cloud_calls_used': 0,
       'execution_location': 'device',
+      'question_pack_generation': generatedByLiteRt
+          ? 'litert_gemma4'
+          : (generatedPackSources.isEmpty ? 'deterministic_template' : 'mixed'),
+      'generated_pack_count': generatedPacks.length,
+      'generated_pack_ready_count': readyPackCount,
+      'generated_pack_partial_count': partialPackCount,
+      'generated_pack_failed_count': failedPackCount,
+      'generated_pack_dropped_difficulty_count': droppedDifficultyCount,
+      'question_pack_retry_max_attempts_used': maxRetryUsed,
     };
   }
 
@@ -475,7 +539,9 @@ class LocalPretestEngine {
       final existing = await _localSessions.getSessionById(
         _activeLocalSessionId!,
       );
-      if (existing != null && existing.status != 'completed') {
+      if (existing != null &&
+          existing.status != 'completed' &&
+          _sessionMatchesCurrentGoal(existing)) {
         return existing;
       }
     }
@@ -490,6 +556,7 @@ class LocalPretestEngine {
   Future<LocalLearningSessionRecord> _findOrCreateActiveLocalSession() async {
     final active = await _findActiveLocalSession();
     if (active != null) {
+      _activeLocalSessionId = active.id;
       return active;
     }
     return _createLocalSession();
@@ -501,7 +568,8 @@ class LocalPretestEngine {
       if (session.sessionType != 'offline_pretest_pilot') {
         continue;
       }
-      if (session.status == 'active' || session.status == 'awaiting_answer') {
+      if ((session.status == 'active' || session.status == 'awaiting_answer') &&
+          _sessionMatchesCurrentGoal(session)) {
         return session;
       }
     }
@@ -510,16 +578,26 @@ class LocalPretestEngine {
 
   Future<LocalLearningSessionRecord> _createLocalSession() async {
     await _localCurriculum.ensurePilotSliceSeeded();
-    final concepts = await _localCurriculum.listConcepts(
-      subjectCode: 'matematika',
+    final preferredSubjectCode = _string(
+      _pretestSessionStore.targetSubjectCode,
+      fallback: 'matematika',
     );
+    var concepts = await _localCurriculum.listConcepts(
+      subjectCode: preferredSubjectCode,
+    );
+    if (concepts.isEmpty && preferredSubjectCode != 'matematika') {
+      concepts = await _localCurriculum.listConcepts(subjectCode: 'matematika');
+    }
     if (concepts.isEmpty) {
       throw const PretestException(
         'Offline curriculum belum tersedia di device.',
       );
     }
     final edges = await _localCurriculum.listEdges();
-    final target = _resolveTargetConcept(concepts);
+    final target = _resolveTargetConcept(
+      concepts,
+      preferredConceptCode: _pretestSessionStore.targetConceptCode,
+    );
     final graphScope = _graphScopeBuilder.build(
       concepts: concepts,
       edges: edges,
@@ -568,17 +646,21 @@ class LocalPretestEngine {
     return created;
   }
 
-  _TargetConcept _resolveTargetConcept(List<LocalConceptRecord> concepts) {
+  _TargetConcept _resolveTargetConcept(
+    List<LocalConceptRecord> concepts, {
+    String? preferredConceptCode,
+  }) {
     final byCode = <String, LocalConceptRecord>{
       for (final concept in concepts) concept.code: concept,
     };
     final candidates = <String>[
+      _string(preferredConceptCode),
       preferredTargetConceptCode,
+      'km_d_matematika_bentuk_aljabar',
       'km_d_matematika_laju_perubahan_sederhana',
       'km_d_matematika_fungsi_dasar',
-      'km_d_matematika_bentuk_aljabar',
       'km_d_matematika_proporsi',
-    ];
+    ].where((code) => code.isNotEmpty).toList(growable: false);
     for (final code in candidates) {
       final concept = byCode[code];
       if (concept != null) {
@@ -597,11 +679,22 @@ class LocalPretestEngine {
     );
   }
 
-  LocalPretestQuestion _questionFromState({
+  bool _sessionMatchesCurrentGoal(LocalLearningSessionRecord session) {
+    final currentGoalId = _string(_pretestSessionStore.learningGoalId);
+    if (currentGoalId.isEmpty) {
+      return true;
+    }
+    final metadata = _sessionMetadata(session.metadata);
+    final sessionGoalId = _string(metadata['learning_goal_id']);
+    return sessionGoalId == currentGoalId;
+  }
+
+  Future<LocalPretestQuestion> _questionFromState({
     required Map<String, dynamic> state,
     required Map<String, dynamic> graphScope,
-  }) {
+  }) async {
     return _buildQuestion(
+      decisionState: state,
       conceptCode: _string(state['current_concept_code']),
       difficulty: _string(state['current_difficulty'], fallback: 'medium'),
       graphScope: graphScope,
@@ -610,13 +703,14 @@ class LocalPretestEngine {
     );
   }
 
-  LocalPretestQuestion _buildQuestion({
+  Future<LocalPretestQuestion> _buildQuestion({
+    required Map<String, dynamic> decisionState,
     required String conceptCode,
     required String difficulty,
     required Map<String, dynamic> graphScope,
     required int progressCurrent,
     required int progressMax,
-  }) {
+  }) async {
     final node = ((graphScope['nodes'] as List?) ?? const <dynamic>[])
         .whereType<Map>()
         .map((item) => item.cast<String, dynamic>())
@@ -625,15 +719,22 @@ class LocalPretestEngine {
           orElse: () => const <String, dynamic>{},
         );
     final conceptTitle = _string(node['title'], fallback: conceptCode);
-    final seed = _templateForConcept(
+    final conceptDescription = _string(node['description']);
+    final fallbackSeed = _templateForConcept(
       conceptCode: conceptCode,
       title: conceptTitle,
     );
-    final item = switch (difficulty.toLowerCase()) {
-      'easy' => seed.easy,
-      'hard' => seed.hard,
-      _ => seed.medium,
-    };
+    final generatedPack = await _ensureGeneratedPack(
+      decisionState: decisionState,
+      conceptCode: conceptCode,
+      conceptTitle: conceptTitle,
+      conceptDescription: conceptDescription,
+    );
+    final item = _questionSeedForDifficulty(
+      difficulty: difficulty,
+      fallbackSeed: fallbackSeed,
+      generatedPack: generatedPack,
+    );
     final options = <LocalPretestOption>[];
     final labels = <String>['A', 'B', 'C', 'D'];
     for (var index = 0; index < item.options.length; index++) {
@@ -654,12 +755,117 @@ class LocalPretestEngine {
       conceptTitle: conceptTitle,
       difficulty: difficulty,
       prompt: item.prompt,
-      helper: 'Pilih jawaban yang paling tepat untuk $conceptTitle.',
+      helper: item.helper.isNotEmpty
+          ? item.helper
+          : 'Pilih jawaban yang paling tepat untuk $conceptTitle.',
       expectedReasoning: item.explanation,
       options: options,
       progressCurrent: progressCurrent,
       progressMax: progressMax,
     );
+  }
+
+  Future<Map<String, dynamic>?> _ensureGeneratedPack({
+    required Map<String, dynamic> decisionState,
+    required String conceptCode,
+    required String conceptTitle,
+    required String conceptDescription,
+  }) async {
+    final generatedPacks = _map(decisionState['generated_packs']);
+    final existingRaw = _map(generatedPacks[conceptCode]);
+    if (existingRaw.isNotEmpty) {
+      final existingPack = _extractGeneratedPack(existingRaw);
+      if (existingPack != null && existingPack.isNotEmpty) {
+        return existingPack;
+      }
+      // If previously cached pack has no valid question at all, clear it so
+      // a future fetch can re-attempt LiteRT generation after runtime warms up.
+      generatedPacks.remove(conceptCode);
+      decisionState['generated_packs'] = generatedPacks;
+    }
+
+    final generated = await _questionGenerator.generatePack(
+      conceptCode: conceptCode,
+      conceptTitle: conceptTitle,
+      conceptDescription: conceptDescription,
+    );
+    if (generated == null) {
+      return null;
+    }
+    final generatedPack = _extractGeneratedPack(generated);
+    if (generatedPack == null || generatedPack.isEmpty) {
+      // Keep fallback for current turn, but don't persist empty pack.
+      return null;
+    }
+    generatedPacks[conceptCode] = generated;
+    decisionState['generated_packs'] = generatedPacks;
+    return generatedPack;
+  }
+
+  Map<String, dynamic>? _extractGeneratedPack(Object? raw) {
+    final wrapped = _map(raw);
+    if (wrapped.isEmpty) {
+      return null;
+    }
+    final nested = _map(wrapped['pack']);
+    final candidate = nested.isNotEmpty ? nested : wrapped;
+    final valid = <String, dynamic>{};
+    for (final difficulty in const <String>['easy', 'medium', 'hard']) {
+      if (_seedFromDynamic(candidate[difficulty]) != null) {
+        valid[difficulty] = candidate[difficulty];
+      }
+    }
+    return valid;
+  }
+
+  _QuestionSeed _questionSeedForDifficulty({
+    required String difficulty,
+    required _QuestionTemplate fallbackSeed,
+    required Map<String, dynamic>? generatedPack,
+  }) {
+    final generated = generatedPack == null
+        ? null
+        : _seedFromDynamic(generatedPack[difficulty.toLowerCase()]);
+    if (generated != null) {
+      return generated;
+    }
+    return switch (difficulty.toLowerCase()) {
+      'easy' => fallbackSeed.easy,
+      'hard' => fallbackSeed.hard,
+      _ => fallbackSeed.medium,
+    };
+  }
+
+  _QuestionSeed? _seedFromDynamic(Object? raw) {
+    final node = _map(raw);
+    if (node.isEmpty) {
+      return null;
+    }
+    final prompt = _string(node['prompt']);
+    final options = _stringList(node['options']);
+    final correctOption = _string(node['correct_option']);
+    final explanation = _string(node['explanation']);
+    final helper = _string(node['helper_text']);
+    if (prompt.isEmpty || options.length != 4 || correctOption.isEmpty) {
+      return null;
+    }
+    if (!options.contains(correctOption)) {
+      return null;
+    }
+    return _QuestionSeed(
+      prompt: prompt,
+      correctOption: correctOption,
+      options: options,
+      explanation: explanation.isEmpty
+          ? 'Tinjau langkah pengerjaan untuk memastikan pilihan jawaban.'
+          : explanation,
+      helper: helper,
+    );
+  }
+
+  int _generatedPackCount(Map<String, dynamic> decisionState) {
+    final generatedPacks = _map(decisionState['generated_packs']);
+    return generatedPacks.length;
   }
 
   Future<T> _withFallback<T>(
@@ -748,12 +954,14 @@ class _QuestionSeed {
     required this.correctOption,
     required this.options,
     required this.explanation,
+    this.helper = '',
   });
 
   final String prompt;
   final String correctOption;
   final List<String> options;
   final String explanation;
+  final String helper;
 }
 
 class _TargetConcept {
@@ -932,6 +1140,16 @@ int _int(Object? value, {int fallback = 0}) {
     final String text => int.tryParse(text) ?? fallback,
     _ => fallback,
   };
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! List) {
+    return const <String>[];
+  }
+  return value
+      .map((item) => _string(item))
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
 }
 
 String _string(Object? value, {String fallback = ''}) {

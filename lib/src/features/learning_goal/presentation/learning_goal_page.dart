@@ -101,6 +101,11 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
 
       await widget.learningGoalRepository.confirmResolvedGoal(
         resolutionId: existingResolution.resolutionId,
+        targetConceptCode: existingResolution.suggestedConcept?.conceptCode,
+        targetSubjectCode:
+            (existingResolution.graphSubjectCode ?? '').trim().isEmpty
+            ? existingResolution.suggestedConcept?.subjectCode
+            : existingResolution.graphSubjectCode,
       );
       if (!mounted) {
         return;

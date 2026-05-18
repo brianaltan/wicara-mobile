@@ -40,6 +40,8 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
         learningGoalId: goal.id,
         pretestSessionId: goal.pretestSessionId,
         trackId: goal.trackId,
+        targetConceptCode: goal.targetConcept?.conceptCode,
+        targetSubjectCode: _normalizedSubjectCode(goal.targetConcept),
       );
       return goal;
     } on ApiClientException catch (error) {
@@ -81,6 +83,8 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
   @override
   Future<LearningGoalBootstrap> confirmResolvedGoal({
     required String resolutionId,
+    String? targetConceptCode,
+    String? targetSubjectCode,
   }) async {
     final token = _requireToken();
     try {
@@ -93,6 +97,8 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
       );
       _pretestSessionStore.saveBootstrap(
         learningGoalId: bootstrap.learningGoalId,
+        targetConceptCode: _nullableString(targetConceptCode),
+        targetSubjectCode: _nullableString(targetSubjectCode),
       );
       return bootstrap;
     } on ApiClientException catch (error) {
@@ -154,7 +160,13 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
             'No matching learning goal was found.',
       );
     }
-    return confirmResolvedGoal(resolutionId: resolution.resolutionId);
+    return confirmResolvedGoal(
+      resolutionId: resolution.resolutionId,
+      targetConceptCode: resolution.suggestedConcept?.conceptCode,
+      targetSubjectCode:
+          _nullableString(resolution.graphSubjectCode) ??
+          _normalizedSubjectCode(resolution.suggestedConcept),
+    );
   }
 
   @override
@@ -266,9 +278,7 @@ LearningConceptSuggestion _conceptFromJson(Map<String, dynamic> json) {
     title: _stringValue(json['title']),
     description: _stringValue(json['description']),
     idDesc: _stringValue(
-      json['id_desc'].isEmpty
-          ? json['description']
-          : json['id_desc'],
+      json['id_desc'].isEmpty ? json['description'] : json['id_desc'],
     ),
     enDesc: _stringValue(json['en_desc']),
     subjectCode: _stringValue(json['subject_code']),
@@ -327,4 +337,28 @@ String _normalizeLanguage(String? language) {
     return 'id';
   }
   return 'en';
+}
+
+String? _normalizedSubjectCode(LearningConceptSuggestion? concept) {
+  if (concept == null) {
+    return null;
+  }
+  final subjectCode = _nullableString(concept.subjectCode);
+  if (subjectCode != null) {
+    return subjectCode;
+  }
+  final subject = _stringValue(concept.subject).toLowerCase();
+  if (subject.contains('fisika')) {
+    return 'fisika';
+  }
+  if (subject.contains('kimia')) {
+    return 'kimia';
+  }
+  if (subject.contains('biologi')) {
+    return 'biologi';
+  }
+  if (subject.contains('matematika') || subject.contains('math')) {
+    return 'matematika';
+  }
+  return null;
 }

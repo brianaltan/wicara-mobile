@@ -192,12 +192,16 @@ class EdgeJsonGenerationRequest {
     required this.system,
     required this.user,
     required this.schemaName,
+    this.temperature = 0.2,
+    this.maxTokens = 320,
   });
 
   final String requestId;
   final String system;
   final String user;
   final String schemaName;
+  final double temperature;
+  final int maxTokens;
 }
 
 class EdgeJsonGenerationResult {

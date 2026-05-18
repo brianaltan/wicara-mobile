@@ -241,6 +241,13 @@ String? _runtimeAuditNote(Object? value) {
   final diagnosisSource = _string(value['diagnosis_report_source']);
   final diagnosisModel = _string(value['diagnosis_report_model']);
   final diagnosisLatencyMs = _int(value['diagnosis_report_latency_ms']);
+  final packGeneration = _string(value['question_pack_generation']);
+  final generatedPackCount = _int(value['generated_pack_count']);
+  final packReady = _int(value['generated_pack_ready_count']);
+  final packPartial = _int(value['generated_pack_partial_count']);
+  final packFailed = _int(value['generated_pack_failed_count']);
+  final droppedCount = _int(value['generated_pack_dropped_difficulty_count']);
+  final retryMaxUsed = _int(value['question_pack_retry_max_attempts_used']);
   if (runtime.isEmpty && execution.isEmpty) {
     return null;
   }
@@ -248,6 +255,13 @@ String? _runtimeAuditNote(Object? value) {
     if (runtime.isNotEmpty) 'runtime=$runtime',
     'cloud_calls=$cloudCalls',
     if (execution.isNotEmpty) 'execution=$execution',
+    if (packGeneration.isNotEmpty) 'question_pack=$packGeneration',
+    if (generatedPackCount != null) 'pack_count=$generatedPackCount',
+    if (packReady != null) 'pack_ready=$packReady',
+    if (packPartial != null) 'pack_partial=$packPartial',
+    if (packFailed != null) 'pack_failed=$packFailed',
+    if (droppedCount != null) 'drop_count=$droppedCount',
+    if (retryMaxUsed != null) 'retry_used=$retryMaxUsed',
     if (diagnosisSource.isNotEmpty) 'diagnosis=$diagnosisSource',
     if (diagnosisModel.isNotEmpty) 'model=$diagnosisModel',
     if (diagnosisLatencyMs != null) 'diag_latency=${diagnosisLatencyMs}ms',

@@ -2,9 +2,13 @@ package com.example.wicara_mobile.edge
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
@@ -25,12 +29,14 @@ class LiteRtLmBridge(
 ) : MethodChannel.MethodCallHandler {
     companion object {
         const val CHANNEL_NAME = "wicara/edge_litert"
+        private const val TAG = "WicaraLiteRt"
     }
 
     private val modelManager = ModelManager(context)
     private val lock = Any()
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val inFlightRequests = ConcurrentHashMap<String, Future<*>>()
+    private val activeConversations = ConcurrentHashMap<String, Conversation>()
 
     @Volatile
     private var engine: Engine? = null
@@ -289,6 +295,11 @@ class LiteRtLmBridge(
                 synchronized(lock) {
                     unloadLocked()
                 }
+                Log.e(
+                    TAG,
+                    "initializeModel failed backend=$backend modelPath=${resolved.path} requestedMaxTokens=$requestedMaxTokens error=${error.message}",
+                    error,
+                )
                 result.error(
                     "INITIALIZE_FAILED",
                     error.message ?: "Failed to initialize LiteRT-LM engine.",
@@ -303,11 +314,11 @@ class LiteRtLmBridge(
         val requestId = (args?.get("requestId") as? String)
             ?.takeIf { it.isNotBlank() }
             ?: "req_${System.currentTimeMillis()}"
+        val schemaName = if (forceJson) (args?.get("schemaName") as? String).orEmpty() else ""
 
         val prompt = if (forceJson) {
             val system = (args?.get("system") as? String).orEmpty()
             val user = (args?.get("user") as? String).orEmpty()
-            val schemaName = (args?.get("schemaName") as? String).orEmpty()
             buildJsonPrompt(system = system, user = user, schemaName = schemaName)
         } else {
             (args?.get("prompt") as? String).orEmpty()
@@ -320,6 +331,10 @@ class LiteRtLmBridge(
 
         val requestedTemperature = (args?.get("temperature") as? Number)?.toDouble() ?: 0.3
         val requestedMaxTokens = (args?.get("maxTokens") as? Number)?.toInt() ?: defaultMaxTokens
+        Log.d(
+            TAG,
+            "generate start requestId=$requestId forceJson=$forceJson schema=$schemaName promptChars=${prompt.length} maxTokens=$requestedMaxTokens temp=$requestedTemperature",
+        )
 
         val task = executor.submit {
             try {
@@ -329,11 +344,28 @@ class LiteRtLmBridge(
                         ?: throw IllegalStateException(
                             "LiteRT model is not initialized. Call initializeModel first.",
                         )
-                    val conversation = activeEngine.createConversation()
+                    val samplerConfig = SamplerConfig(
+                        topK = 40,
+                        topP = 0.9,
+                        temperature = requestedTemperature,
+                        seed = 0,
+                    )
+                    val conversation = activeEngine.createConversation(
+                        ConversationConfig(samplerConfig = samplerConfig),
+                    )
+                    activeConversations[requestId] = conversation
                     try {
-                        val responseMessage = conversation.sendMessage(prompt)
+                        val responseMessage = conversation.sendMessage(
+                            prompt,
+                            mapOf(
+                                "temperature" to requestedTemperature,
+                                "max_tokens" to requestedMaxTokens,
+                                "maxNumTokens" to requestedMaxTokens,
+                            ),
+                        )
                         extractMessageText(responseMessage)
                     } finally {
+                        activeConversations.remove(requestId)
                         // LiteRT currently supports a single active session per engine.
                         // Always close conversation after each request to avoid session leak.
                         runCatching { conversation.close() }
@@ -377,7 +409,16 @@ class LiteRtLmBridge(
                         ),
                     )
                 }
+                Log.d(
+                    TAG,
+                    "generate done requestId=$requestId forceJson=$forceJson totalMs=$totalMs outputChars=${responseText.length}",
+                )
             } catch (error: Throwable) {
+                Log.e(
+                    TAG,
+                    "generate failed requestId=$requestId forceJson=$forceJson: ${error.message}",
+                    error,
+                )
                 result.error(
                     "GENERATION_FAILED",
                     error.message ?: "LiteRT generation failed.",
@@ -398,6 +439,11 @@ class LiteRtLmBridge(
             result.success(mapOf("cancelled" to false, "reason" to "missing_request_id"))
             return
         }
+        val conversation = activeConversations.remove(requestId)
+        runCatching {
+            conversation?.cancelProcess()
+            conversation?.close()
+        }
         val running = inFlightRequests.remove(requestId)
         val cancelled = running?.cancel(true) ?: false
         result.success(mapOf("cancelled" to cancelled, "requestId" to requestId))
@@ -413,6 +459,14 @@ class LiteRtLmBridge(
     }
 
     private fun unloadLocked() {
+        activeConversations.values.forEach { conversation ->
+            runCatching {
+                conversation.cancelProcess()
+                conversation.close()
+            }
+        }
+        activeConversations.clear()
+
         inFlightRequests.values.forEach { it.cancel(true) }
         inFlightRequests.clear()
 
@@ -438,6 +492,12 @@ class LiteRtLmBridge(
             "modelPath" to loadedModelPath,
             "defaultModelPath" to resolved.path,
             "defaultModelExists" to resolved.exists,
+            "modelFileBytes" to if (resolved.path.isNullOrBlank()) null else runCatching {
+                File(resolved.path).length()
+            }.getOrNull(),
+            "modelFileLastModifiedMs" to if (resolved.path.isNullOrBlank()) null else runCatching {
+                File(resolved.path).lastModified()
+            }.getOrNull(),
             "metadataPath" to modelManager.metadataPathFor(loadedModelPath ?: resolved.path),
             "executionLocation" to if (engine != null) "device" else "not_ready",
             "loadMetrics" to lastLoadMetrics?.toMap(),
