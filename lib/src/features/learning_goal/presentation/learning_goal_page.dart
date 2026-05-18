@@ -99,24 +99,7 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
         return;
       }
 
-      await widget.learningGoalRepository.confirmResolvedGoal(
-        resolutionId: existingResolution.resolutionId,
-      );
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isGenerating = false;
-        _isComplete = true;
-      });
-
-      await Future<void>.delayed(const Duration(milliseconds: 450));
-      if (!mounted) {
-        return;
-      }
-
-      Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+      await _confirmSelectedResolution(existingResolution);
     } on ActiveGoalConflictException catch (conflict) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
@@ -137,30 +120,18 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     }
   }
 
-  /// Shows a structured dialog when the backend rejects the new goal because
-  /// another goal is already active. Offers the user two actions:
-  ///   - Continue the existing goal
-  ///   - Cancel the existing goal (so they can start fresh)
   Future<void> _showConflictDialog(ActiveGoalConflictException conflict) async {
     final copy = OnboardingCopy.forLanguage(
       widget.onboardingController.profile.preferredLanguage,
     );
     final isId = copy.isIndonesian;
 
-    // Build an ephemeral ActiveLearningGoal so we can reuse _cancelActiveGoal.
-    final conflictGoal = ActiveLearningGoal(
-      id: conflict.existingGoalId,
-      status: conflict.existingStatus,
-      rawTopic: conflict.existingTopic,
-      nextAction: conflict.existingNextAction,
-    );
-
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text(
-          isId ? 'Goal aktif sudah ada' : 'Active goal already exists',
+          isId ? 'Goal ini sudah aktif' : 'This goal is already active',
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -168,8 +139,8 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
           children: [
             Text(
               isId
-                  ? 'Kamu sudah punya goal aktif:'
-                  : 'You already have an active goal:',
+                  ? 'Kamu sudah punya goal aktif untuk node ini:'
+                  : 'You already have an active goal for this node:',
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 6),
@@ -190,36 +161,27 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
             const SizedBox(height: 10),
             Text(
               isId
-                  ? 'Hanya boleh ada 1 goal aktif. Lanjutkan goal yang ada atau batalkan dulu sebelum mulai yang baru.'
-                  : 'Only 1 active goal is allowed. Continue the existing goal or cancel it before starting a new one.',
+                  ? 'Kamu bisa lanjutkan goal ini, atau pilih node lain untuk goal baru.'
+                  : 'You can continue this goal, or choose another node for a new goal.',
               style: const TextStyle(fontSize: 13, height: 1.4),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.of(dialogContext).pop();
-              // Cancel the existing goal, then let the user try again.
-              setState(() {
-                _activeGoal = conflictGoal;
-                _isGenerating = true;
-              });
-              await _cancelActiveGoalById(conflict.existingGoalId);
+              setState(() => _resolution = null);
             },
-            child: Text(
-              isId ? 'Batalkan goal lama' : 'Cancel existing goal',
-              style: TextStyle(color: Colors.red.shade700),
-            ),
+            child: Text(isId ? 'Pilih node lain' : 'Choose another node'),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              // Set the fetched goal as active so the panel shows up.
-              setState(() => _activeGoal = conflictGoal);
+              _continueExistingGoal(conflict);
             },
             child: Text(
-              isId ? 'Lanjutkan goal lama' : 'Continue existing goal',
+              isId ? 'Lanjutkan goal ini' : 'Continue existing goal',
             ),
           ),
         ],
@@ -227,70 +189,13 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     );
   }
 
-  /// Cancels a specific goal by ID (used when resolving a conflict).
-  Future<void> _cancelActiveGoalById(String goalId) async {
-    try {
-      await widget.learningGoalRepository.cancelGoal(learningGoalId: goalId);
-      if (!mounted) return;
-      setState(() {
-        _activeGoal = null;
-        _isGenerating = false;
-        _resolution = null; // reset so they can re-resolve the new topic
-      });
-    } on LearningGoalException catch (error) {
-      if (!mounted) return;
-      setState(() => _isGenerating = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(error.message),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    }
-  }
-
-  Future<void> _cancelActiveGoal() async {
-    final activeGoal = _activeGoal;
-    if (activeGoal == null || _isGenerating) {
-      return;
-    }
-    setState(() => _isGenerating = true);
-    try {
-      await widget.learningGoalRepository.cancelGoal(
-        learningGoalId: activeGoal.id,
+  void _continueExistingGoal(ActiveGoalConflictException conflict) {
+    if (conflict.existingNextAction == 'continue_learning' ||
+        conflict.existingNextAction == 'enter_workspace') {
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.home,
+        arguments: {'open_goal_history': true},
       );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _activeGoal = null;
-        _isGenerating = false;
-      });
-    } on LearningGoalException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _isGenerating = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(error.message),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    }
-  }
-
-  void _continueActiveGoal() {
-    final activeGoal = _activeGoal;
-    if (activeGoal == null) {
-      return;
-    }
-    if (activeGoal.nextAction == 'continue_learning') {
-      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
       return;
     }
     Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
@@ -358,6 +263,11 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
         _resolution = selected;
         _isGenerating = false;
       });
+      await _confirmSelectedResolution(selected);
+    } on ActiveGoalConflictException catch (conflict) {
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+      await _showConflictDialog(conflict);
     } on LearningGoalException catch (error) {
       if (!mounted) {
         return;
@@ -374,66 +284,98 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
     }
   }
 
-  Future<void> _openManualSearch() async {
-    final query = _controller.text.trim();
-    if (query.isEmpty || _isGenerating) {
+  Future<void> _confirmResolutionAndOpenPretest(String resolutionId) async {
+    setState(() => _isGenerating = true);
+    await widget.learningGoalRepository.confirmResolvedGoal(
+      resolutionId: resolutionId,
+    );
+    if (!mounted) {
       return;
     }
-    setState(() => _isGenerating = true);
-    try {
-      final profile = widget.onboardingController.profile;
-      final subjectCode = _effectiveSubjectCode(profile.selectedSubjects);
-      final results = await widget.learningGoalRepository.searchMaterials(
-        query: query,
-        subjectCode: subjectCode,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() => _isGenerating = false);
-      if (results.isEmpty) {
-        final copy = OnboardingCopy.forLanguage(profile.preferredLanguage);
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(
-                copy.isIndonesian
-                    ? 'Belum ada node yang cocok. Coba query yang lebih spesifik.'
-                    : 'No matching node yet. Try a more specific query.',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        return;
-      }
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (sheetContext) => _ManualSearchResultsSheet(
-          results: results,
-          isIndonesian: _isIndonesianLanguage(profile.preferredLanguage),
-          onSelected: (suggestion) {
-            Navigator.of(sheetContext).pop();
-            unawaited(_selectAlternative(suggestion));
-          },
-        ),
-      );
-    } on LearningGoalException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _isGenerating = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(error.message),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+
+    setState(() {
+      _isGenerating = false;
+      _isComplete = true;
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) {
+      return;
     }
+
+    Navigator.of(context).pushReplacementNamed(AppRoutes.pretest);
+  }
+
+  Future<void> _confirmSelectedResolution(
+    LearningGoalResolution resolution,
+  ) async {
+    final concept = resolution.suggestedConcept;
+    if (concept == null) {
+      setState(() => _isGenerating = false);
+      return;
+    }
+    if (_isGenerating) {
+      setState(() => _isGenerating = false);
+    }
+    final confirmed = await _showGoalConfirmationDialog(concept);
+    if (!mounted || !confirmed) {
+      return;
+    }
+    await _confirmResolutionAndOpenPretest(resolution.resolutionId);
+  }
+
+  Future<bool> _showGoalConfirmationDialog(
+    LearningConceptSuggestion concept,
+  ) async {
+    final copy = OnboardingCopy.forLanguage(
+      widget.onboardingController.profile.preferredLanguage,
+    );
+    final isId = copy.isIndonesian;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(
+              isId
+                  ? 'Gunakan node ini sebagai goal?'
+                  : 'Use this as your learning goal?',
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  concept.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  concept
+                          .descriptionFor(isIndonesian: isId)
+                          .isNotEmpty
+                      ? concept.descriptionFor(isIndonesian: isId)
+                      : isId
+                      ? 'Pretest adaptif akan dimulai dari node ini.'
+                      : 'The adaptive pretest will start from this node.',
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(isId ? 'Pilih node lain' : 'Choose another node'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(isId ? 'Mulai pretest' : 'Start pretest'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   void _openKnowledgeMap() {
@@ -593,77 +535,69 @@ class _LearningGoalPageState extends State<LearningGoalPage> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.stretch,
                                         children: [
-                                          if (_isCheckingActive)
-                                            const Center(
-                                              child:
-                                                  CircularProgressIndicator(),
-                                            )
-                                          else if (_activeGoal != null)
-                                            _ActiveGoalPanel(
-                                              activeGoal: _activeGoal!,
+                                          if (_isCheckingActive ||
+                                              _activeGoal != null) ...[
+                                            _ExistingGoalNotice(
+                                              activeGoal: _activeGoal,
                                               copy: copy,
-                                              isLoading: _isGenerating,
-                                              onContinue: _continueActiveGoal,
-                                              onCancel: _cancelActiveGoal,
-                                            )
-                                          else ...[
-                                            Text(
-                                              copy.learningTopicLabel,
-                                              textAlign: TextAlign.center,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleMedium
-                                                  ?.copyWith(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
+                                              isChecking: _isCheckingActive,
                                             ),
-                                            const SizedBox(height: 13),
-                                            _SubjectSelector(
-                                              choices: subjectChoices,
-                                              selectedCode: selectedSubjectCode,
-                                              isIndonesian: copy.isIndonesian,
-                                              onSelected: _selectSubject,
-                                            ),
-                                            const SizedBox(height: 14),
-                                            _LearningGoalField(
-                                              controller: _controller,
-                                              copy: copy,
-                                            ),
-                                            const SizedBox(height: 18),
-                                            AnimatedSwitcher(
-                                              duration: const Duration(
-                                                milliseconds: 180,
-                                              ),
-                                              child: _isComplete
-                                                  ? _GeneratedPretestNotice(
-                                                      copy: copy,
-                                                    )
-                                                  : _resolution != null
-                                                  ? _ResolutionNotice(
-                                                      resolution: _resolution!,
-                                                      isIndonesian:
-                                                          copy.isIndonesian,
-                                                      onRefine:
-                                                          _refineResolution,
-                                                      onManualSearch:
-                                                          _openManualSearch,
-                                                      onOpenGraph:
-                                                          _openKnowledgeMap,
-                                                      onAlternativeSelected:
-                                                          _selectAlternative,
-                                                    )
-                                                  : _PretestPreviewNotice(
-                                                      copy: copy,
-                                                    ),
-                                            ),
-                                            const SizedBox(height: 22),
-                                            GradientButton(
-                                              label: _primaryActionLabel(copy),
-                                              onPressed: _primaryAction(),
-                                              isLoading: _isGenerating,
-                                            ),
+                                            const SizedBox(height: 16),
                                           ],
+                                          Text(
+                                            copy.learningTopicLabel,
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 13),
+                                          _SubjectSelector(
+                                            choices: subjectChoices,
+                                            selectedCode: selectedSubjectCode,
+                                            isIndonesian: copy.isIndonesian,
+                                            onSelected: _selectSubject,
+                                          ),
+                                          const SizedBox(height: 14),
+                                          _LearningGoalField(
+                                            controller: _controller,
+                                            copy: copy,
+                                          ),
+                                          const SizedBox(height: 18),
+                                          AnimatedSwitcher(
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            child: _isComplete
+                                                ? _GeneratedPretestNotice(
+                                                    copy: copy,
+                                                  )
+                                                : _resolution != null
+                                                ? _ResolutionNotice(
+                                                    resolution: _resolution!,
+                                                    isIndonesian:
+                                                        copy.isIndonesian,
+                                                    onRefine:
+                                                        _refineResolution,
+                                                    onOpenGraph:
+                                                        _openKnowledgeMap,
+                                                    onAlternativeSelected:
+                                                        _selectAlternative,
+                                                  )
+                                                : _PretestPreviewNotice(
+                                                    copy: copy,
+                                                  ),
+                                          ),
+                                          const SizedBox(height: 22),
+                                          GradientButton(
+                                            label: _primaryActionLabel(copy),
+                                            onPressed: _primaryAction(),
+                                            isLoading: _isGenerating,
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -850,7 +784,6 @@ class _ResolutionNotice extends StatelessWidget {
     required this.resolution,
     required this.isIndonesian,
     required this.onRefine,
-    required this.onManualSearch,
     required this.onOpenGraph,
     required this.onAlternativeSelected,
   });
@@ -858,7 +791,6 @@ class _ResolutionNotice extends StatelessWidget {
   final LearningGoalResolution resolution;
   final bool isIndonesian;
   final VoidCallback onRefine;
-  final VoidCallback onManualSearch;
   final VoidCallback onOpenGraph;
   final ValueChanged<LearningConceptSuggestion> onAlternativeSelected;
 
@@ -933,11 +865,6 @@ class _ResolutionNotice extends StatelessWidget {
                   onPressed: onRefine,
                   icon: const Icon(Icons.edit_outlined, size: 18),
                   label: Text(isIndonesian ? 'Perjelas query' : 'Refine query'),
-                ),
-                TextButton.icon(
-                  onPressed: onManualSearch,
-                  icon: const Icon(Icons.search_rounded, size: 18),
-                  label: Text(isIndonesian ? 'Cari manual' : 'Manual search'),
                 ),
                 TextButton.icon(
                   onPressed: onOpenGraph,
@@ -1073,11 +1000,6 @@ class _ResolutionNotice extends StatelessWidget {
                 label: Text(
                   isIndonesian ? 'Belum cocok? Perjelas' : 'Not right? Refine',
                 ),
-              ),
-              TextButton.icon(
-                onPressed: onManualSearch,
-                icon: const Icon(Icons.search_rounded, size: 18),
-                label: Text(isIndonesian ? 'Cari manual' : 'Manual search'),
               ),
               TextButton.icon(
                 onPressed: onOpenGraph,
@@ -1277,87 +1199,6 @@ class _SearchScopeNote extends StatelessWidget {
   }
 }
 
-class _ManualSearchResultsSheet extends StatelessWidget {
-  const _ManualSearchResultsSheet({
-    required this.results,
-    required this.isIndonesian,
-    required this.onSelected,
-  });
-
-  final List<LearningConceptSuggestion> results;
-  final bool isIndonesian;
-  final ValueChanged<LearningConceptSuggestion> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(12, 0, 12, math.max(12, bottomInset)),
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.78,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: WicaraColors.line),
-            boxShadow: [
-              BoxShadow(
-                color: WicaraColors.shadowBlue.withValues(alpha: 0.2),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        isIndonesian
-                            ? 'Cari node secara manual'
-                            : 'Manual node search',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
-                  itemCount: math.min(results.length, 12),
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final suggestion = results[index];
-                    return _AlternativeNodeButton(
-                      suggestion: suggestion,
-                      isIndonesian: isIndonesian,
-                      onSelected: onSelected,
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _LevelNoteBox extends StatelessWidget {
   const _LevelNoteBox({required this.note, required this.relation});
 
@@ -1396,49 +1237,36 @@ class _LevelNoteBox extends StatelessWidget {
   }
 }
 
-class _ActiveGoalPanel extends StatelessWidget {
-  const _ActiveGoalPanel({
+class _ExistingGoalNotice extends StatelessWidget {
+  const _ExistingGoalNotice({
     required this.activeGoal,
     required this.copy,
-    required this.isLoading,
-    required this.onContinue,
-    required this.onCancel,
+    required this.isChecking,
   });
 
-  final ActiveLearningGoal activeGoal;
+  final ActiveLearningGoal? activeGoal;
   final OnboardingCopy copy;
-  final bool isLoading;
-  final VoidCallback onContinue;
-  final VoidCallback onCancel;
+  final bool isChecking;
 
   @override
   Widget build(BuildContext context) {
-    final title = activeGoal.targetConcept?.title ?? activeGoal.rawTopic;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _NoticeBox(
-          icon: Icons.lock_clock_rounded,
-          title: copy.isIndonesian
-              ? 'Learning goal aktif'
-              : 'Active learning goal',
-          description: copy.isIndonesian
-              ? 'Lanjutkan "$title" sebelum membuat goal baru.'
-              : 'Continue "$title" before creating a new goal.',
-          color: WicaraColors.secondary,
-        ),
-        const SizedBox(height: 18),
-        GradientButton(
-          label: copy.isIndonesian ? 'Lanjut belajar' : 'Continue learning',
-          onPressed: onContinue,
-          isLoading: isLoading,
-        ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: isLoading ? null : onCancel,
-          child: Text(copy.isIndonesian ? 'Batalkan goal' : 'Cancel goal'),
-        ),
-      ],
+    final title = activeGoal?.targetConcept?.title ?? activeGoal?.rawTopic;
+    final description = isChecking
+        ? copy.isIndonesian
+              ? 'Mengecek goal aktif yang sudah ada.'
+              : 'Checking your existing active goals.'
+        : copy.isIndonesian
+        ? 'Kamu masih bisa membuat goal baru selama nodenya berbeda'
+              '${title == null ? '.' : ' dari "$title".'}'
+        : 'You can still create a new goal as long as it uses a different node'
+              '${title == null ? '.' : ' from "$title".'}';
+    return _NoticeBox(
+      icon: Icons.info_outline_rounded,
+      title: copy.isIndonesian
+          ? 'Goal aktif tidak dibatalkan'
+          : 'Existing goals stay active',
+      description: description,
+      color: WicaraColors.secondary,
     );
   }
 }
@@ -1625,11 +1453,4 @@ IconData _levelNoteIcon(String? relation) {
     'at_current_level' => Icons.check_circle_outline_rounded,
     _ => Icons.info_outline_rounded,
   };
-}
-
-bool _isIndonesianLanguage(String language) {
-  final normalized = language.toLowerCase();
-  return normalized == 'id' ||
-      normalized.contains('indo') ||
-      normalized.contains('bahasa');
 }

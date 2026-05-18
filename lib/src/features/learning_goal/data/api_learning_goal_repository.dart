@@ -128,25 +128,6 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
   Future<LearningGoalBootstrap> createLearningGoal({
     required String rawTopic,
   }) async {
-    // Check for an existing active goal with the same normalised topic before
-    // hitting the resolve/confirm flow — this gives a fast, cheap duplicate
-    // warning without consuming a resolve credit.
-    final existingGoal = await fetchActiveGoal();
-    if (existingGoal != null) {
-      final normalizedNew = rawTopic.trim().toLowerCase();
-      final normalizedExisting = existingGoal.rawTopic.trim().toLowerCase();
-      if (normalizedNew == normalizedExisting ||
-          normalizedNew.contains(normalizedExisting) ||
-          normalizedExisting.contains(normalizedNew)) {
-        throw ActiveGoalConflictException(
-          existingGoalId: existingGoal.id,
-          existingTopic: existingGoal.rawTopic,
-          existingStatus: existingGoal.status,
-          existingNextAction: existingGoal.nextAction,
-        );
-      }
-    }
-
     final resolution = await resolveLearningGoal(rawQuery: rawTopic);
     if (resolution.suggestedConcept == null) {
       throw LearningGoalException(
@@ -158,30 +139,37 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
   }
 
   @override
-  Future<List<LearningConceptSuggestion>> searchMaterials({
-    required String query,
+  Future<LearningGoalBootstrap> createLearningGoalFromConcept({
+    String? conceptId,
+    String? conceptCode,
     String? subjectCode,
   }) async {
     final token = _requireToken();
     try {
-      final json = await _apiClient.getJson(
-        '/api/v1/materials/search',
+      final json = await _apiClient.postJson(
+        '/api/v1/learning-goals/from-concept',
         headers: {'Authorization': 'Bearer $token'},
-        queryParameters: {
-          'q': query.trim(),
+        body: {
+          if (_nullableString(conceptId) != null)
+            'concept_id': _nullableString(conceptId),
+          if (_nullableString(conceptCode) != null)
+            'concept_code': _nullableString(conceptCode),
           if (_nullableString(subjectCode) != null)
-            'subject_code': _nullableString(subjectCode)!,
+            'subject_code': _nullableString(subjectCode),
         },
       );
-      final items = json['items'];
-      if (items is! List) {
-        return const [];
-      }
-      return items
-          .whereType<Map>()
-          .map((item) => _conceptFromJson(Map<String, dynamic>.from(item)))
-          .toList(growable: false);
+      final bootstrap = LearningGoalBootstrap(
+        learningGoalId: _string(json['learning_goal_id']),
+      );
+      _pretestSessionStore.saveBootstrap(
+        learningGoalId: bootstrap.learningGoalId,
+      );
+      return bootstrap;
     } on ApiClientException catch (error) {
+      final conflict = _tryParseConflict(error);
+      if (conflict != null) {
+        throw conflict;
+      }
       throw LearningGoalException(error.message);
     }
   }
@@ -221,11 +209,23 @@ class ApiLearningGoalRepository implements LearningGoalRepository {
     if (errorCode != 'ACTIVE_LEARNING_GOAL_EXISTS') return null;
     final activeGoal = detail['active_goal'];
     if (activeGoal is! Map) return null;
+    final existingGoalId = _string(activeGoal['id']);
+    final pretestSessionId = _nullableString(activeGoal['pretest_session_id']);
+    final trackId = _nullableString(activeGoal['track_id']);
+    if (existingGoalId.isNotEmpty) {
+      _pretestSessionStore.saveBootstrap(
+        learningGoalId: existingGoalId,
+        pretestSessionId: pretestSessionId,
+        trackId: trackId,
+      );
+    }
     return ActiveGoalConflictException(
-      existingGoalId: _string(activeGoal['id']),
+      existingGoalId: existingGoalId,
       existingTopic: _string(activeGoal['raw_topic']),
       existingStatus: _string(activeGoal['status']),
       existingNextAction: _string(activeGoal['next_action'] ?? ''),
+      pretestSessionId: pretestSessionId,
+      trackId: trackId,
     );
   }
 }

@@ -146,7 +146,7 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     String generationMode = 'context_auto',
     String? templateId,
     Map<String, dynamic>? specJson,
-    String language = 'id',
+    String language = 'en',
     String qualityProfile = 'standard',
     String? conceptId,
     Map<String, dynamic> metadata = const {},
@@ -250,11 +250,14 @@ WorkspaceSessionSummary workspaceSessionSummaryFromJson(
 WorkspaceSession workspaceFromJson(Map<String, dynamic> json) {
   final events = json['events'];
   final latestMedia = json['latest_media'];
+  final learnerLanguage = _string(json['learner_language']);
   return WorkspaceSession(
     id: _string(json['id']),
     trackId: _string(json['track_id']),
     moduleId: _string(json['module_id']),
     currentTopic: _string(json['current_topic']),
+    currentTopicDescription: _string(json['current_topic_description']),
+    learnerLanguage: learnerLanguage.isEmpty ? 'en' : learnerLanguage,
     contentMode: _string(json['content_mode']),
     status: _string(json['status']),
     events: events is List

@@ -173,6 +173,7 @@ class _WicaraAppState extends State<WicaraApp> {
         ),
         AppRoutes.home => AppHomePage(
           curriculumRepository: widget.curriculumRepository,
+          learningGoalRepository: widget.learningGoalRepository,
           homeRepository:
               widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
@@ -270,7 +271,7 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
     String generationMode = 'context_auto',
     String? templateId,
     Map<String, dynamic>? specJson,
-    String language = 'id',
+    String language = 'en',
     String qualityProfile = 'standard',
     String? conceptId,
     Map<String, dynamic> metadata = const {},
@@ -340,6 +341,13 @@ class _UnavailableHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<AssessmentDashboard> fetchAssessmentDashboard({
+    required String learningGoalId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
   Future<DailyEvaluationSession> fetchDailyEvaluation() {
     throw UnimplementedError('HomeRepository is not configured.');
   }
@@ -365,6 +373,7 @@ class _UnavailableHomeRepository implements HomeRepository {
   Future<DailyEvaluationSession> startPosttest({
     String? learningGoalId,
     String? trackId,
+    String? moduleId,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
@@ -375,14 +384,15 @@ class _UnavailableHomeRepository implements HomeRepository {
     required String questionId,
     required String optionId,
     required int confidence,
+    String typedReasoning = '',
+    String? canvasAssetId,
+    bool usedCanvas = false,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 
   @override
-  Future<DailyEvaluationResult> finalizePosttest({
-    required String sessionId,
-  }) {
+  Future<AdaptivePosttestResult> finalizePosttest({required String sessionId}) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 

@@ -4,7 +4,20 @@ class OnboardingCopy {
   const OnboardingCopy._(this.isIndonesian);
 
   factory OnboardingCopy.forLanguage(String preferredLanguage) {
-    return OnboardingCopy._(preferredLanguage == 'Bahasa Indonesia');
+    final normalized = preferredLanguage.trim().toLowerCase().replaceAll(
+      '_',
+      '-',
+    );
+    final isIndonesian =
+        normalized == 'id' ||
+        normalized == 'id-id' ||
+        normalized == 'ind' ||
+        normalized == 'indo' ||
+        normalized == 'indonesian' ||
+        normalized == 'bahasa' ||
+        normalized == 'bahasa indonesia' ||
+        normalized.contains('indo');
+    return OnboardingCopy._(isIndonesian);
   }
 
   final bool isIndonesian;
@@ -201,16 +214,16 @@ class OnboardingCopy {
   String get knowledgeMapLabel =>
       isIndonesian ? 'Peta Pengetahuan' : 'Knowledge Map';
   String get knowledgeMapDescription => isIndonesian
-      ? 'Jelajahi fase Kurikulum Merdeka, domain mata pelajaran, dan jalur prasyarat.'
-      : 'Explore Kurikulum Merdeka phases, subject domains, and prerequisite paths.';
+      ? 'Jelajahi domain mata pelajaran dan jalur prasyarat.'
+      : 'Explore subject domains and prerequisite paths.';
   String get loadingCurriculumLabel => isIndonesian
       ? 'Memuat kurikulum dari backend...'
       : 'Loading curriculum from backend...';
   String get fallbackGraphLabel =>
       isIndonesian ? 'Graf fallback statis' : 'Static fallback graph';
   String get liveCurriculumGraphLabel => isIndonesian
-      ? 'Graf Kurikulum Merdeka langsung'
-      : 'Live Kurikulum Merdeka graph';
+      ? 'Graf pengetahuan langsung'
+      : 'Live knowledge graph';
   String nodeCountLabel(int count) =>
       isIndonesian ? '$count node' : '$count nodes';
   String get prerequisiteLayerLabel =>
@@ -236,12 +249,12 @@ class OnboardingCopy {
       ? 'Tautan Graph of Graphs akan terlihat saat tersedia.'
       : 'Graph of Graphs links are visible when available.';
   String get conceptBridgeFallbackLabel => isIndonesian
-      ? 'Jembatan konsep Kurikulum Merdeka'
-      : 'Kurikulum Merdeka concept bridge';
+      ? 'Jembatan konsep'
+      : 'Concept bridge';
   String get relatedBadgeLabel => isIndonesian ? 'TERKAIT' : 'RELATED';
   String get conceptFallbackDescription => isIndonesian
-      ? 'Konsep dalam graf prasyarat Kurikulum Merdeka.'
-      : 'Concept in the Kurikulum Merdeka prerequisite graph.';
+      ? 'Konsep dalam graf prasyarat.'
+      : 'Concept in the prerequisite graph.';
   String get languageLabel => isIndonesian ? 'Bahasa' : 'Language';
   String get appTitle => 'Wicara';
   String get getStartedLabel => isIndonesian ? 'Mulai' : 'Get started';
