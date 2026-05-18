@@ -37,6 +37,8 @@ class WorkspaceSession {
     required this.contentMode,
     required this.status,
     required this.events,
+    this.currentTopicDescription = '',
+    this.learnerLanguage = 'en',
     this.latestMedia,
   });
 
@@ -44,6 +46,8 @@ class WorkspaceSession {
   final String trackId;
   final String moduleId;
   final String currentTopic;
+  final String currentTopicDescription;
+  final String learnerLanguage;
   final String contentMode;
   final String status;
   final List<WorkspaceEvent> events;

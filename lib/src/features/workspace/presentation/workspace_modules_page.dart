@@ -84,6 +84,13 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     );
   }
 
+  _LocalizedWorkspaceMaterial get _workspaceMaterial {
+    return _LocalizedWorkspaceMaterial.fromAssessmentPack(
+      _assessmentPack,
+      languageCode: _normalizedLanguageCode(),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -605,96 +612,19 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   String _normalizedLanguageCode() {
-    final preferredLanguage = widget
-        .onboardingController
-        .profile
-        .preferredLanguage
-        .toLowerCase();
+    final workspaceLanguage = _workspace?.learnerLanguage.toLowerCase().trim();
+    final preferredLanguage = (workspaceLanguage?.isNotEmpty ?? false)
+        ? workspaceLanguage!
+        : widget.onboardingController.profile.preferredLanguage.toLowerCase();
     return switch (preferredLanguage) {
       'indonesian' || 'id' || 'id-id' => 'id',
       'english' || 'en' || 'en-us' => 'en',
-      _ => 'id',
+      _ => 'en',
     };
   }
 
   String _resolveGenerationLanguageCode() {
-    return _inferConversationLanguage() ?? _normalizedLanguageCode();
-  }
-
-  String? _inferConversationLanguage() {
-    final learnerTexts = <String>[];
-    for (final event
-        in _workspace?.events.reversed ?? const <WorkspaceEvent>[]) {
-      if (event.actorType != 'learner') {
-        continue;
-      }
-      final text = event.textPayload.trim();
-      if (text.isNotEmpty) {
-        learnerTexts.add(text);
-      }
-      if (learnerTexts.length >= 4) {
-        break;
-      }
-    }
-    if (learnerTexts.isEmpty) {
-      return null;
-    }
-
-    final merged = learnerTexts.join(' ').toLowerCase();
-    final tokens = merged
-        .split(RegExp(r'[^a-z]+'))
-        .where((token) => token.isNotEmpty);
-
-    const idMarkers = {
-      'yang',
-      'dan',
-      'dengan',
-      'untuk',
-      'pada',
-      'garis',
-      'bilangan',
-      'lebih',
-      'kurang',
-      'adalah',
-      'saya',
-      'aku',
-      'tolong',
-      'kenapa',
-      'bagaimana',
-      'jelasin',
-      'contoh',
-    };
-    const enMarkers = {
-      'the',
-      'and',
-      'with',
-      'for',
-      'number',
-      'line',
-      'greater',
-      'less',
-      'is',
-      'please',
-      'why',
-      'how',
-      'explain',
-      'example',
-    };
-
-    var idScore = 0;
-    var enScore = 0;
-    for (final token in tokens) {
-      if (idMarkers.contains(token)) {
-        idScore++;
-      }
-      if (enMarkers.contains(token)) {
-        enScore++;
-      }
-    }
-    if (idScore == 0 && enScore == 0) {
-      return null;
-    }
-    return idScore >= enScore ? 'id' : 'en';
+    return _normalizedLanguageCode();
   }
 
   Map<String, dynamic> _graphExplanationSpec({
@@ -1468,8 +1398,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
   }
 
   Future<void> _answerQuiz(String answer) async {
-    final assessmentPack = _assessmentPack;
-    final isCorrect = answer == assessmentPack.workspaceQuizCorrectAnswer;
+    final material = _workspaceMaterial;
+    final isCorrect = answer == material.workspaceQuizCorrectAnswer;
     setState(() {
       _selectedQuizAnswer = answer;
       _quizState = isCorrect
@@ -1481,7 +1411,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       textPayload: answer,
       metadata: {
         'selected_answer': answer,
-        'correct_answer': assessmentPack.workspaceQuizCorrectAnswer,
+        'correct_answer': material.workspaceQuizCorrectAnswer,
         'is_correct': isCorrect,
         'confidence': isCorrect ? 8 : 4,
       },
@@ -1548,12 +1478,14 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     required bool requestedEarlyPosttest,
   }) {
     final arguments = widget.routeArguments;
-    final assessmentPack = _assessmentPack;
+    final workspaceTitle = _workspace?.currentTopic.trim() ?? '';
     Navigator.of(context).pop(
       WorkspaceCompletionResult(
         trackId: arguments?.trackId ?? _workspace?.trackId ?? '',
         moduleId: arguments?.moduleId ?? _workspace?.moduleId ?? '',
-        moduleTitle: assessmentPack.topicTitle,
+        moduleTitle: workspaceTitle.isNotEmpty
+            ? workspaceTitle
+            : _workspaceMaterial.topicTitle,
         moduleCompleted: moduleCompleted,
         requestedEarlyPosttest: requestedEarlyPosttest,
       ),
@@ -1608,7 +1540,10 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
       return;
     }
 
-    final topic = _assessmentPack.topicTitle;
+    final workspaceTitle = _workspace?.currentTopic.trim() ?? '';
+    final topic = workspaceTitle.isNotEmpty
+        ? workspaceTitle
+        : _workspaceMaterial.topicTitle;
     final message = _normalizedLanguageCode() == 'id'
         ? 'Saya siap mulai belajar $topic.'
         : "I'm ready to start learning $topic.";
@@ -1770,6 +1705,13 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
     final copy = OnboardingCopy.forLanguage(
       widget.onboardingController.profile.preferredLanguage,
     );
+    final material = _workspaceMaterial;
+    final workspaceDescription =
+        (_workspace?.currentTopicDescription.trim().isNotEmpty ?? false)
+        ? _workspace!.currentTopicDescription.trim()
+        : (_workspace == null
+              ? material.loadingDescription
+              : material.syncedDescription);
     return Scaffold(
       backgroundColor: WicaraColors.pageBackground,
       body: SafeArea(
@@ -1827,10 +1769,8 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                             title:
                                 _workspace?.currentTopic ??
                                 widget.routeArguments?.moduleTitle ??
-                                'Workspace module',
-                            description: _workspace == null
-                                ? 'Connect this module to backend workspace evidence before chatting, sketching, or answering.'
-                                : 'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
+                                material.topicTitle,
+                            description: workspaceDescription,
                           ),
                           const SizedBox(height: 10),
                           Row(
@@ -1891,7 +1831,7 @@ class _WorkspaceModulesPageState extends State<WorkspaceModulesPage> {
                                 selectedQuizAnswer: _selectedQuizAnswer,
                                 chatEntries: _chatEntries,
                                 canvasSnapshots: _canvasSnapshots,
-                                assessmentPack: _assessmentPack,
+                                material: material,
                                 isLoadingWorkspace: _isLoadingWorkspace,
                                 isAppendingEvent: _isAppendingEvent,
                                 isVideoGenerating: _isVideoGenerating,
@@ -2058,6 +1998,134 @@ class _WorkspaceHistorySheet extends StatelessWidget {
   }
 }
 
+class _LocalizedWorkspaceMaterial {
+  const _LocalizedWorkspaceMaterial({
+    required this.topicTitle,
+    required this.workspaceIntroLine1,
+    required this.workspaceIntroLine2,
+    required this.workspaceExplanation,
+    required this.workspaceQuizQuestion,
+    required this.workspaceQuizOptions,
+    required this.workspaceQuizCorrectAnswer,
+    required this.workspaceQuizCorrectFeedback,
+    required this.workspaceQuizReviewFeedback,
+    required this.checkUnderstandingTitle,
+    required this.materialRecapLabel,
+    required this.startChatTitle,
+    required this.startChatBody,
+    required this.startChatButtonLabel,
+    required this.loadingDescription,
+    required this.syncedDescription,
+  });
+
+  final String topicTitle;
+  final String workspaceIntroLine1;
+  final String workspaceIntroLine2;
+  final String workspaceExplanation;
+  final String workspaceQuizQuestion;
+  final List<String> workspaceQuizOptions;
+  final String workspaceQuizCorrectAnswer;
+  final String workspaceQuizCorrectFeedback;
+  final String workspaceQuizReviewFeedback;
+  final String checkUnderstandingTitle;
+  final String materialRecapLabel;
+  final String startChatTitle;
+  final String startChatBody;
+  final String startChatButtonLabel;
+  final String loadingDescription;
+  final String syncedDescription;
+
+  factory _LocalizedWorkspaceMaterial.fromAssessmentPack(
+    HardcodedAssessmentPack pack, {
+    required String languageCode,
+  }) {
+    if (languageCode == 'id') {
+      return _LocalizedWorkspaceMaterial(
+        topicTitle: pack.topicTitle,
+        workspaceIntroLine1: pack.workspaceIntroLine1,
+        workspaceIntroLine2: pack.workspaceIntroLine2,
+        workspaceExplanation: pack.workspaceExplanation,
+        workspaceQuizQuestion: pack.workspaceQuizQuestion,
+        workspaceQuizOptions: pack.workspaceQuizOptions,
+        workspaceQuizCorrectAnswer: pack.workspaceQuizCorrectAnswer,
+        workspaceQuizCorrectFeedback: pack.workspaceQuizCorrectFeedback,
+        workspaceQuizReviewFeedback: pack.workspaceQuizReviewFeedback,
+        checkUnderstandingTitle: 'Cek pemahaman',
+        materialRecapLabel: 'Ringkasan materi',
+        startChatTitle: 'Mulai chat 5E',
+        startChatBody:
+            'Mulai dari pertanyaan pembuka tutor. Ini menjalankan tahap Engage dan membuat bukti workspace pertama.',
+        startChatButtonLabel: 'Mulai chat belajar',
+        loadingDescription:
+            'Hubungkan modul ini ke bukti workspace backend sebelum chat, sketsa, atau menjawab.',
+        syncedDescription:
+            'Pesan, snapshot kanvas, dan jawaban kuis disinkronkan sebagai bukti workspace.',
+      );
+    }
+
+    if (pack.id == 'multiplication') {
+      return const _LocalizedWorkspaceMaterial(
+        topicTitle: 'Multiplication',
+        workspaceIntroLine1:
+            "Let's start the multiplication workspace with a short 5E chat.",
+        workspaceIntroLine2:
+            'We will focus on multiplication as equal-size groups, then do a quick check before the posttest.',
+        workspaceExplanation:
+            'Multiplication is a fast way to add equal-size groups. For example, 4 x 3 means there are 4 groups, and each group has 3 objects. So 4 x 3 is the same as 3 + 3 + 3 + 3, which equals 12.',
+        workspaceQuizQuestion:
+            'If there are 4 groups and each group has 3 objects, how many objects are there in total?',
+        workspaceQuizOptions: ['7', '12', '16'],
+        workspaceQuizCorrectAnswer: '12',
+        workspaceQuizCorrectFeedback:
+            'Correct. 4 groups of 3 means 3 + 3 + 3 + 3 = 12.',
+        workspaceQuizReviewFeedback: 'Almost. Count 3 four times.',
+        checkUnderstandingTitle: 'Check understanding',
+        materialRecapLabel: 'Material recap',
+        startChatTitle: 'Start the 5E chat',
+        startChatBody:
+            'Begin with the tutor opening question. This starts the Engage step and creates the first workspace evidence.',
+        startChatButtonLabel: 'Start learning chat',
+        loadingDescription:
+            'Connect this module to backend workspace evidence before chatting, sketching, or answering.',
+        syncedDescription:
+            'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
+      );
+    }
+
+    return const _LocalizedWorkspaceMaterial(
+      topicTitle: 'Algebra',
+      workspaceIntroLine1:
+          "Let's start the algebra workspace with a short 5E chat.",
+      workspaceIntroLine2:
+          'We will focus on algebra and Al-Khwarizmi-style reasoning, so the concept makes sense instead of being memorized.',
+      workspaceExplanation:
+          'Al-Khwarizmi showed algebra as a way to rearrange quadratic forms into complete squares. From that idea, we can see why quadratic equations can be solved step by step, instead of only memorizing a formula.',
+      workspaceQuizQuestion:
+          'If (x + 3)(x + 4) = 0, which values of x satisfy the equation?',
+      workspaceQuizOptions: [
+        'x = -3 or x = -4',
+        'x = 3 or x = 4',
+        'x = -7 or x = 12',
+      ],
+      workspaceQuizCorrectAnswer: 'x = -3 or x = -4',
+      workspaceQuizCorrectFeedback:
+          'Correct. Set each factor equal to zero: x + 3 = 0 or x + 4 = 0.',
+      workspaceQuizReviewFeedback:
+          'Almost. Remember, if x + 3 = 0, then x = -3.',
+      checkUnderstandingTitle: 'Check understanding',
+      materialRecapLabel: 'Material recap',
+      startChatTitle: 'Start the 5E chat',
+      startChatBody:
+          'Begin with the tutor opening question. This starts the Engage step and creates the first workspace evidence.',
+      startChatButtonLabel: 'Start learning chat',
+      loadingDescription:
+          'Connect this module to backend workspace evidence before chatting, sketching, or answering.',
+      syncedDescription:
+          'Your messages, canvas snapshots, and quiz answers are synced to backend workspace evidence.',
+    );
+  }
+}
+
 class _VideoGenerationPayload {
   const _VideoGenerationPayload({
     required this.templateId,
@@ -2084,7 +2152,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
     required this.selectedQuizAnswer,
     required this.chatEntries,
     required this.canvasSnapshots,
-    required this.assessmentPack,
+    required this.material,
     required this.isLoadingWorkspace,
     required this.isAppendingEvent,
     required this.isVideoGenerating,
@@ -2108,7 +2176,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
   final String? selectedQuizAnswer;
   final List<_WorkspaceChatEntry> chatEntries;
   final List<CanvasWorkSnapshot> canvasSnapshots;
-  final HardcodedAssessmentPack assessmentPack;
+  final _LocalizedWorkspaceMaterial material;
   final bool isLoadingWorkspace;
   final bool isAppendingEvent;
   final bool isVideoGenerating;
@@ -2146,12 +2214,12 @@ class _WorkspaceChatPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _WorkspaceBubble(
-                  text: assessmentPack.workspaceIntroLine1,
+                  text: material.workspaceIntroLine1,
                   isUser: false,
                 ),
                 const SizedBox(height: 9),
                 _WorkspaceBubble(
-                  text: assessmentPack.workspaceIntroLine2,
+                  text: material.workspaceIntroLine2,
                   isUser: false,
                 ),
               ],
@@ -2189,7 +2257,10 @@ class _WorkspaceChatPanel extends StatelessWidget {
               workspaceError == null &&
               chatEntries.isEmpty) ...[
             const SizedBox(height: 14),
-            _WorkspaceStartChatCard(onStartChat: onStartChat),
+            _WorkspaceStartChatCard(
+              material: material,
+              onStartChat: onStartChat,
+            ),
           ],
           if (!isLoadingWorkspace &&
               workspaceError == null &&
@@ -2199,7 +2270,7 @@ class _WorkspaceChatPanel extends StatelessWidget {
               quizState: quizState,
               selectedAnswer: selectedQuizAnswer,
               onAnswer: onAnswerQuiz,
-              assessmentPack: assessmentPack,
+              material: material,
             ),
           ],
           const SizedBox(height: 14),
@@ -3378,28 +3449,29 @@ class _WorkspaceQuizCard extends StatelessWidget {
     required this.quizState,
     required this.selectedAnswer,
     required this.onAnswer,
-    required this.assessmentPack,
+    required this.material,
   });
 
   final _WorkspaceQuizState quizState;
   final String? selectedAnswer;
   final ValueChanged<String> onAnswer;
-  final HardcodedAssessmentPack assessmentPack;
+  final _LocalizedWorkspaceMaterial material;
 
   @override
   Widget build(BuildContext context) {
     return _WorkspaceRichBubble(
       icon: Icons.quiz_outlined,
-      title: 'Check understanding',
+      title: material.checkUnderstandingTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _WorkspaceMaterialRecap(
-            explanationText: assessmentPack.workspaceExplanation,
+            title: material.materialRecapLabel,
+            explanationText: material.workspaceExplanation,
           ),
           const SizedBox(height: 12),
           Text(
-            assessmentPack.workspaceQuizQuestion,
+            material.workspaceQuizQuestion,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
               fontWeight: FontWeight.w700,
@@ -3407,13 +3479,13 @@ class _WorkspaceQuizCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final answer in assessmentPack.workspaceQuizOptions)
+          for (final answer in material.workspaceQuizOptions)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _WorkspaceQuizOption(
                 label: answer,
                 isSelected: selectedAnswer == answer,
-                isCorrect: answer == assessmentPack.workspaceQuizCorrectAnswer,
+                isCorrect: answer == material.workspaceQuizCorrectAnswer,
                 hasAnswered: quizState != _WorkspaceQuizState.unanswered,
                 onPressed: () => onAnswer(answer),
               ),
@@ -3422,8 +3494,8 @@ class _WorkspaceQuizCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               quizState == _WorkspaceQuizState.correct
-                  ? assessmentPack.workspaceQuizCorrectFeedback
-                  : assessmentPack.workspaceQuizReviewFeedback,
+                  ? material.workspaceQuizCorrectFeedback
+                  : material.workspaceQuizReviewFeedback,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: quizState == _WorkspaceQuizState.correct
                     ? WicaraColors.accentMint
@@ -3440,20 +3512,24 @@ class _WorkspaceQuizCard extends StatelessWidget {
 }
 
 class _WorkspaceStartChatCard extends StatelessWidget {
-  const _WorkspaceStartChatCard({required this.onStartChat});
+  const _WorkspaceStartChatCard({
+    required this.material,
+    required this.onStartChat,
+  });
 
+  final _LocalizedWorkspaceMaterial material;
   final VoidCallback onStartChat;
 
   @override
   Widget build(BuildContext context) {
     return _WorkspaceRichBubble(
       icon: Icons.auto_awesome_rounded,
-      title: 'Start the 5E chat',
+      title: material.startChatTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Begin with the tutor opening question. This starts the Engage step and creates the first workspace evidence.',
+            material.startChatBody,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: WicaraColors.text,
               fontWeight: FontWeight.w600,
@@ -3464,7 +3540,7 @@ class _WorkspaceStartChatCard extends StatelessWidget {
           FilledButton.icon(
             onPressed: onStartChat,
             icon: const Icon(Icons.chat_bubble_outline_rounded),
-            label: const Text('Start learning chat'),
+            label: Text(material.startChatButtonLabel),
           ),
         ],
       ),
@@ -3473,8 +3549,12 @@ class _WorkspaceStartChatCard extends StatelessWidget {
 }
 
 class _WorkspaceMaterialRecap extends StatelessWidget {
-  const _WorkspaceMaterialRecap({required this.explanationText});
+  const _WorkspaceMaterialRecap({
+    required this.title,
+    required this.explanationText,
+  });
 
+  final String title;
   final String explanationText;
 
   @override
@@ -3490,7 +3570,7 @@ class _WorkspaceMaterialRecap extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Material recap',
+            title,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: WicaraColors.primaryDeep,
               fontWeight: FontWeight.w800,
