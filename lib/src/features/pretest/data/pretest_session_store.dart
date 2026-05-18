@@ -5,12 +5,18 @@ class PretestSessionStore {
 
   void saveBootstrap({
     required String learningGoalId,
-    required String pretestSessionId,
-    required String trackId,
+    String? pretestSessionId,
+    String? trackId,
   }) {
     this.learningGoalId = learningGoalId;
     this.pretestSessionId = pretestSessionId;
     this.trackId = trackId;
+  }
+
+  void clear() {
+    learningGoalId = null;
+    pretestSessionId = null;
+    trackId = null;
   }
 }
 

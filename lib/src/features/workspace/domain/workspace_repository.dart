@@ -1,7 +1,35 @@
 import 'workspace_models.dart';
 
+class WorkspaceSessionHistory {
+  const WorkspaceSessionHistory({
+    required this.activeWorkspaceId,
+    required this.workspaceIds,
+  });
+
+  final String? activeWorkspaceId;
+  final List<String> workspaceIds;
+}
+
 abstract class WorkspaceRepository {
   Future<WorkspaceSession> createOrResumeWorkspace({
+    required String trackId,
+    required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
+  });
+
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  });
+
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  });
+
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
     required String trackId,
     required String moduleId,
   });
@@ -13,6 +41,21 @@ abstract class WorkspaceRepository {
     required String eventType,
     String textPayload = '',
     Map<String, dynamic> metadata = const {},
+  });
+
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  });
+
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
   });
 
   Future<void> updateModuleState({

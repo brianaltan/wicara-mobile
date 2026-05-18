@@ -40,8 +40,59 @@ class AuthController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final persistedState = await _sessionStore.read();
-    _session = persistedState.session;
-    _lastProtectedRoute = persistedState.lastProtectedRoute;
+    final restoredSession = persistedState.session;
+
+    // A session without a token cannot authenticate API requests.
+    // Treat it as signed-out and wipe storage to prevent a stuck state.
+    if (restoredSession != null &&
+        (restoredSession.token == null || restoredSession.token!.isEmpty)) {
+      await _sessionStore.clear();
+      _session = null;
+      _lastProtectedRoute = null;
+    } else {
+      _session = restoredSession;
+      _lastProtectedRoute = persistedState.lastProtectedRoute;
+    }
+
+    // Auto-refresh: try to get a fresh access_token using the stored refresh_token.
+    // This prevents 401 errors when the 1-hour Supabase token has expired.
+    final sessionToRefresh = _session;
+    if (sessionToRefresh != null) {
+      if (sessionToRefresh.refreshToken != null &&
+          sessionToRefresh.refreshToken!.isNotEmpty) {
+        try {
+          final refreshed = await _authRepository.refresh(sessionToRefresh);
+          if (refreshed != null) {
+            _session = refreshed;
+            _lastProtectedRoute = persistedState.lastProtectedRoute;
+            await _sessionStore.save(
+              session: refreshed,
+              lastProtectedRoute:
+                  _lastProtectedRoute ??
+                  (refreshed.onboardingCompleted ? '/home' : '/onboarding'),
+            );
+          } else {
+            // Refresh token also expired — force sign-out cleanly
+            await _sessionStore.clear();
+            _session = null;
+            _lastProtectedRoute = null;
+          }
+        } catch (_) {
+          // Refresh failed (e.g. network error). Clear the session so the user
+          // is redirected to sign-in instead of landing on home with a bad token.
+          await _sessionStore.clear();
+          _session = null;
+          _lastProtectedRoute = null;
+        }
+      } else {
+        // Missing refresh token entirely (e.g., legacy session).
+        // Since we cannot keep it alive and it's likely expired, force sign out.
+        await _sessionStore.clear();
+        _session = null;
+        _lastProtectedRoute = null;
+      }
+    }
+
     _apiClient.setAuthToken(_session?.token);
     _isInitialized = true;
     notifyListeners();

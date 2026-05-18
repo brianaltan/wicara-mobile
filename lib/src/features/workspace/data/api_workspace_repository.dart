@@ -2,25 +2,27 @@ import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_session_store.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_repository.dart';
-import 'workspace_session_store.dart';
+import 'workspace_session_store.dart' as store;
 
 class ApiWorkspaceRepository implements WorkspaceRepository {
   const ApiWorkspaceRepository({
     required ApiClient apiClient,
     required AuthSessionStore sessionStore,
-    required WorkspaceSessionStore workspaceSessionStore,
+    required store.WorkspaceSessionStore workspaceSessionStore,
   }) : _apiClient = apiClient,
        _sessionStore = sessionStore,
        _workspaceSessionStore = workspaceSessionStore;
 
   final ApiClient _apiClient;
   final AuthSessionStore _sessionStore;
-  final WorkspaceSessionStore _workspaceSessionStore;
+  final store.WorkspaceSessionStore _workspaceSessionStore;
 
   @override
   Future<WorkspaceSession> createOrResumeWorkspace({
     required String trackId,
     required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
   }) async {
     final token = _requireToken();
     try {
@@ -31,15 +33,69 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
           'track_id': trackId,
           'module_id': moduleId,
           'content_mode': 'chat',
+          'workspace_session_id': _nullableString(workspaceSessionId),
+          'start_new_session': startNewSession,
         },
       );
       final workspace = workspaceFromJson(json);
-      await _workspaceSessionStore.save(
+      await _workspaceSessionStore.saveAndSetActive(
         trackId: trackId,
         moduleId: moduleId,
         workspaceId: workspace.id,
       );
       return workspace;
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) {
+    final history = _workspaceSessionStore.sessionHistoryFor(
+      trackId: trackId,
+      moduleId: moduleId,
+    );
+    return WorkspaceSessionHistory(
+      activeWorkspaceId: history.activeWorkspaceId,
+      workspaceIds: history.workspaceIds,
+    );
+  }
+
+  @override
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  }) {
+    return _workspaceSessionStore.setActiveWorkspaceId(
+      trackId: trackId,
+      moduleId: moduleId,
+      workspaceId: workspaceId,
+    );
+  }
+
+  @override
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) async {
+    final token = _requireToken();
+    try {
+      final json = await _apiClient.getJson(
+        '/api/v1/workspaces',
+        headers: {'Authorization': 'Bearer $token'},
+        queryParameters: {'track_id': trackId, 'module_id': moduleId},
+      );
+      final sessions = json['sessions'];
+      return sessions is List
+          ? sessions
+                .whereType<Map<String, dynamic>>()
+                .map(workspaceSessionSummaryFromJson)
+                .toList(growable: false)
+          : const [];
     } on ApiClientException catch (error) {
       throw WorkspaceException(error.message);
     }
@@ -85,6 +141,71 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  }) async {
+    final token = _requireToken();
+    final normalizedMode = generationMode.trim().toLowerCase().replaceAll(
+      '-',
+      '_',
+    );
+    final requestBody = <String, dynamic>{
+      'generation_mode': normalizedMode,
+      'language': language,
+      'quality_profile': qualityProfile,
+      'metadata': metadata,
+    };
+    if (normalizedMode == 'manual') {
+      final normalizedTemplate = _nullableString(templateId);
+      if (normalizedTemplate == null) {
+        throw const WorkspaceException(
+          'template_id is required for manual video generation mode.',
+        );
+      }
+      requestBody['template_id'] = normalizedTemplate;
+      requestBody['spec_json'] = specJson ?? const <String, dynamic>{};
+    }
+    final normalizedConceptId = _nullableString(conceptId);
+    if (normalizedConceptId != null) {
+      requestBody['concept_id'] = normalizedConceptId;
+    }
+
+    try {
+      final json = await _apiClient.postJson(
+        '/api/v1/workspaces/$workspaceId/generate-video',
+        headers: {'Authorization': 'Bearer $token'},
+        body: requestBody,
+      );
+      return generateVideoResultFromJson(json);
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
+  }) async {
+    final token = _requireToken();
+    try {
+      final json = await _apiClient.getJson(
+        '/api/v1/animation/status/$jobId',
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      return animationJobStatusFromJson(json);
+    } on ApiClientException catch (error) {
+      throw WorkspaceException(error.message);
+    }
+  }
+
+  @override
   Future<void> updateModuleState({
     required String trackId,
     required String moduleId,
@@ -111,8 +232,24 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
+WorkspaceSessionSummary workspaceSessionSummaryFromJson(
+  Map<String, dynamic> json,
+) {
+  return WorkspaceSessionSummary(
+    id: _string(json['id']),
+    trackId: _string(json['track_id']),
+    moduleId: _string(json['module_id']),
+    title: _string(json['title']),
+    preview: _string(json['preview']),
+    messageCount: _int(json['message_count']),
+    createdAt: _string(json['created_at']),
+    updatedAt: _string(json['updated_at']),
+  );
+}
+
 WorkspaceSession workspaceFromJson(Map<String, dynamic> json) {
   final events = json['events'];
+  final latestMedia = json['latest_media'];
   return WorkspaceSession(
     id: _string(json['id']),
     trackId: _string(json['track_id']),
@@ -126,6 +263,9 @@ WorkspaceSession workspaceFromJson(Map<String, dynamic> json) {
               .map(workspaceEventFromJson)
               .toList(growable: false)
         : const [],
+    latestMedia: latestMedia is Map<String, dynamic>
+        ? workspaceMediaArtifactFromJson(latestMedia)
+        : null,
   );
 }
 
@@ -169,6 +309,67 @@ WorkspaceAppendResult appendResultFromJson(Map<String, dynamic> json) {
   );
 }
 
+WorkspaceGenerateVideoResult generateVideoResultFromJson(
+  Map<String, dynamic> json,
+) {
+  return WorkspaceGenerateVideoResult(
+    queue: workspaceAnimationQueueFromJson(_map(json['queue'])),
+    event: workspaceEventFromJson(_map(json['event'])),
+    workspace: workspaceFromJson(_map(json['workspace'])),
+  );
+}
+
+WorkspaceAnimationQueue workspaceAnimationQueueFromJson(
+  Map<String, dynamic> json,
+) {
+  final errorDetails = json['error_details'];
+  return WorkspaceAnimationQueue(
+    jobId: _string(json['job_id']),
+    artifactId: _string(json['artifact_id']),
+    status: _string(json['status']),
+    errorDetails: errorDetails is Map<String, dynamic> ? errorDetails : null,
+  );
+}
+
+WorkspaceAnimationJobStatus animationJobStatusFromJson(
+  Map<String, dynamic> json,
+) {
+  final errorDetails = json['error_details'];
+  return WorkspaceAnimationJobStatus(
+    jobId: _string(json['job_id']),
+    status: _string(json['status']),
+    progress: _clampedProgress(json['progress']),
+    message: _string(json['message']),
+    artifactId: _string(json['artifact_id']),
+    videoUrl: _nullableString(json['video_url']),
+    thumbnailUrl: _nullableString(json['thumbnail_url']),
+    error: _nullableString(json['error']),
+    errorDetails: errorDetails is Map<String, dynamic> ? errorDetails : null,
+  );
+}
+
+WorkspaceMediaArtifact workspaceMediaArtifactFromJson(
+  Map<String, dynamic> json,
+) {
+  final notes = json['notes'];
+  return WorkspaceMediaArtifact(
+    id: _string(json['id']),
+    title: _string(json['title']),
+    subtitle: _string(json['subtitle']),
+    status: _string(json['status']),
+    durationSeconds: _int(json['duration_seconds']),
+    durationLabel: _string(json['duration_label']),
+    transcript: _string(json['transcript']),
+    notes: notes is List
+        ? notes.map((item) => _string(item)).toList(growable: false)
+        : const [],
+    thumbnailUrl: _nullableString(json['thumbnail_url']),
+    videoUrl: _nullableString(json['video_url']),
+    playbackUrl: _nullableString(json['playback_url']),
+    createdAt: _nullableString(json['created_at']),
+  );
+}
+
 Map<String, dynamic> _map(Object? value) {
   return value is Map<String, dynamic> ? value : const {};
 }
@@ -191,6 +392,17 @@ String? _nullableString(Object? value) {
 }
 
 int _int(Object? value) => int.tryParse((value ?? '').toString()) ?? 0;
+
+int _clampedProgress(Object? value) {
+  final parsed = _int(value);
+  if (parsed < 0) {
+    return 0;
+  }
+  if (parsed > 100) {
+    return 100;
+  }
+  return parsed;
+}
 
 int? _intOrNull(Object? value) => int.tryParse((value ?? '').toString());
 

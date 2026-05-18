@@ -462,15 +462,15 @@ class _SignInPageState extends State<SignInPage> {
                                       onWebCredential:
                                           _continueWithGoogleIdToken,
                                     ),
-                                    if (_showDevelopmentBypass) ...[
-                                      const SizedBox(height: 14),
-                                      _DevelopmentBypassButton(
-                                        label: 'Dev Mode',
-                                        onPressed: _isSubmitting
-                                            ? null
-                                            : _openDevelopmentBypassOptions,
-                                      ),
-                                    ],
+                                    // if (_showDevelopmentBypass) ...[
+                                    //   const SizedBox(height: 14),
+                                    //   // _DevelopmentBypassButton(
+                                    //   //   label: 'Dev Mode',
+                                    //   //   onPressed: _isSubmitting
+                                    //   //       ? null
+                                    //   //       : _openDevelopmentBypassOptions,
+                                    //   // ),
+                                    // ],
                                     const SizedBox(height: 40),
                                     SecurityNote(
                                       message: copy.securityNoteLabel,

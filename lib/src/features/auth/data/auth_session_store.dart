@@ -18,14 +18,15 @@ class AuthSessionStore {
   static const _displayNameKey = 'auth.display_name';
   static const _roleKey = 'auth.role';
   static const _tokenKey = 'auth.token';
+  static const _refreshTokenKey = 'auth.refresh_token';
   static const _onboardingCompletedKey = 'auth.onboarding_completed';
   static const _lastProtectedRouteKey = 'auth.lastProtectedRoute';
 
   AuthSession? _session;
 
   AuthSession? get currentSession => _session;
-
   String? get accessToken => _session?.token;
+  String? get refreshToken => _session?.refreshToken;
 
   Future<PersistedAuthState> read() async {
     final preferences = await SharedPreferences.getInstance();
@@ -33,6 +34,7 @@ class AuthSessionStore {
     final displayName = preferences.getString(_displayNameKey)?.trim() ?? '';
     final roleName = preferences.getString(_roleKey)?.trim() ?? '';
     final token = preferences.getString(_tokenKey)?.trim();
+    final storedRefreshToken = preferences.getString(_refreshTokenKey)?.trim();
     final lastProtectedRoute = preferences
         .getString(_lastProtectedRouteKey)
         ?.trim();
@@ -50,6 +52,9 @@ class AuthSessionStore {
       onboardingCompleted:
           preferences.getBool(_onboardingCompletedKey) ?? false,
       token: token == null || token.isEmpty ? null : token,
+      refreshToken: storedRefreshToken == null || storedRefreshToken.isEmpty
+          ? null
+          : storedRefreshToken,
     );
     _session = session;
 
@@ -72,6 +77,11 @@ class AuthSessionStore {
       await preferences.setString(_tokenKey, session.token!);
     } else {
       await preferences.remove(_tokenKey);
+    }
+    if (session.refreshToken != null && session.refreshToken!.isNotEmpty) {
+      await preferences.setString(_refreshTokenKey, session.refreshToken!);
+    } else {
+      await preferences.remove(_refreshTokenKey);
     }
     await preferences.setBool(
       _onboardingCompletedKey,
@@ -110,6 +120,7 @@ class AuthSessionStore {
     await preferences.remove(_displayNameKey);
     await preferences.remove(_roleKey);
     await preferences.remove(_tokenKey);
+    await preferences.remove(_refreshTokenKey);
     await preferences.remove(_onboardingCompletedKey);
     await preferences.remove(_lastProtectedRouteKey);
   }

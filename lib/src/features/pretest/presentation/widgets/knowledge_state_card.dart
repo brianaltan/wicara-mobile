@@ -27,8 +27,8 @@ class KnowledgeStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: height,
       width: double.infinity,
+      constraints: BoxConstraints(minHeight: height),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,

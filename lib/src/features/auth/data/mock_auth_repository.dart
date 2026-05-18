@@ -69,5 +69,11 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<AuthSession?> refresh(AuthSession current) async {
+    // Mock: always succeeds with same session (no real expiry in mock)
+    return current;
+  }
+
+  @override
   Future<void> signOut() async {}
 }

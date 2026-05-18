@@ -3,10 +3,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../app/app_routes.dart';
 import '../../../core/theme/wicara_colors.dart';
+import '../../../core/utils/learning_level_resolver.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../../core/widgets/hardcoded_video_preview.dart';
 import '../../../core/widgets/language_chip.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../curriculum/domain/curriculum_models.dart';
@@ -43,12 +46,32 @@ class _HomeCopyScope extends InheritedWidget {
   bool updateShouldNotify(_HomeCopyScope oldWidget) => copy != oldWidget.copy;
 }
 
+bool _shouldOpenKnowledgeMap(Object? arguments) {
+  if (arguments is! Map) {
+    return false;
+  }
+  final focusCodes = arguments['focus_concept_codes'];
+  final subjectCode = arguments['subject_code'];
+  if (focusCodes is List && focusCodes.isNotEmpty) {
+    return true;
+  }
+  return subjectCode is String && subjectCode.trim().isNotEmpty;
+}
+
+bool _shouldAutoOpenWorkspace(Object? arguments) {
+  if (arguments is! Map) {
+    return false;
+  }
+  return arguments['auto_open_workspace'] == true;
+}
+
 class AppHomePage extends StatefulWidget {
   const AppHomePage({
     required this.curriculumRepository,
     required this.homeRepository,
     required this.authController,
     required this.onboardingController,
+    this.routeArguments,
     super.key,
   });
 
@@ -56,6 +79,7 @@ class AppHomePage extends StatefulWidget {
   final HomeRepository homeRepository;
   final AuthController authController;
   final OnboardingController onboardingController;
+  final Object? routeArguments;
 
   @override
   State<AppHomePage> createState() => _AppHomePageState();
@@ -67,29 +91,136 @@ class _AppHomePageState extends State<AppHomePage> {
   bool _showGalleryDetail = false;
   bool _showDailyEvaluation = false;
   bool _showEvaluationResult = false;
+  bool _showPosttest = false;
+  bool _showPosttestResult = false;
   bool _showLearningReport = false;
   bool _showKnowledgeMap = false;
   int _dailyEvaluationIndex = 0;
+  int _posttestIndex = 0;
   final Map<int, String> _dailyEvaluationAnswers = {};
+  final Map<int, String> _posttestAnswers = {};
   String? _dailyEvaluationSessionId;
   DailyEvaluationSession? _dailyEvaluationSession;
   DailyEvaluationResult? _dailyEvaluationResult;
+  DailyEvaluationResult? _posttestResult;
+  String? _posttestSessionId;
+  DailyEvaluationSession? _posttestSessionData;
+  List<PretestQuestion> _backendPosttestQuestions = const [];
+  bool _isLoadingPosttest = false;
+  bool _isSubmittingPosttest = false;
+  String? _posttestError;
+  String _lastCompletedTrackId = '';
   List<PretestQuestion> _backendDailyEvaluationQuestions = const [];
   bool _isLoadingDailyEvaluation = false;
   bool _isSubmittingDailyEvaluation = false;
   String? _dailyEvaluationError;
+  String? _lastSyncedProfileFingerprint;
   late Future<HomeSnapshot> _homeSnapshotFuture;
+  bool _autoOpenWorkspacePending = false;
 
   @override
   void initState() {
     super.initState();
     _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
+    _autoOpenWorkspacePending = _shouldAutoOpenWorkspace(widget.routeArguments);
+    if (_shouldOpenKnowledgeMap(widget.routeArguments)) {
+      _selectedTab = _HomeTab.progress;
+      _showKnowledgeMap = true;
+    }
+    if (_autoOpenWorkspacePending) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _autoOpenWorkspaceAfterPretest();
+      });
+    }
+  }
+
+  Future<void> _autoOpenWorkspaceAfterPretest() async {
+    if (!_autoOpenWorkspacePending || !mounted) {
+      return;
+    }
+    _autoOpenWorkspacePending = false;
+    try {
+      final snapshot = await _homeSnapshotFuture;
+      if (!mounted) {
+        return;
+      }
+      final target = snapshot.firstWorkspaceTarget;
+      if (target == null || !target.isValid) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Track sudah dibuat, tapi belum ada module workspace yang bisa dibuka.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        return;
+      }
+      await _syncOnboardingProfileFromSnapshot(snapshot);
+      if (!mounted) {
+        return;
+      }
+      await _openWorkspaceModules(target);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Gagal auto-open workspace setelah pretest.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
   }
 
   void _retryHomeSnapshot() {
     setState(() {
       _homeSnapshotFuture = widget.homeRepository.fetchSnapshot();
     });
+  }
+
+  Future<void> _syncOnboardingProfileFromSnapshot(HomeSnapshot snapshot) async {
+    final targetProfile = _buildOnboardingProfileFromSnapshot(snapshot);
+    final fingerprint = _profileFingerprint(targetProfile);
+    if (_lastSyncedProfileFingerprint == fingerprint) {
+      return;
+    }
+    _lastSyncedProfileFingerprint = fingerprint;
+    await widget.onboardingController.replaceProfile(targetProfile);
+  }
+
+  OnboardingProfile _buildOnboardingProfileFromSnapshot(HomeSnapshot snapshot) {
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    final normalizedGrade = parsedGrade?.toString() ?? snapshot.gradeLevel;
+    return OnboardingProfile(
+      fullName: snapshot.displayName,
+      country: snapshot.country,
+      educationLevel: normalizeEducationLevel(
+        educationLevel: snapshot.educationLevel,
+        gradeLevel: normalizedGrade,
+      ),
+      gradeLevel: normalizedGrade,
+      preferredLanguage: snapshot.preferredLanguage,
+      selectedSubjects: snapshot.selectedSubjects,
+      studyGoal: snapshot.studyGoal,
+      dailyStudyTime: snapshot.dailyStudyTime,
+    );
+  }
+
+  String _profileFingerprint(OnboardingProfile profile) {
+    return [
+      profile.fullName,
+      profile.country,
+      profile.educationLevel,
+      profile.gradeLevel,
+      profile.preferredLanguage,
+      profile.selectedSubjects.join('|'),
+      profile.studyGoal,
+      profile.dailyStudyTime,
+    ].join('||');
   }
 
   void _openQueue([_QueueTab tab = _QueueTab.recommended]) {
@@ -99,6 +230,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -110,6 +243,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
     });
@@ -121,6 +256,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = true;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = false;
       _dailyEvaluationIndex = 0;
@@ -249,6 +386,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = true;
       _showKnowledgeMap = false;
     });
@@ -264,6 +403,8 @@ class _AppHomePageState extends State<AppHomePage> {
       _showGalleryDetail = false;
       _showDailyEvaluation = false;
       _showEvaluationResult = false;
+      _showPosttest = false;
+      _showPosttestResult = false;
       _showLearningReport = false;
       _showKnowledgeMap = true;
     });
@@ -278,11 +419,147 @@ class _AppHomePageState extends State<AppHomePage> {
   }
 
   Future<void> _openWorkspaceModules(WorkspaceRouteArguments arguments) async {
-    await Navigator.of(
+    final result = await Navigator.of(
       context,
     ).pushNamed(AppRoutes.workspaceModules, arguments: arguments);
     if (!mounted) return;
     _retryHomeSnapshot();
+    if (result is WorkspaceCompletionResult) {
+      _lastCompletedTrackId = result.trackId;
+      _openPosttest(trackId: result.trackId);
+    }
+  }
+
+  Future<void> _openPosttest({String? trackId}) async {
+    setState(() {
+      _selectedTab = _HomeTab.home;
+      _showGalleryDetail = false;
+      _showDailyEvaluation = false;
+      _showEvaluationResult = false;
+      _showPosttest = true;
+      _showPosttestResult = false;
+      _showLearningReport = false;
+      _showKnowledgeMap = false;
+      _posttestIndex = 0;
+      _posttestAnswers.clear();
+      _posttestResult = null;
+      _posttestSessionId = null;
+      _posttestSessionData = null;
+      _backendPosttestQuestions = const [];
+      _posttestError = null;
+      _isLoadingPosttest = true;
+    });
+    try {
+      final session = await widget.homeRepository.startPosttest(
+        trackId: (trackId ?? _lastCompletedTrackId).isEmpty
+            ? null
+            : (trackId ?? _lastCompletedTrackId),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _posttestSessionId = session.sessionId;
+        _posttestSessionData = session;
+        _backendPosttestQuestions = session.questions;
+        _posttestIndex = _initialPosttestIndex(session);
+        _isLoadingPosttest = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _posttestError = error.toString();
+        _isLoadingPosttest = false;
+      });
+    }
+  }
+
+  void _selectPosttestAnswer(String optionId) {
+    setState(() => _posttestAnswers[_posttestIndex] = optionId);
+  }
+
+  Future<void> _nextPosttestQuestion() async {
+    final sessionId = _posttestSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    final questions = _backendPosttestQuestions;
+    final optionId = _posttestAnswers[_posttestIndex];
+    if (optionId == null || optionId.isEmpty || _isSubmittingPosttest) {
+      return;
+    }
+    setState(() => _isSubmittingPosttest = true);
+    try {
+      final answerResult = await widget.homeRepository.submitPosttestAnswer(
+        sessionId: sessionId,
+        questionId: questions[_posttestIndex].id,
+        optionId: optionId,
+        confidence: 6,
+      );
+      if (!mounted) {
+        return;
+      }
+      final isLastQuestion = _posttestIndex >= questions.length - 1;
+      if (!isLastQuestion && !answerResult.completed) {
+        setState(() {
+          _posttestIndex += 1;
+          _isSubmittingPosttest = false;
+        });
+        return;
+      }
+      final result = await widget.homeRepository.finalizePosttest(
+        sessionId: sessionId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmittingPosttest = false;
+        _posttestResult = result;
+        _showPosttest = false;
+        _showPosttestResult = true;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isSubmittingPosttest = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  void _previousPosttestQuestion() {
+    if (_posttestIndex == 0) {
+      _openHome();
+      return;
+    }
+
+    setState(() => _posttestIndex -= 1);
+  }
+
+  int _initialPosttestIndex(DailyEvaluationSession session) {
+    final currentQuestionId = session.currentQuestion?.id;
+    if (currentQuestionId != null && currentQuestionId.isNotEmpty) {
+      final index = session.questions.indexWhere(
+        (question) => question.id == currentQuestionId,
+      );
+      if (index >= 0) {
+        return index;
+      }
+    }
+    if (session.questions.isEmpty) {
+      return 0;
+    }
+    return session.progress.completed.clamp(0, session.questions.length - 1).toInt();
   }
 
   void _handleRecommendedAction(RecommendedNextAction action) {
@@ -335,7 +612,10 @@ class _AppHomePageState extends State<AppHomePage> {
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
                               child:
-                                  _showEvaluationResult || _showDailyEvaluation
+                                  _showEvaluationResult ||
+                                      _showDailyEvaluation ||
+                                      _showPosttest ||
+                                      _showPosttestResult
                                   ? const SizedBox.shrink()
                                   : _ShortcutBar(
                                       key: const ValueKey('shortcut-bar'),
@@ -344,6 +624,8 @@ class _AppHomePageState extends State<AppHomePage> {
                                         _selectedTab = tab;
                                         _showDailyEvaluation = false;
                                         _showEvaluationResult = false;
+                                        _showPosttest = false;
+                                        _showPosttestResult = false;
                                         _showLearningReport = false;
                                         _showKnowledgeMap = false;
                                       }),
@@ -365,7 +647,7 @@ class _AppHomePageState extends State<AppHomePage> {
 
   Widget _animatedTabView(BoxConstraints constraints) {
     final key = ValueKey(
-      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-report-$_showLearningReport-map-$_showKnowledgeMap',
+      '${_selectedTab.name}-detail-$_showGalleryDetail-daily-$_showDailyEvaluation-$_dailyEvaluationIndex-eval-$_showEvaluationResult-post-$_showPosttest-$_posttestIndex-postResult-$_showPosttestResult-report-$_showLearningReport-map-$_showKnowledgeMap',
     );
 
     return AnimatedSwitcher(
@@ -395,6 +677,60 @@ class _AppHomePageState extends State<AppHomePage> {
     final copy = OnboardingCopy.forLanguage(
       widget.onboardingController.profile.preferredLanguage,
     );
+    if (_showPosttest) {
+      if (_isLoadingPosttest) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: copy.isIndonesian ? 'Memuat Posttest' : 'Loading Posttest',
+          message: copy.isIndonesian
+              ? 'Menyiapkan soal posttest adaptif dari backend.'
+              : 'Preparing adaptive posttest from backend.',
+        );
+      }
+      if (_posttestError != null || _backendPosttestQuestions.isEmpty) {
+        return _DashboardStatePage(
+          constraints: constraints,
+          title: copy.isIndonesian ? 'Posttest tidak tersedia' : 'Posttest unavailable',
+          message: _posttestError ??
+              (copy.isIndonesian
+                  ? 'Backend tidak mengembalikan soal posttest.'
+                  : 'Backend returned no posttest questions.'),
+          actionLabel: copy.isIndonesian ? 'Coba lagi' : 'Try again',
+          onAction: () {
+            _openPosttest();
+          },
+        );
+      }
+      final session = _posttestSessionData!;
+      return _DailyEvaluationQuestionPage(
+        constraints: constraints,
+        session: _posttestSessionData,
+        question: _backendPosttestQuestions[_posttestIndex],
+        questionIndex: _posttestIndex,
+        totalQuestions: _backendPosttestQuestions.length,
+        selectedOptionId: _posttestAnswers[_posttestIndex],
+        onBack: _previousPosttestQuestion,
+        onSelected: _selectPosttestAnswer,
+        isSubmitting: _isSubmittingPosttest,
+        sectionLabel: session.title,
+        subtitle: 'Jawab 3 soal per node untuk mengecek mastery.',
+        nextLabel: 'Lanjut',
+        finishLabel: 'Selesai posttest',
+        onSubmit: () {
+          _nextPosttestQuestion();
+        },
+      );
+    }
+
+    if (_showPosttestResult) {
+      return _EvaluationCompletePage(
+        constraints: constraints,
+        result: _posttestResult,
+        onBackHome: _openHome,
+        onActionSelected: _handleRecommendedAction,
+      );
+    }
+
     if (_showDailyEvaluation) {
       if (_isLoadingDailyEvaluation) {
         return _DashboardStatePage(
@@ -460,21 +796,36 @@ class _AppHomePageState extends State<AppHomePage> {
         onTakeDailyEvaluation: () {
           _openDailyEvaluation();
         },
-        onContinueSession: _openWorkspaceModules,
+        onContinueSession: (arguments) async {
+          try {
+            final snapshot = await _homeSnapshotFuture;
+            await _syncOnboardingProfileFromSnapshot(snapshot);
+          } catch (_) {}
+          await _openWorkspaceModules(arguments);
+        },
       ),
       _HomeTab.queue => _HomeSnapshotBuilder(
         constraints: constraints,
         snapshotFuture: _homeSnapshotFuture,
         onRetry: _retryHomeSnapshot,
-        builder: (snapshot) => _LearningQueue(
-          constraints: constraints,
-          snapshot: snapshot,
-          selectedTab: _queueTab,
-          onTabChanged: (tab) => setState(() => _queueTab = tab),
-          onCreateTrack: _openLearningGoal,
-          onOpenWorkspace: _openWorkspaceModules,
-          onBack: _openHome,
-        ),
+        builder: (snapshot) {
+          _syncOnboardingProfileFromSnapshot(snapshot);
+          return _LearningQueue(
+            constraints: constraints,
+            snapshot: snapshot,
+            selectedTab: _queueTab,
+            onTabChanged: (tab) => setState(() => _queueTab = tab),
+            onCreateTrack: () {
+              _syncOnboardingProfileFromSnapshot(snapshot);
+              _openLearningGoal();
+            },
+            onOpenWorkspace: (arguments) async {
+              await _syncOnboardingProfileFromSnapshot(snapshot);
+              await _openWorkspaceModules(arguments);
+            },
+            onBack: _openHome,
+          );
+        },
       ),
       _HomeTab.progress => _ProgressHub(
         constraints: constraints,
@@ -494,14 +845,17 @@ class _AppHomePageState extends State<AppHomePage> {
         constraints: constraints,
         snapshotFuture: _homeSnapshotFuture,
         onRetry: _retryHomeSnapshot,
-        builder: (snapshot) => _ProfilePage(
-          constraints: constraints,
-          snapshot: snapshot,
-          onBack: _openHome,
-          authController: widget.authController,
-          onboardingController: widget.onboardingController,
-          onProfileSaved: _retryHomeSnapshot,
-        ),
+        builder: (snapshot) {
+          _syncOnboardingProfileFromSnapshot(snapshot);
+          return _ProfilePage(
+            constraints: constraints,
+            snapshot: snapshot,
+            onBack: _openHome,
+            authController: widget.authController,
+            onboardingController: widget.onboardingController,
+            onProfileSaved: _retryHomeSnapshot,
+          );
+        },
       ),
     };
   }
@@ -553,12 +907,17 @@ class _HomeSnapshotBuilder extends StatelessWidget {
 }
 
 String _displayGradeSummary(HomeSnapshot snapshot, OnboardingCopy copy) {
+  final normalizedEducation = normalizeEducationLevel(
+    educationLevel: snapshot.educationLevel,
+    gradeLevel: snapshot.gradeLevel,
+  );
   final parts = <String>[];
-  if (snapshot.educationLevel.trim().isNotEmpty) {
-    parts.add(_educationLabel(snapshot.educationLevel, copy));
+  if (normalizedEducation.isNotEmpty) {
+    parts.add(_educationLabel(normalizedEducation, copy));
   }
   if (snapshot.gradeLevel.trim().isNotEmpty) {
-    parts.add(copy.gradeValue(snapshot.gradeLevel));
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    parts.add(copy.gradeValue((parsedGrade ?? snapshot.gradeLevel).toString()));
   }
   return parts.join(' - ');
 }
@@ -566,8 +925,11 @@ String _displayGradeSummary(HomeSnapshot snapshot, OnboardingCopy copy) {
 String _educationLabel(String value, OnboardingCopy copy) {
   final normalized = value.trim().toLowerCase();
   return switch (normalized) {
+    'sd' => copy.isIndonesian ? 'Sekolah dasar' : 'Elementary school',
     'elementary' => copy.isIndonesian ? 'Sekolah dasar' : 'Elementary school',
+    'smp' => copy.isIndonesian ? 'SMP' : 'Junior high school',
     'junior_high' => copy.isIndonesian ? 'SMP' : 'Junior high school',
+    'sma' => copy.isIndonesian ? 'SMA' : 'Senior high school',
     'senior_high' => copy.isIndonesian ? 'SMA' : 'Senior high school',
     'university' => copy.isIndonesian ? 'Universitas' : 'University',
     _ => value,
@@ -790,7 +1152,10 @@ class _LearningQueue extends StatelessWidget {
                 onContinue: onOpenWorkspace,
               )
             else if (selectedTab == _QueueTab.gallery)
-              const _BackendGalleryEmptyContent(),
+              _BackendGalleryContent(
+                snapshot: snapshot,
+                onContinue: onOpenWorkspace,
+              ),
           ],
         ),
       ),
@@ -905,17 +1270,819 @@ class _BackendTrackQueueContent extends StatelessWidget {
   }
 }
 
-class _BackendGalleryEmptyContent extends StatelessWidget {
-  const _BackendGalleryEmptyContent();
+class _BackendGalleryContent extends StatelessWidget {
+  const _BackendGalleryContent({
+    required this.snapshot,
+    required this.onContinue,
+  });
+
+  final HomeSnapshot snapshot;
+  final ValueChanged<WorkspaceRouteArguments> onContinue;
 
   @override
   Widget build(BuildContext context) {
-    return const _BackendEmptyPanel(
-      icon: Icons.video_library_outlined,
-      title: 'No saved gallery items',
-      message:
-          'Generated videos will appear here after a backend job saves them.',
+    final copy = _HomeCopyScope.of(context);
+    final videos = _galleryVideosForSnapshot(snapshot);
+    final items = snapshot.mediaArtifacts
+        .where((item) => item.isReady)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Panel(
+          padding: const EdgeInsets.fromLTRB(19, 18, 19, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: WicaraColors.secondarySoft,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.video_library_outlined,
+                      color: WicaraColors.secondary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Text(
+                      copy.contentGalleryLabel,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 13),
+              Text(
+                items.isEmpty
+                    ? 'Video demo sudah dipasang langsung dari Supabase untuk kebutuhan presentasi.'
+                    : 'Generated videos from backend jobs are saved here. Demo videos remain available for presentation flows.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: WicaraColors.muted,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        for (var index = 0; index < items.length; index++) ...[
+          _BackendGalleryArtifactCard(artifact: items[index]),
+          const SizedBox(height: 14),
+        ],
+        for (var index = 0; index < videos.length; index++) ...[
+          _BackendGalleryVideoCard(
+            video: videos[index],
+            onOpenChat: () => onContinue(videos[index].workspaceTarget),
+          ),
+          if (index < videos.length - 1) const SizedBox(height: 14),
+        ],
+      ],
     );
+  }
+}
+
+class _HardcodedGalleryVideo {
+  const _HardcodedGalleryVideo({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.durationLabel,
+    required this.videoUrl,
+    required this.workspaceTarget,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String durationLabel;
+  final String videoUrl;
+  final WorkspaceRouteArguments workspaceTarget;
+}
+
+const _hardcodedMultiplicationVideo = _HardcodedGalleryVideo(
+  id: 'perkalian',
+  title: 'Perkalian',
+  subtitle: 'Penjelasan perkalian untuk siswa SD',
+  durationLabel: '04:52',
+  videoUrl:
+      'https://gwbqhirtkgkghnpahtgt.supabase.co/storage/v1/object/public/video/perkalian.mp4',
+  workspaceTarget: WorkspaceRouteArguments(
+    trackId: 'demo-track-sd',
+    moduleId: 'demo-module-perkalian',
+    moduleTitle: 'Perkalian',
+  ),
+);
+
+const _hardcodedAlgebraVideo = _HardcodedGalleryVideo(
+  id: 'aljabar',
+  title: 'Aljabar dan pembuktian Al-Khawarizmi',
+  subtitle: 'Penjelasan aljabar untuk siswa SMP',
+  durationLabel: '06:45',
+  videoUrl:
+      'https://gwbqhirtkgkghnpahtgt.supabase.co/storage/v1/object/public/video/aljabar.mp4',
+  workspaceTarget: WorkspaceRouteArguments(
+    trackId: 'demo-track-smp',
+    moduleId: 'demo-module-aljabar',
+    moduleTitle: 'Aljabar dan pembuktian Al-Khawarizmi',
+  ),
+);
+
+List<_HardcodedGalleryVideo> _galleryVideosForSnapshot(HomeSnapshot snapshot) {
+  final isElementary = _isElementaryProfile(
+    educationLevel: snapshot.educationLevel,
+    gradeLevel: snapshot.gradeLevel,
+  );
+  if (isElementary) {
+    return const [_hardcodedMultiplicationVideo, _hardcodedAlgebraVideo];
+  }
+  return const [_hardcodedAlgebraVideo, _hardcodedMultiplicationVideo];
+}
+
+bool _isElementaryProfile({
+  required String educationLevel,
+  required String gradeLevel,
+}) {
+  return isElementaryLevel(
+    educationLevel: educationLevel,
+    gradeLevel: gradeLevel,
+  );
+}
+
+class _BackendGalleryVideoCard extends StatelessWidget {
+  const _BackendGalleryVideoCard({
+    required this.video,
+    required this.onOpenChat,
+  });
+
+  final _HardcodedGalleryVideo video;
+  final VoidCallback onOpenChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: HardcodedVideoPreview(
+              videoUrl: video.videoUrl,
+              title: video.title,
+            ),
+          ),
+          const SizedBox(height: 11),
+          Text(
+            video.title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: WicaraColors.ink,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            video.subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: WicaraColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              _GalleryMetaChip(video.durationLabel),
+              const SizedBox(width: 7),
+              const _GalleryMetaChip('Supabase video'),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onOpenChat,
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: const Text('Open chat'),
+                style: TextButton.styleFrom(
+                  foregroundColor: WicaraColors.secondary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GalleryMetaChip extends StatelessWidget {
+  const _GalleryMetaChip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _BackendGalleryArtifactCard extends StatelessWidget {
+  const _BackendGalleryArtifactCard({required this.artifact});
+
+  final HomeMediaArtifact artifact;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewUrl = artifact.thumbnailUrl;
+    final duration = artifact.durationLabel.isNotEmpty
+        ? artifact.durationLabel
+        : '--:--';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: () {
+          showDialog<void>(
+            context: context,
+            builder: (context) {
+              return _GalleryArtifactDetailDialog(artifact: artifact);
+            },
+          );
+        },
+        child: _Panel(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 92,
+                  height: 70,
+                  child: previewUrl != null && previewUrl.isNotEmpty
+                      ? Image.network(
+                          previewUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const ColoredBox(
+                              color: Color(0xFF181D27),
+                              child: Icon(
+                                Icons.movie_creation_outlined,
+                                color: Colors.white70,
+                              ),
+                            );
+                          },
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF181D27),
+                          child: Icon(
+                            Icons.movie_creation_outlined,
+                            color: Colors.white70,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      artifact.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      artifact.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: WicaraColors.muted,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                children: [
+                  const Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: WicaraColors.secondary,
+                    size: 31,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    duration,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: WicaraColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GalleryArtifactDetailDialog extends StatefulWidget {
+  const _GalleryArtifactDetailDialog({
+    required this.artifact,
+    this.isFullscreen = false,
+    this.initialPosition,
+  });
+
+  final HomeMediaArtifact artifact;
+  final bool isFullscreen;
+  final Duration? initialPosition;
+
+  @override
+  State<_GalleryArtifactDetailDialog> createState() =>
+      _GalleryArtifactDetailDialogState();
+}
+
+class _GalleryArtifactDetailDialogState
+    extends State<_GalleryArtifactDetailDialog> {
+  VideoPlayerController? _controller;
+  bool _isLoading = true;
+  String? _errorMessage;
+  double _zoomScale = 1.0;
+  double? _timelineHoverFraction;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    final videoUrl = widget.artifact.effectiveVideoUrl;
+    if (videoUrl.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Video URL is missing for this artifact.';
+      });
+      return;
+    }
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      await controller.initialize();
+      final requestedPosition = widget.initialPosition;
+      if (requestedPosition != null && requestedPosition > Duration.zero) {
+        final maxPosition = controller.value.duration;
+        final clampedPosition = requestedPosition > maxPosition
+            ? maxPosition
+            : requestedPosition;
+        await controller.seekTo(clampedPosition);
+      }
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _isLoading = false;
+      });
+      await controller.play();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load this video.';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _setZoomScale(double value) {
+    setState(() {
+      _zoomScale = value.clamp(1.0, 3.0);
+    });
+  }
+
+  Future<void> _openFullscreenPlayer(VideoPlayerController controller) async {
+    final currentPosition = controller.value.position;
+    final wasPlaying = controller.value.isPlaying;
+    await controller.pause();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.88),
+      builder: (_) {
+        return _GalleryArtifactDetailDialog(
+          artifact: widget.artifact,
+          isFullscreen: true,
+          initialPosition: currentPosition,
+        );
+      },
+    );
+
+    if (!mounted || !wasPlaying) return;
+    await controller.play();
+  }
+
+  void _updateTimelineHover({
+    required double localDx,
+    required double trackWidth,
+  }) {
+    if (trackWidth <= 0) return;
+    final fraction = (localDx / trackWidth).clamp(0.0, 1.0);
+    if (_timelineHoverFraction == fraction) return;
+    setState(() {
+      _timelineHoverFraction = fraction;
+    });
+  }
+
+  void _clearTimelineHover() {
+    if (_timelineHoverFraction == null) return;
+    setState(() {
+      _timelineHoverFraction = null;
+    });
+  }
+
+  String _formatTimelineTime(Duration duration) {
+    final totalSeconds = duration.inSeconds.clamp(0, 359999);
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Widget _metaChip(String label) {
+    return Container(
+      height: 25,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: WicaraColors.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: WicaraColors.muted,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final isFullscreen = widget.isFullscreen;
+    final foreground = isFullscreen ? Colors.white : WicaraColors.text;
+    final durationLabel = widget.artifact.durationLabel.trim();
+    final card = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.artifact.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (!isFullscreen &&
+                  !_isLoading &&
+                  _errorMessage == null &&
+                  controller != null)
+                IconButton(
+                  onPressed: () => _openFullscreenPlayer(controller),
+                  icon: const Icon(Icons.open_in_full_rounded),
+                  color: foreground,
+                  tooltip: 'Open fullscreen',
+                ),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: Icon(
+                  isFullscreen
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.close_rounded,
+                ),
+                color: foreground,
+              ),
+            ],
+          ),
+          if (widget.artifact.subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              widget.artifact.subtitle,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: isFullscreen
+                    ? Colors.white.withValues(alpha: 0.78)
+                    : WicaraColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (durationLabel.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _metaChip('Duration $durationLabel'),
+            ),
+          ],
+          const SizedBox(height: 10),
+          AspectRatio(
+            aspectRatio: controller?.value.isInitialized == true
+                ? controller!.value.aspectRatio
+                : 16 / 9,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ColoredBox(
+                color: Colors.black,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      )
+                    : InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 3,
+                        panEnabled: true,
+                        scaleEnabled: true,
+                        child: Center(
+                          child: Transform.scale(
+                            scale: _zoomScale,
+                            child: VideoPlayer(controller!),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (!_isLoading && _errorMessage == null && controller != null)
+            ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: controller,
+              builder: (context, value, _) {
+                final totalDuration = value.duration > Duration.zero
+                    ? value.duration
+                    : const Duration(seconds: 1);
+                final maxMs = totalDuration.inMilliseconds;
+                final positionMs = value.position.inMilliseconds
+                    .clamp(0, maxMs)
+                    .toInt();
+                final sliderValue = maxMs <= 0 ? 0.0 : positionMs / maxMs;
+                final currentLabel = _formatTimelineTime(
+                  Duration(milliseconds: positionMs),
+                );
+                final totalLabel = _formatTimelineTime(totalDuration);
+
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              if (value.isPlaying) {
+                                controller.pause();
+                              } else {
+                                controller.play();
+                              }
+                            });
+                          },
+                          icon: Icon(
+                            value.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                          color: foreground,
+                        ),
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final trackWidth = constraints.maxWidth;
+                              final hoverFraction = _timelineHoverFraction;
+                              final showHover =
+                                  hoverFraction != null && trackWidth > 0;
+                              final safeHoverFraction = hoverFraction ?? 0.0;
+                              final hoverMs = showHover
+                                  ? (maxMs * safeHoverFraction).round()
+                                  : 0;
+                              final hoverLabel = showHover
+                                  ? _formatTimelineTime(
+                                      Duration(milliseconds: hoverMs),
+                                    )
+                                  : '';
+                              final bubbleWidth = 64.0;
+                              final hoverLeft = showHover
+                                  ? ((trackWidth * safeHoverFraction) -
+                                            (bubbleWidth / 2))
+                                        .clamp(
+                                          0.0,
+                                          math.max(
+                                            0.0,
+                                            trackWidth - bubbleWidth,
+                                          ),
+                                        )
+                                        .toDouble()
+                                  : 0.0;
+
+                              return MouseRegion(
+                                onHover: (event) {
+                                  _updateTimelineHover(
+                                    localDx: event.localPosition.dx,
+                                    trackWidth: trackWidth,
+                                  );
+                                },
+                                onExit: (_) => _clearTimelineHover(),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(
+                                      height: showHover ? 22 : 0,
+                                      child: showHover
+                                          ? Stack(
+                                              children: [
+                                                Positioned(
+                                                  left: hoverLeft,
+                                                  width: bubbleWidth,
+                                                  child: Container(
+                                                    height: 20,
+                                                    alignment: Alignment.center,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black87,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      hoverLabel,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                    SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 4,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 5,
+                                        ),
+                                        overlayShape:
+                                            SliderComponentShape.noOverlay,
+                                        activeTrackColor:
+                                            WicaraColors.secondary,
+                                        inactiveTrackColor: WicaraColors.line,
+                                        thumbColor: WicaraColors.secondary,
+                                      ),
+                                      child: Slider(
+                                        value: sliderValue.clamp(0.0, 1.0),
+                                        min: 0,
+                                        max: 1,
+                                        onChanged: (nextValue) {
+                                          final target = Duration(
+                                            milliseconds: (maxMs * nextValue)
+                                                .round(),
+                                          );
+                                          controller.seekTo(target);
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(_zoomScale - 0.25),
+                          icon: const Icon(Icons.zoom_out_rounded),
+                          color: foreground,
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(1.0),
+                          icon: const Icon(Icons.filter_center_focus_rounded),
+                          color: foreground,
+                        ),
+                        IconButton(
+                          onPressed: () => _setZoomScale(_zoomScale + 0.25),
+                          icon: const Icon(Icons.zoom_in_rounded),
+                          color: foreground,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          currentLabel,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.82),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          totalLabel,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.82),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+
+    if (isFullscreen) {
+      return Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: ColoredBox(color: Colors.black, child: card),
+        ),
+      );
+    }
+
+    return Dialog(insetPadding: const EdgeInsets.all(16), child: card);
   }
 }
 
@@ -1393,6 +2560,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
     required this.onSelected,
     required this.isSubmitting,
     required this.onSubmit,
+    this.sectionLabel = 'Quick check-in',
+    this.subtitle = 'Answer five questions to strengthen your memory.',
+    this.nextLabel = 'Next question',
+    this.finishLabel = 'Finish evaluation',
   });
 
   final BoxConstraints constraints;
@@ -1405,6 +2576,10 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
   final ValueChanged<String> onSelected;
   final bool isSubmitting;
   final VoidCallback onSubmit;
+  final String sectionLabel;
+  final String subtitle;
+  final String nextLabel;
+  final String finishLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1435,9 +2610,9 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
             _ReviewDueCard(reviewDue: reviewDue),
             const SizedBox(height: 28),
             _DailyEvaluationSectionTitle(
-              label: 'Quick check-in',
+              label: sectionLabel,
               progressLabel: progressLabel,
-              subtitle: 'Answer five questions to strengthen your memory.',
+              subtitle: subtitle,
             ),
             const SizedBox(height: 12),
             _EvaluationProgressLine(value: progress),
@@ -1502,9 +2677,7 @@ class _DailyEvaluationQuestionPage extends StatelessWidget {
                   ],
                   const SizedBox(height: 22),
                   GradientButton(
-                    label: isLastQuestion
-                        ? 'Finish evaluation'
-                        : 'Next question',
+                    label: isLastQuestion ? finishLabel : nextLabel,
                     onPressed: selectedOptionId == null ? null : onSubmit,
                     isLoading: isSubmitting,
                   ),
@@ -4551,11 +5724,16 @@ class _ProfilePage extends StatelessWidget {
   }
 
   OnboardingProfile _profileFromSnapshot() {
+    final parsedGrade = parseGradeLevel(snapshot.gradeLevel);
+    final normalizedGrade = parsedGrade?.toString() ?? snapshot.gradeLevel;
     return OnboardingProfile(
       fullName: snapshot.displayName,
       country: snapshot.country,
-      educationLevel: snapshot.educationLevel,
-      gradeLevel: snapshot.gradeLevel,
+      educationLevel: normalizeEducationLevel(
+        educationLevel: snapshot.educationLevel,
+        gradeLevel: normalizedGrade,
+      ),
+      gradeLevel: normalizedGrade,
       preferredLanguage: snapshot.preferredLanguage,
       selectedSubjects: snapshot.selectedSubjects,
       studyGoal: snapshot.studyGoal,
@@ -7544,6 +8722,8 @@ class _ConceptDetailData {
         description: concept.description.isEmpty
             ? fallbackNode.description
             : concept.description,
+        idDesc: concept.idDesc.isEmpty ? fallbackNode.idDesc : concept.idDesc,
+        enDesc: concept.enDesc.isEmpty ? fallbackNode.enDesc : concept.enDesc,
         gradeBand: concept.gradeBand.isEmpty
             ? fallbackNode.gradeBand
             : concept.gradeBand,
@@ -8023,11 +9203,21 @@ class _NodeStatusDot extends StatelessWidget {
 }
 
 String _nodeDescription(_KnowledgeNode node, OnboardingCopy copy) {
-  final description = node.description;
+  final description = copy.isIndonesian
+      ? (node.idDesc ?? node.description)
+      : (node.enDesc ?? node.description);
   if (description != null && description.isNotEmpty) {
     return description;
   }
-  return copy.conceptFallbackDescription;
+  final grade = node.gradeBand;
+  if (copy.isIndonesian) {
+    return grade == null || grade.isEmpty
+        ? 'Pelajari konsep ${node.label} dalam graf prasyarat Kurikulum Merdeka.'
+        : 'Pelajari konsep ${node.label} untuk $grade dalam graf prasyarat Kurikulum Merdeka.';
+  }
+  return grade == null || grade.isEmpty
+      ? 'Learn ${node.label} in the Kurikulum Merdeka prerequisite graph.'
+      : 'Learn ${node.label} for $grade in the Kurikulum Merdeka prerequisite graph.';
 }
 
 class _KnowledgeGraph {
@@ -8230,6 +9420,8 @@ class _KnowledgeNode {
     required this.x,
     required this.y,
     this.description,
+    this.idDesc,
+    this.enDesc,
     this.gradeBand,
     this.status = _NodeStatus.ready,
     this.statusLabel,
@@ -8240,6 +9432,8 @@ class _KnowledgeNode {
   final double x;
   final double y;
   final String? description;
+  final String? idDesc;
+  final String? enDesc;
   final String? gradeBand;
   final _NodeStatus status;
   final String? statusLabel;
@@ -8334,6 +9528,8 @@ _KnowledgeGraph _knowledgeGraphFromApi(
           x: node.x,
           y: node.y,
           description: node.description,
+          idDesc: node.idDesc,
+          enDesc: node.enDesc,
           gradeBand: node.gradeBand,
           status: _nodeStatusFromApi(node.status),
           statusLabel: node.statusLabel.isEmpty ? null : node.statusLabel,

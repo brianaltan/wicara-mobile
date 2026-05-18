@@ -195,8 +195,27 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<AuthSession?> refresh(AuthSession current) async {
+    final token = current.refreshToken;
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+    try {
+      final json = await _apiClient.postJson(
+        '/api/v1/auth/refresh',
+        body: {'refresh_token': token},
+      );
+      final role = current.role;
+      return _toAuthSession(json, role);
+    } on ApiClientException {
+      return null;
+    }
+  }
+
   AuthSession _toAuthSession(Map<String, dynamic> json, AuthRole role) {
     final token = (json['token'] ?? '').toString().trim();
+    final refresh = (json['refresh_token'] ?? '').toString().trim();
 
     return AuthSession(
       userId: (json['user_id'] ?? '').toString(),
@@ -204,6 +223,7 @@ class ApiAuthRepository implements AuthRepository {
       role: role,
       onboardingCompleted: json['onboarding_completed'] == true,
       token: token.isEmpty ? null : token,
+      refreshToken: refresh.isEmpty ? null : refresh,
     );
   }
 }

@@ -64,10 +64,39 @@ class _WicaraAppState extends State<WicaraApp> {
   bool _didSchedulePreload = false;
   late final NavigatorObserver _authRouteObserver;
 
+  // Cached once after auth finishes initializing so that MaterialApp.initialRoute
+  // is never set from a partially-restored session.
+  String? _resolvedInitialRoute;
+
   @override
   void initState() {
     super.initState();
     _authRouteObserver = _AuthRouteObserver(widget.authController);
+    widget.authController.addListener(_onAuthChanged);
+    // If already initialized when the widget is created (uncommon but possible)
+    if (widget.authController.isInitialized) {
+      _resolvedInitialRoute = _computeInitialRoute();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.authController.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (_resolvedInitialRoute == null && widget.authController.isInitialized) {
+      setState(() {
+        _resolvedInitialRoute = _computeInitialRoute();
+      });
+    }
+  }
+
+  String _computeInitialRoute() {
+    return widget.authController.isSignedIn
+        ? widget.authController.initialSignedInRoute
+        : AppRoutes.landing;
   }
 
   @override
@@ -91,20 +120,26 @@ class _WicaraAppState extends State<WicaraApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Show a blank splash until auth finishes initializing (including refresh).
+    // This prevents MaterialApp from mounting with an initialRoute derived from
+    // a partially-restored session before the refresh completes.
+    final initialRoute = _resolvedInitialRoute;
+    if (initialRoute == null) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: Color(0xFFF3F3FD)),
+      );
+    }
+
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        widget.authController,
-        widget.onboardingController,
-      ]),
+      animation: widget.onboardingController,
       builder: (context, _) {
         return MaterialApp(
           title: 'Wicara',
           debugShowCheckedModeBanner: false,
           theme: WicaraTheme.light(),
           navigatorObservers: [_authRouteObserver],
-          initialRoute: widget.authController.isSignedIn
-              ? widget.authController.initialSignedInRoute
-              : AppRoutes.landing,
+          initialRoute: initialRoute,
           onGenerateRoute: _onGenerateRoute,
         );
       },
@@ -142,12 +177,14 @@ class _WicaraAppState extends State<WicaraApp> {
               widget.homeRepository ?? const _UnavailableHomeRepository(),
           authController: widget.authController,
           onboardingController: widget.onboardingController,
+          routeArguments: settings.arguments,
         ),
         AppRoutes.workspaceModules => WorkspaceModulesPage(
           onboardingController: widget.onboardingController,
           workspaceRepository:
               widget.workspaceRepository ??
               const _UnavailableWorkspaceRepository(),
+          homeRepository: widget.homeRepository,
           routeArguments: settings.arguments is WorkspaceRouteArguments
               ? settings.arguments! as WorkspaceRouteArguments
               : null,
@@ -181,6 +218,33 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
   Future<WorkspaceSession> createOrResumeWorkspace({
     required String trackId,
     required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
+    required String trackId,
+    required String moduleId,
   }) {
     throw UnimplementedError('WorkspaceRepository is not configured.');
   }
@@ -196,6 +260,27 @@ class _UnavailableWorkspaceRepository implements WorkspaceRepository {
     required String eventType,
     String textPayload = '',
     Map<String, dynamic> metadata = const {},
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  }) {
+    throw UnimplementedError('WorkspaceRepository is not configured.');
+  }
+
+  @override
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
   }) {
     throw UnimplementedError('WorkspaceRepository is not configured.');
   }
@@ -222,6 +307,12 @@ class _AuthRouteObserver extends NavigatorObserver {
   }
 
   @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    _authController.markRouteVisited(previousRoute?.settings.name);
+  }
+
+  @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     _authController.markRouteVisited(newRoute?.settings.name);
@@ -233,6 +324,18 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<HomeSnapshot> fetchSnapshot() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<List<HomeMediaArtifact>> fetchMediaArtifacts() {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<HomeMediaArtifact> fetchMediaArtifactById({
+    required String artifactId,
+  }) {
     throw UnimplementedError('HomeRepository is not configured.');
   }
 
@@ -253,6 +356,31 @@ class _UnavailableHomeRepository implements HomeRepository {
 
   @override
   Future<DailyEvaluationResult> fetchDailyEvaluationResult({
+    required String sessionId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationSession> startPosttest({
+    String? learningGoalId,
+    String? trackId,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) {
+    throw UnimplementedError('HomeRepository is not configured.');
+  }
+
+  @override
+  Future<DailyEvaluationResult> finalizePosttest({
     required String sessionId,
   }) {
     throw UnimplementedError('HomeRepository is not configured.');

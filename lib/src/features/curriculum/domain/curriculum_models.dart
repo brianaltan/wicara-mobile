@@ -42,6 +42,8 @@ class CurriculumKnowledgeNode {
     required this.id,
     required this.label,
     required this.description,
+    required this.idDesc,
+    required this.enDesc,
     required this.gradeBand,
     required this.x,
     required this.y,
@@ -52,6 +54,8 @@ class CurriculumKnowledgeNode {
   final String id;
   final String label;
   final String description;
+  final String idDesc;
+  final String enDesc;
   final String gradeBand;
   final double x;
   final double y;

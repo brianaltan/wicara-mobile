@@ -39,6 +39,7 @@ class AuthSession {
     required this.role,
     required this.onboardingCompleted,
     this.token,
+    this.refreshToken,
   });
 
   final String userId;
@@ -46,6 +47,7 @@ class AuthSession {
   final AuthRole role;
   final bool onboardingCompleted;
   final String? token;
+  final String? refreshToken;
 
   AuthSession copyWith({
     String? userId,
@@ -53,6 +55,7 @@ class AuthSession {
     AuthRole? role,
     bool? onboardingCompleted,
     String? token,
+    String? refreshToken,
   }) {
     return AuthSession(
       userId: userId ?? this.userId,
@@ -60,6 +63,7 @@ class AuthSession {
       role: role ?? this.role,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       token: token ?? this.token,
+      refreshToken: refreshToken ?? this.refreshToken,
     );
   }
 }
@@ -87,6 +91,10 @@ abstract class AuthRepository {
   });
 
   Stream<AuthSession> googleSignInSessions({required AuthRole role});
+
+  /// Exchange refresh_token for a fresh access_token.
+  /// Returns null if refresh_token is invalid/expired (caller should sign out).
+  Future<AuthSession?> refresh(AuthSession current);
 
   Future<void> signOut();
 }

@@ -109,6 +109,8 @@ class KnowledgeMapDto {
             id: node.id,
             label: node.label,
             description: node.description,
+            idDesc: node.idDesc,
+            enDesc: node.enDesc,
             gradeBand: node.gradeBand,
             x: node.x,
             y: node.y,
@@ -172,6 +174,8 @@ class KnowledgeMapNodeDto {
     required this.id,
     required this.label,
     required this.description,
+    required this.idDesc,
+    required this.enDesc,
     required this.gradeBand,
     required this.x,
     required this.y,
@@ -183,6 +187,8 @@ class KnowledgeMapNodeDto {
     : id = '',
       label = '',
       description = '',
+      idDesc = '',
+      enDesc = '',
       gradeBand = '',
       x = 0,
       y = 0,
@@ -200,6 +206,11 @@ class KnowledgeMapNodeDto {
         ),
       ),
       description: _stringValue(json['description']),
+      idDesc: _stringValue(
+        json['id_desc'],
+        fallback: _stringValue(json['description']),
+      ),
+      enDesc: _stringValue(json['en_desc']),
       gradeBand: _stringValue(json['grade_band']),
       x: _doubleValue(json['x']),
       y: _doubleValue(json['y']),
@@ -211,6 +222,8 @@ class KnowledgeMapNodeDto {
   final String id;
   final String label;
   final String description;
+  final String idDesc;
+  final String enDesc;
   final String gradeBand;
   final double x;
   final double y;
@@ -330,6 +343,8 @@ extension on KnowledgeMapNodeDto {
       id: id,
       label: label,
       description: description,
+      idDesc: idDesc,
+      enDesc: enDesc,
       gradeBand: gradeBand,
       x: x,
       y: y,
