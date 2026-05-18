@@ -111,10 +111,10 @@ Future<void> main() async {
         apiClient: apiClient,
         sessionStore: sessionStore,
         workspaceSessionStore: workspaceStore,
+        edgeForceLocalForPilot: _edgeLiteRtForceLocalForPilot,
+        edgeCloudFallbackAllowed: _edgeCloudFallbackAllowed,
+        edgeDebugRouteTrace: _edgeDebugRouteTrace,
       ),
-      edgeLiteRtForceLocalForPilot: _edgeLiteRtForceLocalForPilot,
-      edgeCloudFallbackAllowed: _edgeCloudFallbackAllowed,
-      edgeDebugRouteTrace: _edgeDebugRouteTrace,
     ),
   );
 }
