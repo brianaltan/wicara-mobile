@@ -303,6 +303,9 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     required String textPayload,
     required Map<String, dynamic> metadata,
   }) async {
+    if (!edgeForceLocalForPilot) {
+      return null;
+    }
     final normalizedEventType = eventType.trim().toLowerCase();
     final task = switch (normalizedEventType) {
       'quiz_answer' => EdgeTaskType.tutorEvaluate,
