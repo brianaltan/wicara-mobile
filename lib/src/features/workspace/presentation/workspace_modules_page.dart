@@ -4232,7 +4232,7 @@ class _WorkspaceFooter extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 11, 28, 14),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4253,6 +4253,34 @@ class _WorkspaceFooter extends StatelessWidget {
                       isPhaseSubmitting
                           ? material.advancingPhaseLabel
                           : material.advancePhaseLabel,
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: !isVideoGenerating && canGenerateVideo
+                        ? onGenerateVideo
+                        : null,
+                    icon: Icon(
+                      isVideoGenerating
+                          ? Icons.hourglass_bottom_rounded
+                          : Icons.smart_display_rounded,
+                    ),
+                    label: Text(
+                      isVideoGenerating
+                          ? material.generatingVideoButtonLabel
+                          : material.generateVideoFromChatLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
                   ),
                 ),
@@ -4282,22 +4310,6 @@ class _WorkspaceFooter extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: !isVideoGenerating && canGenerateVideo
-                  ? onGenerateVideo
-                  : null,
-              icon: Icon(
-                isVideoGenerating
-                    ? Icons.hourglass_bottom_rounded
-                    : Icons.smart_display_rounded,
-              ),
-              label: Text(
-                isVideoGenerating
-                    ? material.generatingVideoButtonLabel
-                    : material.generateVideoFromChatLabel,
-              ),
-            ),
-            const SizedBox(height: 10),
             _WorkspaceComposerInput(
               controller: controller,
               onSend: onSend,
@@ -4328,8 +4340,9 @@ class _WorkspaceComposerInput extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
-            minLines: 1,
-            maxLines: 2,
+            keyboardType: TextInputType.multiline,
+            minLines: 2,
+            maxLines: 5,
             textInputAction: TextInputAction.send,
             onSubmitted: (_) => onSend(),
             decoration: InputDecoration(
