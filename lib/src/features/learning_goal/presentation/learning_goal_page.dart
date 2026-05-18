@@ -1705,15 +1705,16 @@ String _nodeDescription(
   LearningConceptSuggestion suggestion, {
   required bool isIndonesian,
 }) {
-  final description = _courseDescriptionOnly(
-    suggestion.descriptionFor(isIndonesian: isIndonesian),
-  );
-  if (description.isNotEmpty) {
-    return description;
+  final candidates = isIndonesian
+      ? [suggestion.idDesc, suggestion.description]
+      : [suggestion.enDesc, suggestion.description];
+  for (final candidate in candidates) {
+    final description = _courseDescriptionOnly(candidate);
+    if (description.isNotEmpty) {
+      return description;
+    }
   }
-  return isIndonesian
-      ? 'Node ini akan dipakai sebagai goal utama untuk pretest adaptif.'
-      : 'This node will be used as the main goal for the adaptive pretest.';
+  return isIndonesian ? 'Deskripsi tidak ditemukan.' : 'Description not found.';
 }
 
 String _courseDescriptionOnly(String value) {
@@ -1722,6 +1723,11 @@ String _courseDescriptionOnly(String value) {
     return '';
   }
   final patterns = <RegExp>[
+    RegExp(
+      r'\s+within\s+.+?\s+for\s+Phase\s+[A-F](?:/[A-F])?'
+      r'(?:\s*/\s*[^.]+)*\.?',
+      caseSensitive: false,
+    ),
     RegExp(
       r'\s+aligned with Kurikulum Merdeka(?:\s+[A-Z]+)?\s+Phase\s+[A-F]'
       r'(?:/[A-F])?(?:\s+[A-Z]+)?\s+learning outcomes\.?',
@@ -1735,6 +1741,12 @@ String _courseDescriptionOnly(String value) {
   ];
   for (final pattern in patterns) {
     description = description.replaceAll(pattern, '').trim();
+  }
+  if (RegExp(
+    r'^(build|building) understanding of .+\.?$',
+    caseSensitive: false,
+  ).hasMatch(description)) {
+    return '';
   }
   if (description.isNotEmpty && !RegExp(r'[.!?]$').hasMatch(description)) {
     description = '$description.';

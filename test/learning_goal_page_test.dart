@@ -202,12 +202,7 @@ void main() {
     expect(find.text('Lihat detail'), findsOneWidget);
     expect(find.text('Ubah prompt'), findsOneWidget);
     expect(find.text('Lihat graph'), findsOneWidget);
-    expect(
-      find.text(
-        'Node ini akan dipakai sebagai goal utama untuk pretest adaptif.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Deskripsi tidak ditemukan.'), findsOneWidget);
 
     await tester.tap(find.text('Gaya'));
     await tester.pumpAndSettle();
