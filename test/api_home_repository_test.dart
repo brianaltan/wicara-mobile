@@ -58,6 +58,11 @@ void main() {
     expect(report.posttestScorePercent, 88);
     expect(report.learningGainPercent, 16);
     expect(report.pairedConceptCount, 1);
+    expect(report.dataQuality.coverageStatus, 'evidence_backed');
+    expect(report.effortImpact.attemptCount, 7);
+    expect(report.conceptMovers.length, 2);
+    expect(report.weeklyTimeline.length, 4);
+    expect(report.weeklyNarrative.focus, contains('Review'));
   });
 
   test('posttest answer sends reasoning and canvas evidence fields', () async {
@@ -264,6 +269,94 @@ Map<String, Object?> _weeklyReportJson() {
       'title': 'Consistency is compounding.',
       'narrative': 'Test narrative',
       'signal': 'test',
+    },
+    'data_quality': {
+      'confidence_label': 'high',
+      'confidence_score': 86,
+      'coverage_status': 'evidence_backed',
+      'attempts_covered': 7,
+      'paired_concepts': 1,
+      'notes': ['7 assessment attempts in selected range.'],
+    },
+    'effort_impact': {
+      'attempt_count': 7,
+      'active_days': 4,
+      'retention_minutes': 24,
+      'review_due_count': 2,
+      'new_gaps_count': 1,
+      'impact_score_delta': 16,
+      'efficiency_label': 'high_leverage',
+      'narrative':
+          '7 attempts across 4 active days produced +16% impact trend.',
+    },
+    'concept_movers': [
+      {
+        'concept_id': 'concept-improved',
+        'title': 'Derivative intuition',
+        'movement_type': 'improved',
+        'status': 'mastered',
+        'mastery_before_percent': 62,
+        'mastery_after_percent': 81,
+        'mastery_delta_percent': 19,
+        'evidence_delta': 3,
+        'next_review_date': '2026-05-20',
+        'reason': 'Answer evidence improved in this range.',
+      },
+      {
+        'concept_id': 'concept-risk',
+        'title': 'Application translation',
+        'movement_type': 'at_risk',
+        'status': 'review_due',
+        'mastery_before_percent': 58,
+        'mastery_after_percent': 52,
+        'mastery_delta_percent': -6,
+        'evidence_delta': 2,
+        'next_review_date': '2026-05-19',
+        'reason': 'Concept is currently marked as gap/review due.',
+      },
+    ],
+    'weekly_timeline': [
+      {
+        'label': 'W20',
+        'range_start': '2026-05-04',
+        'range_end': '2026-05-10',
+        'score': 72,
+        'fixed_gaps': 2,
+        'remaining_gaps': 3,
+        'attempt_count': 4,
+      },
+      {
+        'label': 'W21',
+        'range_start': '2026-05-11',
+        'range_end': '2026-05-17',
+        'score': 88,
+        'fixed_gaps': 4,
+        'remaining_gaps': 1,
+        'attempt_count': 7,
+      },
+      {
+        'label': 'W22',
+        'range_start': '2026-05-18',
+        'range_end': '2026-05-24',
+        'score': 0,
+        'fixed_gaps': 0,
+        'remaining_gaps': 0,
+        'attempt_count': 0,
+      },
+      {
+        'label': 'W23',
+        'range_start': '2026-05-25',
+        'range_end': '2026-05-31',
+        'score': 0,
+        'fixed_gaps': 0,
+        'remaining_gaps': 0,
+        'attempt_count': 0,
+      },
+    ],
+    'weekly_narrative': {
+      'improved': 'Derivative intuition led improvement.',
+      'stagnant': 'Application translation remains at risk.',
+      'focus': 'Review: Application translation (Due tomorrow)',
     },
   };
 }

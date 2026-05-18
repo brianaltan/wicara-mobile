@@ -776,6 +776,14 @@ class ApiHomeRepository implements HomeRepository {
       consistencySummary: _consistencySummaryFromJson(
         json['consistency_summary'],
       ),
+      dataQuality: _dataQualityFromJson(json['data_quality']),
+      effortImpact: _effortImpactFromJson(
+        json['effort_impact'],
+        retentionMinutesFallback: _int(json['retention_minutes']),
+      ),
+      conceptMovers: _conceptMoversFromJson(json['concept_movers']),
+      weeklyTimeline: _weeklyTimelineFromJson(json['weekly_timeline']),
+      weeklyNarrative: _weeklyNarrativeFromJson(json['weekly_narrative']),
     );
   }
 
@@ -862,6 +870,99 @@ class ApiHomeRepository implements HomeRepository {
       title: _stringWithFallback(json['title'], 'Consistency is compounding.'),
       narrative: _string(json['narrative']),
       signal: _string(json['signal']),
+    );
+  }
+
+  ReportDataQuality _dataQualityFromJson(Object? value) {
+    final json = _map(value);
+    return ReportDataQuality(
+      confidenceLabel: _stringWithFallback(json['confidence_label'], 'low'),
+      confidenceScore: _int(json['confidence_score']),
+      coverageStatus: _stringWithFallback(
+        json['coverage_status'],
+        'seeded_baseline',
+      ),
+      attemptsCovered: _int(json['attempts_covered']),
+      pairedConcepts: _int(json['paired_concepts']),
+      notes: _stringList(json['notes']),
+    );
+  }
+
+  ReportEffortImpact _effortImpactFromJson(
+    Object? value, {
+    required int retentionMinutesFallback,
+  }) {
+    final json = _map(value);
+    return ReportEffortImpact(
+      attemptCount: _int(json['attempt_count']),
+      activeDays: _int(json['active_days']),
+      retentionMinutes: _int(json['retention_minutes']) == 0
+          ? retentionMinutesFallback
+          : _int(json['retention_minutes']),
+      reviewDueCount: _int(json['review_due_count']),
+      newGapsCount: _int(json['new_gaps_count']),
+      impactScoreDelta: _int(json['impact_score_delta']),
+      efficiencyLabel: _stringWithFallback(
+        json['efficiency_label'],
+        'no_signal',
+      ),
+      narrative: _string(json['narrative']),
+    );
+  }
+
+  List<ReportConceptMover> _conceptMoversFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => ReportConceptMover(
+            conceptId: _string(json['concept_id']).isEmpty
+                ? null
+                : _string(json['concept_id']),
+            title: _stringWithFallback(json['title'], 'Concept'),
+            movementType: _stringWithFallback(json['movement_type'], 'at_risk'),
+            status: _stringWithFallback(json['status'], 'unknown'),
+            masteryBeforePercent: _int(json['mastery_before_percent']),
+            masteryAfterPercent: _int(json['mastery_after_percent']),
+            masteryDeltaPercent: _int(json['mastery_delta_percent']),
+            evidenceDelta: _int(json['evidence_delta']),
+            nextReviewDate: _string(json['next_review_date']).isEmpty
+                ? null
+                : _string(json['next_review_date']),
+            reason: _string(json['reason']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<WeeklyTimelinePoint> _weeklyTimelineFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => WeeklyTimelinePoint(
+            label: _stringWithFallback(json['label'], 'Wk'),
+            rangeStart: _string(json['range_start']),
+            rangeEnd: _string(json['range_end']),
+            score: _int(json['score']),
+            fixedGaps: _int(json['fixed_gaps']),
+            remainingGaps: _int(json['remaining_gaps']),
+            attemptCount: _int(json['attempt_count']),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  WeeklyNarrative _weeklyNarrativeFromJson(Object? value) {
+    final json = _map(value);
+    return WeeklyNarrative(
+      improved: _string(json['improved']),
+      stagnant: _string(json['stagnant']),
+      focus: _string(json['focus']),
     );
   }
 
