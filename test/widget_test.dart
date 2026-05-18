@@ -427,13 +427,14 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   const _FailingCurriculumRepository();
 
   @override
-  Future<List<CurriculumSubject>> fetchSubjects() async {
+  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'id'}) async {
     throw UnimplementedError();
   }
 
   @override
   Future<CurriculumKnowledgeMap> fetchKnowledgeMap({
     required String subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
@@ -442,6 +443,7 @@ class _FailingCurriculumRepository implements CurriculumRepository {
   Future<CurriculumConceptDetail> fetchConceptDetail({
     required String conceptCode,
     String? subject,
+    String locale = 'id',
   }) async {
     throw UnimplementedError();
   }
@@ -650,6 +652,204 @@ class _FakeHomeRepository implements HomeRepository {
   }
 
   @override
+  Future<DailyEvaluationSession> startPosttest({
+    String? learningGoalId,
+    String? trackId,
+  }) async {
+    return const DailyEvaluationSession(
+      sessionId: 'posttest-perkalian-widget-test',
+      title: 'Posttest Perkalian',
+      language: 'id',
+      reviewDue: ReviewDueSummary(
+        title: 'Posttest siap',
+        dueCount: 10,
+        summary: '10 soal untuk validasi mastery perkalian.',
+        actionLabel: 'Mulai',
+      ),
+      progress: DailyEvaluationProgress(
+        current: 1,
+        total: 10,
+        completed: 0,
+        label: '1 of 10',
+      ),
+      questions: [
+        PretestQuestion(
+          id: 'posttest-1',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '7 x 4 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '28'),
+            PretestOption(id: 'B', label: 'B', text: '24'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-2',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '6 x 9 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '54'),
+            PretestOption(id: 'B', label: 'B', text: '45'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-3',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: 'Mana bentuk penjumlahan berulang untuk 3 x 7?',
+          helper: 'Pilih bentuk yang setara.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '7 + 7 + 7'),
+            PretestOption(id: 'B', label: 'B', text: '3 + 3 + 3'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-4',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '13 x 2 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '26'),
+            PretestOption(id: 'B', label: 'B', text: '24'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-5',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '6 x 8 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '48'),
+            PretestOption(id: 'B', label: 'B', text: '42'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-6',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '7 x 6 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '42'),
+            PretestOption(id: 'B', label: 'B', text: '36'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-7',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: 'Mana bentuk perkalian dari 6 kelompok berisi 7?',
+          helper: 'Pilih bentuk perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '6 x 7'),
+            PretestOption(id: 'B', label: 'B', text: '6 + 7'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-8',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '4 x 8 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '32'),
+            PretestOption(id: 'B', label: 'B', text: '28'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-9',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '6 x 4 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '24'),
+            PretestOption(id: 'B', label: 'B', text: '20'),
+          ],
+        ),
+        PretestQuestion(
+          id: 'posttest-10',
+          stepLabel: 'Posttest',
+          topic: 'Perkalian',
+          prompt: '5 x 8 = ?',
+          helper: 'Pilih hasil perkalian.',
+          options: [
+            PretestOption(id: 'A', label: 'A', text: '40'),
+            PretestOption(id: 'B', label: 'B', text: '45'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<DailyEvaluationAnswerResult> submitPosttestAnswer({
+    required String sessionId,
+    required String questionId,
+    required String optionId,
+    required int confidence,
+  }) async {
+    return DailyEvaluationAnswerResult(
+      attemptId: 'attempt-$questionId',
+      isCorrect: true,
+      nextReviewLabel: '',
+      masteryDelta: 0,
+      sessionStatus: questionId == 'posttest-10' ? 'completed' : 'active',
+      completed: questionId == 'posttest-10',
+    );
+  }
+
+  @override
+  Future<DailyEvaluationResult> finalizePosttest({
+    required String sessionId,
+  }) async {
+    return const DailyEvaluationResult(
+      sessionId: 'posttest-perkalian-widget-test',
+      title: 'Posttest Perkalian',
+      status: 'completed',
+      source: 'widget_test',
+      scorePercent: 100,
+      reviewedCount: 10,
+      correctCount: 10,
+      reviewAgainCount: 0,
+      reviewedConcepts: [
+        ReviewedConcept(
+          title: 'Perkalian',
+          statusLabel: 'Strong',
+          masteryScore: 1,
+        ),
+      ],
+      spacedRepetitionImpact: SpacedRepetitionImpact(
+        retentionLiftPercent: 100,
+        daysUntilNextReview: 7,
+        summary: 'Posttest: 10 jawaban benar dari 10 soal.',
+      ),
+      nextReview: DailyEvaluationNextReview(
+        label: 'Review ringan',
+        dueDate: '',
+        intervalDays: 7,
+      ),
+      recommendedNextActions: [
+        RecommendedNextAction(
+          title: 'Lanjut materi berikutnya',
+          actionType: 'continue_learning',
+          reason: 'Semua soal posttest lulus.',
+        ),
+      ],
+      backToHome: ActionTarget(
+        label: 'Kembali ke Home',
+        actionType: 'navigate',
+        target: '/home',
+      ),
+    );
+  }
+
+  @override
   Future<WeeklyLearningReport> fetchWeeklyLearningReport({
     DateTime? start,
     DateTime? end,
@@ -758,6 +958,8 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
   Future<WorkspaceSession> createOrResumeWorkspace({
     required String trackId,
     required String moduleId,
+    String? workspaceSessionId,
+    bool startNewSession = false,
   }) async {
     return WorkspaceSession(
       id: 'workspace-perkalian',
@@ -768,6 +970,43 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
       status: 'active',
       events: const [],
     );
+  }
+
+  @override
+  WorkspaceSessionHistory sessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) {
+    return const WorkspaceSessionHistory(
+      activeWorkspaceId: 'workspace-perkalian',
+      workspaceIds: ['workspace-perkalian'],
+    );
+  }
+
+  @override
+  Future<void> setActiveSession({
+    required String trackId,
+    required String moduleId,
+    required String workspaceId,
+  }) async {}
+
+  @override
+  Future<List<WorkspaceSessionSummary>> fetchSessionHistory({
+    required String trackId,
+    required String moduleId,
+  }) async {
+    return const [
+      WorkspaceSessionSummary(
+        id: 'workspace-perkalian',
+        trackId: 'track-perkalian',
+        moduleId: 'module-perkalian',
+        title: 'Perkalian',
+        preview: 'Latihan perkalian',
+        messageCount: 1,
+        createdAt: '2026-05-18T00:00:00Z',
+        updatedAt: '2026-05-18T00:00:00Z',
+      ),
+    ];
   }
 
   @override
@@ -810,6 +1049,59 @@ class _FakeWorkspaceRepository implements WorkspaceRepository {
         status: 'active',
         events: [event],
       ),
+    );
+  }
+
+  @override
+  Future<WorkspaceGenerateVideoResult> generateVideo({
+    required String workspaceId,
+    String generationMode = 'context_auto',
+    String? templateId,
+    Map<String, dynamic>? specJson,
+    String language = 'id',
+    String qualityProfile = 'standard',
+    String? conceptId,
+    Map<String, dynamic> metadata = const {},
+  }) async {
+    final event = WorkspaceEvent(
+      id: 'event-video',
+      workspaceId: workspaceId,
+      eventIndex: 2,
+      eventType: 'generate_video',
+      actorType: 'system',
+      textPayload: '',
+      metadata: metadata,
+    );
+    final workspace = WorkspaceSession(
+      id: workspaceId,
+      trackId: 'track-perkalian',
+      moduleId: 'module-perkalian',
+      currentTopic: 'Perkalian',
+      contentMode: 'chat',
+      status: 'active',
+      events: [event],
+    );
+    return WorkspaceGenerateVideoResult(
+      queue: const WorkspaceAnimationQueue(
+        jobId: 'job-video',
+        artifactId: 'artifact-video',
+        status: 'ready',
+      ),
+      event: event,
+      workspace: workspace,
+    );
+  }
+
+  @override
+  Future<WorkspaceAnimationJobStatus> getAnimationStatus({
+    required String jobId,
+  }) async {
+    return WorkspaceAnimationJobStatus(
+      jobId: jobId,
+      status: 'ready',
+      progress: 100,
+      message: 'Ready',
+      artifactId: 'artifact-video',
     );
   }
 

@@ -10,18 +10,22 @@ class ApiCurriculumRepository implements CurriculumRepository {
   final ApiClient _apiClient;
 
   @override
-  Future<List<CurriculumSubject>> fetchSubjects() async {
-    final json = await _apiClient.getJson('/api/v1/subjects');
+  Future<List<CurriculumSubject>> fetchSubjects({String locale = 'id'}) async {
+    final json = await _apiClient.getJson(
+      '/api/v1/subjects',
+      queryParameters: {'locale': _supportedLocale(locale)},
+    );
     return SubjectListDto.fromJson(json).toDomain();
   }
 
   @override
   Future<CurriculumKnowledgeMap> fetchKnowledgeMap({
     required String subject,
+    String locale = 'id',
   }) async {
     final json = await _apiClient.getJson(
       '/api/v1/knowledge-map',
-      queryParameters: {'subject': subject},
+      queryParameters: {'subject': subject, 'locale': _supportedLocale(locale)},
     );
     return KnowledgeMapDto.fromJson(json).toDomain();
   }
@@ -30,11 +34,21 @@ class ApiCurriculumRepository implements CurriculumRepository {
   Future<CurriculumConceptDetail> fetchConceptDetail({
     required String conceptCode,
     String? subject,
+    String locale = 'id',
   }) async {
+    final queryParameters = <String, String>{
+      if (subject != null) 'subject': subject,
+      'locale': _supportedLocale(locale),
+    };
     final json = await _apiClient.getJson(
       '/api/v1/knowledge-map/concepts/${Uri.encodeComponent(conceptCode)}',
-      queryParameters: subject == null ? const {} : {'subject': subject},
+      queryParameters: queryParameters,
     );
     return ConceptDetailDto.fromJson(json).toDomain();
+  }
+
+  String _supportedLocale(String locale) {
+    final normalized = locale.trim().toLowerCase();
+    return normalized == 'en' ? 'en' : 'id';
   }
 }
